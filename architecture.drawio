@@ -1,0 +1,1585 @@
+<mxfile host="app.diagrams.net" agent="Vayumi Architecture" version="24.0.0">
+  <diagram id="page1" name="1. Full System Architecture">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title1" value="VAYUMI — Full System Architecture" style="text;html=1;fontSize=20;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="500" y="20" width="400" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== CLIENT LAYER ==================== -->
+        <mxCell id="client_group" value="CLIENT LAYER" style="swimlane;startSize=30;fontSize=14;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="80" width="1200" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" value="Browser Client&#xa;(Login + WebSocket + Audio)" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="client_group">
+          <mxGeometry x="40" y="40" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="esp32" value="ESP32-S3-AUDIO-Board&#xa;(AEC + Wake Word + I2S)" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="client_group">
+          <mxGeometry x="300" y="40" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="mobile" value="Mobile App&#xa;(Future)" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;strokeDashArray=8 8;" vertex="1" parent="client_group">
+          <mxGeometry x="560" y="40" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="client_sends" value="Sends: auth, wake, audio_chunk, text_input,&#xa;interrupt, playback_done, mode_switch, speaker_label" style="text;fontSize=10;align=left;" vertex="1" parent="client_group">
+          <mxGeometry x="820" y="35" width="370" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="client_receives" value="Receives: auth_ok, status, sleep, transcript,&#xa;response_text, audio_chunk, mode_changed, flag_notify" style="text;fontSize=10;align=left;" vertex="1" parent="client_group">
+          <mxGeometry x="820" y="65" width="370" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- WebSocket Arrow -->
+        <mxCell id="ws_arrow" value="WebSocket (bidirectional)&#xa;All JSON (audio as base64)" style="shape=flexArrow;fillColor=#f8cecc;strokeColor=#b85450;width=16;endSize=6;startSize=6;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="200" as="sourcePoint" />
+            <mxPoint x="700" y="260" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== SERVER LAYER ==================== -->
+        <mxCell id="server_group" value="VAYUMI SERVER" style="swimlane;startSize=30;fontSize=14;fontStyle=1;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="260" width="1200" height="880" as="geometry" />
+        </mxCell>
+
+        <!-- AUTH LAYER -->
+        <mxCell id="auth_box" value="AUTH + SESSION LAYER" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="200" y="40" width="700" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="auth_detail" value="JWT Validation → user_id extraction → Session creation (bound to user_id) → All downstream ops scoped to user_id" style="text;fontSize=10;align=center;whiteSpace=wrap;" vertex="1" parent="auth_box">
+          <mxGeometry x="10" y="30" width="680" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- INPUT GATEWAY -->
+        <mxCell id="input_gw" value="INPUT GATEWAY" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#f8cecc;strokeColor=#b85450;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="200" y="130" width="700" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="echo_box" value="Echo&#xa;Cancel" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="input_gw">
+          <mxGeometry x="10" y="30" width="70" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="vad_box" value="VAD&#xa;(echo-aware)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="input_gw">
+          <mxGeometry x="95" y="30" width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="echo_to_vad" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=8;" edge="1" parent="input_gw" source="echo_box" target="vad_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_box" value="Groq&#xa;Whisper STT" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="input_gw">
+          <mxGeometry x="190" y="30" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="diarizer_box" value="Diarizer&#xa;(Speaker ID)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="input_gw">
+          <mxGeometry x="295" y="30" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="interrupt_detect" value="Interrupt&#xa;(echo-aware)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="input_gw">
+          <mxGeometry x="400" y="30" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mode_gate" value="Mode&#xa;Gate" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="input_gw">
+          <mxGeometry x="505" y="30" width="70" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="input_output" value="Output:&#xa;{text, speaker_id,&#xa;user_id, mode,&#xa;interrupt_flag}" style="text;fontSize=9;align=left;" vertex="1" parent="input_gw">
+          <mxGeometry x="560" y="25" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows between input gateway components -->
+        <mxCell id="vad_to_stt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=8;" edge="1" parent="input_gw" source="vad_box" target="stt_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="stt_to_diar" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=8;" edge="1" parent="input_gw" source="stt_box" target="diarizer_box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="diar_to_int" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=8;" edge="1" parent="input_gw" source="diarizer_box" target="interrupt_detect">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="int_to_mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;fontSize=8;" edge="1" parent="input_gw" source="interrupt_detect" target="mode_gate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- CENTRAL CONSCIOUSNESS -->
+        <mxCell id="consciousness" value="CENTRAL CONSCIOUSNESS (Orchestrator)" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="200" y="230" width="700" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ctx_builder" value="Context&#xa;Builder&#xa;(user-scoped)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="consciousness">
+          <mxGeometry x="10" y="35" width="100" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="intent_router" value="Intent&#xa;Router" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="consciousness">
+          <mxGeometry x="130" y="35" width="90" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="agent_coord" value="Agent&#xa;Coordinator" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="consciousness">
+          <mxGeometry x="240" y="35" width="100" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="response_asm" value="Response&#xa;Assembler&#xa;(streaming)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="consciousness">
+          <mxGeometry x="360" y="35" width="100" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="skill_lookup" value="Skill + MCP&#xa;Registry&#xa;Lookup" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="consciousness">
+          <mxGeometry x="480" y="35" width="100" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="orch_llm" value="LLM&#xa;Router" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="consciousness">
+          <mxGeometry x="600" y="35" width="80" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- AGENTS ROW -->
+        <mxCell id="agents_row" value="AGENT LAYER" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#fff2cc;strokeColor=#d6b656;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="200" y="350" width="700" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="mem_agent" value="Memory&#xa;Agent&#xa;(async)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="agents_row">
+          <mxGeometry x="10" y="30" width="90" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="task_agent" value="Task&#xa;Agent" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="agents_row">
+          <mxGeometry x="120" y="30" width="90" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="search_agent" value="Search&#xa;Agent" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="agents_row">
+          <mxGeometry x="230" y="30" width="90" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="persona_agent" value="Persona&#xa;Agent" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="agents_row">
+          <mxGeometry x="340" y="30" width="90" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="interrupt_handler" value="Interrupt&#xa;Handler" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="agents_row">
+          <mxGeometry x="450" y="30" width="90" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mode_mgr" value="Mode&#xa;Manager" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="agents_row">
+          <mxGeometry x="560" y="30" width="90" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- SKILL + MCP ROW -->
+        <mxCell id="skill_mcp_row" value="SKILL + MCP LAYER" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="200" y="450" width="700" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="skill_runner" value="Skill Runner&#xa;(loads SKILL.md,&#xa;executes run.py)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="10" y="28" width="150" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="web_reader_skill" value="web_reader" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="180" y="28" width="80" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="future_skills" value="[future&#xa;skills]" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;strokeDashArray=8 8;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="270" y="28" width="70" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp_divider" value="" style="line;strokeColor=#9673a6;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="360" y="28" width="1" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="web_search_mcp" value="web_search&#xa;MCP" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="380" y="28" width="80" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="reminders_mcp" value="reminders&#xa;MCP" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="470" y="28" width="80" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="gmail_mcp" value="gmail&#xa;MCP" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;strokeDashArray=8 8;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="560" y="28" width="70" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="future_mcps" value="[future&#xa;MCPs]" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;strokeDashArray=8 8;" vertex="1" parent="skill_mcp_row">
+          <mxGeometry x="640" y="28" width="50" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- OUTPUT GATEWAY -->
+        <mxCell id="output_gw" value="OUTPUT GATEWAY" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#f8cecc;strokeColor=#b85450;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="200" y="550" width="700" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="output_detail" value="Response Assembly → Sentence Boundary Detection → Kokoro-ONNX TTS (local) → Audio Stream to Client via WebSocket" style="text;fontSize=10;align=center;whiteSpace=wrap;" vertex="1" parent="output_gw">
+          <mxGeometry x="10" y="30" width="680" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- LLM PROVIDERS -->
+        <mxCell id="llm_group" value="LLM PROVIDERS" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="950" y="230" width="220" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="groq_provider" value="Groq API&#xa;(Primary)&#xa;• llama-3.1-8b-instant&#xa;• llama-3.3-70b-versatile&#xa;• Whisper STT" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="llm_group">
+          <mxGeometry x="10" y="30" width="200" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="gemini_provider" value="Google Gemini&#xa;(Fallback)&#xa;• gemini-2.0-flash&#xa;• gemini-1.5-pro" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="llm_group">
+          <mxGeometry x="10" y="115" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- STORAGE LAYER -->
+        <mxCell id="storage_group" value="STORAGE LAYER (all queries scoped by user_id)" style="swimlane;startSize=25;fontSize=11;fontStyle=1;fillColor=#fff2cc;strokeColor=#d6b656;rounded=1;" vertex="1" parent="server_group">
+          <mxGeometry x="200" y="640" width="700" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="sqlite_store" value="SQLite (WAL mode)&#xa;users, reminders, meetings,&#xa;contacts, memory_episodes, flags" style="shape=cylinder3;size=8;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;whiteSpace=wrap;" vertex="1" parent="storage_group">
+          <mxGeometry x="20" y="28" width="200" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="chromadb_store" value="ChromaDB&#xa;episodic_memory collection&#xa;(cosine similarity, user_id filter)" style="shape=cylinder3;size=8;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;whiteSpace=wrap;" vertex="1" parent="storage_group">
+          <mxGeometry x="250" y="28" width="200" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="file_store" value="File Store&#xa;/var/vayumi/files/{user_id}/&#xa;(docs, outputs)" style="shape=cylinder3;size=8;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;whiteSpace=wrap;" vertex="1" parent="storage_group">
+          <mxGeometry x="480" y="28" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- KEY ARROWS between major sections -->
+        <mxCell id="auth_to_input" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="server_group" source="auth_box" target="input_gw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="input_to_consc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="server_group" source="input_gw" target="consciousness">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="consc_to_agents" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="server_group" source="consciousness" target="agents_row">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="agents_to_skills" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="server_group" source="agents_row" target="skill_mcp_row">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="consc_to_output" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#b85450;exitX=1;exitY=0.75;exitDx=0;exitDy=0;" edge="1" parent="server_group" source="consciousness" target="output_gw">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="930" y="330" />
+              <mxPoint x="930" y="580" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="agents_to_storage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#82b366;exitX=0;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="server_group" source="agents_row" target="storage_group">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="170" y="440" />
+              <mxPoint x="170" y="690" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend_title" value="LEGEND" style="text;fontSize=11;fontStyle=1;" vertex="1" parent="server_group">
+          <mxGeometry x="950" y="470" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend1" value="Solid border = Phase 1" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="server_group">
+          <mxGeometry x="950" y="495" width="150" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend2" value="Dashed border = Phase 2" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;strokeDashArray=8 8;" vertex="1" parent="server_group">
+          <mxGeometry x="950" y="525" width="150" height="25" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page2" name="2. Voice Pipeline Flow (with Echo Cancellation)">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="v_title" value="Voice Pipeline — Complete Audio Flow with Echo Cancellation" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="350" y="20" width="600" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ECHO CANCELLATION LAYER (Step 0) -->
+        <mxCell id="v_echo_title" value="[0] ECHO CANCELLATION — Before anything else" style="text;html=1;fontSize=12;fontStyle=1;align=left;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="70" width="350" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- ESP32 path -->
+        <mxCell id="v_mic_esp" value="Microphone&#xa;(ESP32 ES7210&#xa;dual mic array)" style="shape=parallelogram;perimeter=parallelogramPerimeter;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="110" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_aec" value="ESP-ADF Pipeline&#xa;AEC + NS + BSS&#xa;(on-device)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="110" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_aec_ref" value="Speaker output&#xa;(ES8311)&#xa;= AEC reference" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="190" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v_clean_audio" value="Clean Audio&#xa;(Vayumi's voice&#xa;removed)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="110" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="va_esp1" style="rounded=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="v_mic_esp" target="v_aec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="va_ref" value="ref signal" style="rounded=1;strokeWidth=1;strokeColor=#b85450;dashed=1;fontSize=8;" edge="1" parent="1" source="v_aec_ref" target="v_aec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="va_clean" style="rounded=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="v_aec" target="v_clean_audio"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Browser path -->
+        <mxCell id="v_mic_browser" value="Microphone&#xa;(Browser&#xa;getUserMedia)" style="shape=parallelogram;perimeter=parallelogramPerimeter;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="110" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_web_aec" value="Web Audio API&#xa;echoCancellation:true&#xa;(basic suppression)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="910" y="110" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_browser_audio" value="Partially Clean&#xa;Audio (echo&#xa;residue possible)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="110" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="va_b1" style="rounded=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="v_mic_browser" target="v_web_aec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="va_b2" style="rounded=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="v_web_aec" target="v_browser_audio"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Both paths converge to WebSocket -->
+        <mxCell id="v_ws_in" value="WebSocket&#xa;(authenticated)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="250" y="280" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="va_esp_ws" value="echo-cancelled" style="rounded=1;strokeWidth=2;strokeColor=#82b366;fontSize=8;" edge="1" parent="1" source="v_clean_audio" target="v_ws_in">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="540" y="250" /><mxPoint x="315" y="250" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="va_br_ws" value="partially cleaned" style="rounded=1;strokeWidth=2;strokeColor=#d6b656;fontSize=8;" edge="1" parent="1" source="v_browser_audio" target="v_ws_in">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1205" y="250" /><mxPoint x="315" y="250" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Server-side echo gating -->
+        <mxCell id="v_vad" value="[1] VAD&#xa;(Echo-Aware)&#xa;Checks playback_state" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="440" y="280" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_echo_gate" value="playback_state&#xa;= PLAYING?&#xa;→ Raised threshold&#xa;→ Min 300ms duration" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="360" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="va_ws_vad" value="audio chunks" style="rounded=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=8;" edge="1" parent="1" source="v_ws_in" target="v_vad"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="va_gate" value="echo gating" style="rounded=1;strokeWidth=1;strokeColor=#b85450;dashed=1;fontSize=8;" edge="1" parent="1" source="v_echo_gate" target="v_vad"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Rest of pipeline -->
+        <mxCell id="v_stt" value="[2] Groq Whisper&#xa;STT&#xa;(speech → text)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="650" y="280" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_diarize" value="[3] Diarizer&#xa;Speaker ID&#xa;(ECAPA-TDNN embeddings)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="850" y="280" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_parsed" value="Parsed Input&#xa;{text, speaker_id,&#xa;user_id, confidence}" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="280" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="va3" value="speech&#xa;segments" style="rounded=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=8;" edge="1" parent="1" source="v_vad" target="v_stt"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="va4" value="text +&#xa;audio" style="rounded=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=8;" edge="1" parent="1" source="v_stt" target="v_diarize"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="va5" style="rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="v_diarize" target="v_parsed"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- DECISION -->
+        <mxCell id="v_interrupt_check" value="Is Vayumi&#xa;currently&#xa;speaking?" style="rhombus;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="480" y="430" width="140" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="v_interrupt_yes" value="[4] INTERRUPT&#xa;HANDLER&#xa;(echo-aware)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="440" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_mode_check" value="[5] Mode&#xa;Gate" style="rhombus;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="740" y="440" width="120" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="v_parsed_to_int" style="rounded=1;strokeWidth=2;strokeColor=#b85450;" edge="1" parent="1" source="v_parsed" target="v_interrupt_check">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1130" y="400" /><mxPoint x="550" y="400" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v_int_yes" value="YES" style="rounded=1;strokeWidth=2;strokeColor=#b85450;fontSize=9;fontStyle=1;" edge="1" parent="1" source="v_interrupt_check" target="v_interrupt_yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="v_int_no" value="NO" style="rounded=1;strokeWidth=2;strokeColor=#82b366;fontSize=9;fontStyle=1;" edge="1" parent="1" source="v_interrupt_check" target="v_mode_check"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Interrupt actions -->
+        <mxCell id="v_stop_tts" value="Stop TTS&#xa;Cancel Task&#xa;→ ACTIVE" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="80" y="540" width="100" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v_redirect" value="Route New&#xa;Input Fresh&#xa;→ ACTIVE" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="200" y="540" width="100" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v_add_ctx" value="Pause TTS&#xa;Add Context&#xa;→ INTERRUPTED" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="540" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="vi1" value="stop" style="fontSize=8;" edge="1" parent="1" source="v_interrupt_yes" target="v_stop_tts"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vi2" value="redirect" style="fontSize=8;" edge="1" parent="1" source="v_interrupt_yes" target="v_redirect"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vi3" value="add_context" style="fontSize=8;" edge="1" parent="1" source="v_interrupt_yes" target="v_add_ctx"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Mode paths -->
+        <mxCell id="v_normal" value="Normal Mode&#xa;→ Full processing" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="580" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v_meeting" value="Meeting Mode&#xa;→ Log + selective response" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="820" y="580" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v_focus" value="Focus Mode&#xa;→ Direct Q only" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="580" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vm1" value="normal" style="fontSize=8;" edge="1" parent="1" source="v_mode_check" target="v_normal"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vm2" value="meeting" style="fontSize=8;" edge="1" parent="1" source="v_mode_check" target="v_meeting"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vm3" value="focus" style="fontSize=8;" edge="1" parent="1" source="v_mode_check" target="v_focus"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- OUTPUT PATH -->
+        <mxCell id="v_orch" value="CENTRAL&#xa;CONSCIOUSNESS&#xa;(Orchestrator)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="700" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_llm" value="[6] LLM Call&#xa;(streaming tokens)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="650" y="700" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_sentence" value="Sentence&#xa;Boundary&#xa;Detector" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="850" y="700" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_tts" value="[7] Kokoro-ONNX&#xa;TTS&#xa;(text → audio)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="700" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="v_normal_to_orch" style="rounded=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="v_normal" target="v_orch"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vo1" value="streaming&#xa;tokens" style="rounded=1;strokeWidth=2;strokeColor=#9673a6;fontSize=8;" edge="1" parent="1" source="v_orch" target="v_llm"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vo2" value="tokens" style="rounded=1;strokeWidth=2;strokeColor=#d6b656;fontSize=8;" edge="1" parent="1" source="v_llm" target="v_sentence"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vo3" value="complete&#xa;sentences" style="rounded=1;strokeWidth=2;strokeColor=#82b366;fontSize=8;" edge="1" parent="1" source="v_sentence" target="v_tts"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Final output -->
+        <mxCell id="v_ws_out" value="[8] WebSocket&#xa;Audio Stream&#xa;playback_state=PLAYING" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="810" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v_speaker" value="Speaker&#xa;(Client)" style="shape=parallelogram;perimeter=parallelogramPerimeter;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="920" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="v_playback_done" value="Client sends&#xa;playback_done&#xa;→ playback_state=IDLE&#xa;→ ACTIVE" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="830" y="920" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vo4" value="audio&#xa;chunks" style="rounded=1;strokeWidth=2;strokeColor=#b85450;fontSize=8;" edge="1" parent="1" source="v_tts" target="v_ws_out"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vo5" style="rounded=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="v_ws_out" target="v_speaker"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="vo6" value="done playing" style="rounded=1;strokeWidth=1;strokeColor=#82b366;dashed=1;fontSize=8;" edge="1" parent="1" source="v_speaker" target="v_playback_done"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Echo feedback loop annotation -->
+        <mxCell id="v_echo_loop" value="Echo feedback loop (prevented):&#xa;Speaker plays audio → Mic picks up → AEC subtracts speaker ref → Clean audio only&#xa;&#xa;ESP32: Hardware AEC (primary) — server never hears Vayumi's voice&#xa;Browser: Web Audio API + server-side gating (raised VAD threshold during PLAYING)" style="text;fontSize=10;align=left;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="810" width="500" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Latency note -->
+        <mxCell id="v_latency" value="Total latency target: ~500ms from user stops speaking to Vayumi starts speaking&#xa;Key: TTS starts on FIRST complete sentence while LLM is still generating the rest" style="text;fontSize=10;align=left;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="920" width="500" height="50" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page3" name="3. Orchestrator Turn Flow">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t_title" value="Orchestrator Turn Flow — What Happens Each Turn" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="350" y="20" width="500" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1: Input received -->
+        <mxCell id="t_input" value="1. Input Received&#xa;{text, speaker_id, user_id, mode}" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="80" width="250" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Step 2: Build context -->
+        <mxCell id="t_context" value="2. Context Builder Assembles LLM Input" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="160" width="250" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_ctx_detail" value="Load: system prompt + user profile + persona +&#xa;flags + memories (user-scoped) + skill/MCP registry +&#xa;conversation window + current input&#xa;&#xa;Trim to fit token budget (2500-4000 tokens)" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=9;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="770" y="130" width="320" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Step 3: LLM Intent -->
+        <mxCell id="t_llm_call" value="3. LLM Call (Orchestrator model — fast)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="240" width="250" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Step 4: Decision diamond -->
+        <mxCell id="t_decision" value="4. What type&#xa;of response?" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="510" y="320" width="190" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Branches -->
+        <mxCell id="t_simple" value="Simple Reply&#xa;(direct conversational)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="100" y="380" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t_mcp" value="MCP Tool Call&#xa;(web_search, reminder)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="310" y="480" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t_skill" value="Skill Execution&#xa;(multi-step task)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="570" y="480" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t_complex" value="Multi-Agent Loop&#xa;(search + reason + act)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="830" y="380" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Decision arrows -->
+        <mxCell id="td1" value="simple" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="t_decision" target="t_simple"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="td2" value="tool needed" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="t_decision" target="t_mcp"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="td3" value="skill needed" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="t_decision" target="t_skill"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="td4" value="complex" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="t_decision" target="t_complex"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- MCP Flow -->
+        <mxCell id="t_mcp_exec" value="Execute MCP&#xa;(API call)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="310" y="560" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_mcp_interpret" value="LLM interprets&#xa;result" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="310" y="620" width="170" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Skill Flow -->
+        <mxCell id="t_skill_load" value="Task Agent loads&#xa;SKILL.md" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="570" y="560" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_skill_plan" value="Plan + Execute&#xa;steps" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="570" y="620" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_skill_result" value="Return structured&#xa;result" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="570" y="680" width="170" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Multi-agent flow -->
+        <mxCell id="t_multi_search" value="Search Agent&#xa;finds info" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="830" y="460" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_multi_reason" value="Task Agent&#xa;reasons on results" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="830" y="520" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_multi_review" value="Self-review pass&#xa;(quality check)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="830" y="580" width="180" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows for sub-flows -->
+        <mxCell id="tm1" style="strokeWidth=1;" edge="1" parent="1" source="t_mcp" target="t_mcp_exec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="tm2" style="strokeWidth=1;" edge="1" parent="1" source="t_mcp_exec" target="t_mcp_interpret"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ts1" style="strokeWidth=1;" edge="1" parent="1" source="t_skill" target="t_skill_load"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ts2" style="strokeWidth=1;" edge="1" parent="1" source="t_skill_load" target="t_skill_plan"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ts3" style="strokeWidth=1;" edge="1" parent="1" source="t_skill_plan" target="t_skill_result"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="tc1" style="strokeWidth=1;" edge="1" parent="1" source="t_complex" target="t_multi_search"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="tc2" style="strokeWidth=1;" edge="1" parent="1" source="t_multi_search" target="t_multi_reason"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="tc3" style="strokeWidth=1;" edge="1" parent="1" source="t_multi_reason" target="t_multi_review"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- All converge to output -->
+        <mxCell id="t_output" value="5. Stream Response to Output Gateway" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="370" y="770" width="300" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_memory_bg" value="6. Memory Agent (background)&#xa;Decide if memorable → Summarize → Embed → Store&#xa;(tagged with user_id, never blocks response)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="370" y="840" width="380" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="to1" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="t_simple" target="t_output">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="185" y="770" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="to2" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="t_mcp_interpret" target="t_output">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="395" y="770" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="to3" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="t_skill_result" target="t_output">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="655" y="770" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="to4" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="t_multi_review" target="t_output">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="920" y="770" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="to5" value="async&#xa;(fire-and-forget)" style="strokeWidth=1;strokeColor=#d6b656;strokeDashArray=8 8;fontSize=8;" edge="1" parent="1" source="t_output" target="t_memory_bg"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Step arrows at top -->
+        <mxCell id="ts_1_2" style="strokeWidth=2;strokeColor=#333333;" edge="1" parent="1" source="t_input" target="t_context"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ts_2_3" style="strokeWidth=2;strokeColor=#333333;" edge="1" parent="1" source="t_context" target="t_llm_call"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ts_3_4" style="strokeWidth=2;strokeColor=#333333;" edge="1" parent="1" source="t_llm_call" target="t_decision"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page4" name="4. Context Switch + Memory Flow">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="c_title" value="Context Switch + Memory Flow" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="400" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- CONTEXT SWITCH FLOW (left side) -->
+        <mxCell id="cs_title" value="SPEAKER CONTEXT SWITCHING" style="text;fontSize=14;fontStyle=5;align=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="70" width="300" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cs_audio" value="Audio arrives" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="140" y="110" width="120" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cs_diarize" value="Diarizer extracts&#xa;voice embedding" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="140" y="170" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cs_match" value="Compare against&#xa;user's known contacts" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="140" y="230" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cs_decision" value="Match&#xa;found?" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="160" y="300" width="100" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cs_known" value="Load Known Persona&#xa;(tone, facts, access level)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="410" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="cs_guest" value="Create Guest Persona&#xa;(polite, neutral, no access)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="230" y="410" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cs_inject" value="Inject Persona&#xa;Context into LLM" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="110" y="500" width="170" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cs_hide" value="HIDE from non-owner:&#xa;• Private memories&#xa;• Email content&#xa;• Calendar details&#xa;• Financial data&#xa;• Reminders" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="310" y="490" width="160" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Context switch arrows -->
+        <mxCell id="ca1" style="strokeWidth=1;" edge="1" parent="1" source="cs_audio" target="cs_diarize"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ca2" style="strokeWidth=1;" edge="1" parent="1" source="cs_diarize" target="cs_match"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ca3" style="strokeWidth=1;" edge="1" parent="1" source="cs_match" target="cs_decision"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ca4" value="YES" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="cs_decision" target="cs_known"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ca5" value="NO" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="cs_decision" target="cs_guest"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ca6" style="strokeWidth=1;" edge="1" parent="1" source="cs_known" target="cs_inject"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ca7" style="strokeWidth=1;" edge="1" parent="1" source="cs_guest" target="cs_inject"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ca8" style="strokeWidth=1;strokeDashArray=4 4;" edge="1" parent="1" source="cs_inject" target="cs_hide"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Guest departure -->
+        <mxCell id="cs_depart_title" value="Guest Departure Detection" style="text;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="620" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="cs_silence" value="Speaker_2 silent&#xa;for 30 seconds" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="100" y="650" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cs_restore" value="Mark guest departed&#xa;Restore full context&#xa;for account owner" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="280" y="645" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ca9" style="strokeWidth=1;" edge="1" parent="1" source="cs_silence" target="cs_restore"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- MEMORY FLOW (right side) -->
+        <mxCell id="m_title" value="MEMORY READ + WRITE FLOW" style="text;fontSize=14;fontStyle=5;align=center;" vertex="1" parent="1">
+          <mxGeometry x="700" y="70" width="350" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Memory Read -->
+        <mxCell id="m_read_title" value="Memory Read (during context build)" style="text;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="100" width="300" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m_input" value="User input text" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="720" y="130" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="m_embed_q" value="Embed query&#xa;(all-MiniLM-L6-v2)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="710" y="185" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m_vector_q" value="ChromaDB query&#xa;filter: user_id&#xa;top_k: 5" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="710" y="245" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="m_time_check" value="Has time&#xa;reference?" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="890" y="240" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="m_sqlite_q" value="SQLite query&#xa;by date + user_id" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="245" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m_merge" value="Merge + Format&#xa;for context injection" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="710" y="320" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="m_persona_filter" value="Filter by persona&#xa;access level&#xa;(owner=all, guest=none)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="710" y="380" width="170" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="m_injected" value="Injected into context:&#xa;[RELEVANT MEMORIES]" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="710" y="445" width="180" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ma1" style="strokeWidth=1;" edge="1" parent="1" source="m_input" target="m_embed_q"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ma2" style="strokeWidth=1;" edge="1" parent="1" source="m_embed_q" target="m_vector_q"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ma3" style="strokeWidth=1;" edge="1" parent="1" source="m_vector_q" target="m_time_check"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ma4" value="YES" style="fontSize=8;" edge="1" parent="1" source="m_time_check" target="m_sqlite_q"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ma5" style="strokeWidth=1;" edge="1" parent="1" source="m_vector_q" target="m_merge"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ma6" style="strokeWidth=1;strokeDashArray=4 4;" edge="1" parent="1" source="m_sqlite_q" target="m_merge">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1105" y="340" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ma7" style="strokeWidth=1;" edge="1" parent="1" source="m_merge" target="m_persona_filter"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ma8" style="strokeWidth=1;" edge="1" parent="1" source="m_persona_filter" target="m_injected"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Memory Write -->
+        <mxCell id="mw_title" value="Memory Write (async, after response)" style="text;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="520" width="350" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_response" value="Vayumi responds&#xa;(not blocked)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="550" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_agent" value="Memory Agent&#xa;wakes up (async)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="700" y="610" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_memorable" value="Is this turn&#xa;memorable?" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="710" y="670" width="110" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_summarize" value="Summarize&#xa;(LLM call)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="870" y="670" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_embed" value="Embed text&#xa;(sentence-transformers)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="870" y="730" width="150" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_store_vec" value="Store in ChromaDB&#xa;(with user_id)" style="shape=cylinder3;size=6;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="870" y="790" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_store_sql" value="Store in SQLite&#xa;(if structured data)" style="shape=cylinder3;size=6;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="790" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="mw_skip" value="Skip&#xa;(not memorable)" style="text;fontSize=9;fontColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="650" y="760" width="100" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mwa1" value="async" style="strokeWidth=1;strokeDashArray=4 4;fontSize=8;" edge="1" parent="1" source="mw_response" target="mw_agent"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mwa2" style="strokeWidth=1;" edge="1" parent="1" source="mw_agent" target="mw_memorable"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mwa3" value="YES" style="fontSize=8;" edge="1" parent="1" source="mw_memorable" target="mw_summarize"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mwa4" value="NO" style="fontSize=8;fontColor=#999999;" edge="1" parent="1" source="mw_memorable" target="mw_skip"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mwa5" style="strokeWidth=1;" edge="1" parent="1" source="mw_summarize" target="mw_embed"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mwa6" style="strokeWidth=1;" edge="1" parent="1" source="mw_embed" target="mw_store_vec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mwa7" style="strokeWidth=1;strokeDashArray=4 4;" edge="1" parent="1" source="mw_embed" target="mw_store_sql"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page5" name="5. Multi-User Data Isolation">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="mu_title" value="Multi-User Data Isolation Model" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mu_subtitle" value="Same server, completely separate data — like separate accounts on the same platform" style="text;fontSize=11;align=center;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="55" width="600" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- SHARED INFRASTRUCTURE -->
+        <mxCell id="shared_infra" value="SHARED INFRASTRUCTURE (one instance)" style="swimlane;startSize=25;fontSize=12;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="90" width="1100" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_server" value="FastAPI Server" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="20" y="35" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_llm" value="LLM Router&#xa;(Groq + Gemini)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="150" y="35" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_tts" value="Kokoro TTS" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="300" y="35" width="100" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_stt" value="Groq Whisper STT" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="420" y="35" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_skills" value="Skill Registry" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="570" y="35" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_mcpreg" value="MCP Registry" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="700" y="35" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_embedder" value="Embedder&#xa;(MiniLM)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="830" y="35" width="100" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_rate" value="Global Rate&#xa;Limiter" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="shared_infra">
+          <mxGeometry x="950" y="35" width="100" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- USER A -->
+        <mxCell id="user_a_group" value="USER A (user_rahul)" style="swimlane;startSize=25;fontSize=12;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="240" width="500" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_session" value="Session A&#xa;(auth token → user_rahul)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="user_a_group">
+          <mxGeometry x="30" y="35" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_profile" value="Profile A&#xa;name: Rahul&#xa;tone: casual&#xa;goals: Build AI" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="user_a_group">
+          <mxGeometry x="260" y="35" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_memories" value="Memories A&#xa;(ChromaDB: user_id=user_rahul)&#xa;&#xa;• Discussed memory architecture&#xa;• Meeting with Prof. Sharma&#xa;• Vayumi project notes" style="shape=cylinder3;size=8;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="user_a_group">
+          <mxGeometry x="30" y="100" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_reminders" value="Reminders A&#xa;(SQLite: user_id=user_rahul)&#xa;&#xa;• Submit assignment 9am&#xa;• Call mom 6pm" style="shape=cylinder3;size=8;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="user_a_group">
+          <mxGeometry x="270" y="100" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_contacts" value="Contacts A&#xa;(user_rahul's people)&#xa;&#xa;• Prof. Sharma (professor)&#xa;• Rohan (friend)&#xa;• Mom (family)" style="shape=cylinder3;size=8;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="user_a_group">
+          <mxGeometry x="30" y="220" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_mcps" value="Enabled MCPs A&#xa;[web_search, gmail]" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="user_a_group">
+          <mxGeometry x="270" y="230" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_files" value="Files A&#xa;/var/vayumi/files/user_rahul/" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="user_a_group">
+          <mxGeometry x="270" y="290" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ua_rate" value="Rate Limit A: 10 rpm" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="user_a_group">
+          <mxGeometry x="30" y="340" width="150" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- USER B -->
+        <mxCell id="user_b_group" value="USER B (user_ananya)" style="swimlane;startSize=25;fontSize=12;fontStyle=1;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="240" width="500" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_session" value="Session B&#xa;(auth token → user_ananya)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="user_b_group">
+          <mxGeometry x="30" y="35" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_profile" value="Profile B&#xa;name: Ananya&#xa;tone: formal&#xa;goals: Research" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="user_b_group">
+          <mxGeometry x="260" y="35" width="120" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_memories" value="Memories B&#xa;(ChromaDB: user_id=user_ananya)&#xa;&#xa;• Research paper notes&#xa;• Lab meeting summary&#xa;• Conference deadlines" style="shape=cylinder3;size=8;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="user_b_group">
+          <mxGeometry x="30" y="100" width="220" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_reminders" value="Reminders B&#xa;(SQLite: user_id=user_ananya)&#xa;&#xa;• Paper review deadline&#xa;• Team standup 10am" style="shape=cylinder3;size=8;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="user_b_group">
+          <mxGeometry x="270" y="100" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_contacts" value="Contacts B&#xa;(user_ananya's people)&#xa;&#xa;• Dr. Patel (advisor)&#xa;• Rohan (lab partner)&#xa;• Priya (friend)" style="shape=cylinder3;size=8;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="user_b_group">
+          <mxGeometry x="30" y="220" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_mcps" value="Enabled MCPs B&#xa;[web_search, calendar]" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="user_b_group">
+          <mxGeometry x="270" y="230" width="170" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_files" value="Files B&#xa;/var/vayumi/files/user_ananya/" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="user_b_group">
+          <mxGeometry x="270" y="290" width="210" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="ub_rate" value="Rate Limit B: 10 rpm" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="user_b_group">
+          <mxGeometry x="30" y="340" width="150" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ISOLATION WALL -->
+        <mxCell id="wall" value="" style="line;strokeWidth=4;strokeColor=#b85450;strokeDashArray=12 6;" vertex="1" parent="1">
+          <mxGeometry x="650" y="240" width="1" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="wall_label" value="DATA ISOLATION&#xa;BOUNDARY&#xa;(no cross-access)" style="text;fontSize=10;fontStyle=1;fontColor=#b85450;align=center;rotation=-90;" vertex="1" parent="1">
+          <mxGeometry x="620" y="380" width="30" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Note -->
+        <mxCell id="mu_note" value="Note: Both users know 'Rohan' but as different people with different relationship contexts.&#xa;User A knows Rohan as a friend. User B knows Rohan as a lab partner. Completely separate contact entries." style="text;fontSize=10;align=left;fillColor=#f5f5f5;strokeColor=#999999;rounded=1;spacingLeft=10;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="100" y="655" width="800" height="35" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page6" name="6. Scenario: Meeting Mode Full Flow">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="mt_title" value="Scenario: Meeting Mode — Full Lifecycle" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="400" y="15" width="500" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_subtitle" value="What happens from activation through transcription to summary generation" style="text;fontSize=11;align=center;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="400" y="45" width="500" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- PHASE 1: ACTIVATION -->
+        <mxCell id="mt_phase1" value="PHASE 1: ACTIVATION" style="text;fontSize=13;fontStyle=5;fillColor=#dae8fc;strokeColor=#6c8ebf;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="80" width="200" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_trigger" value="User says:&#xa;&quot;Vayumi, meeting mode&quot;&#xa;OR presses button" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="115" width="190" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_stt1" value="STT transcribes&#xa;command" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="280" y="120" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_orch_detect" value="Orchestrator detects&#xa;mode switch intent" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="450" y="120" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_mode_switch" value="ModeManager.switch()&#xa;normal → meeting" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="650" y="120" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_config" value="Meeting mode config applied:&#xa;• Diarizer sensitivity: HIGH&#xa;• Response mode: SILENT (unless called)&#xa;• Transcript logging: ON&#xa;• Meeting record created in SQLite" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="850" y="105" width="280" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_confirm" value="Vayumi says:&#xa;&quot;Meeting mode started.&#xa;I'll be listening.&quot;" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="115" width="170" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mta1" style="strokeWidth=1;" edge="1" parent="1" source="mt_trigger" target="mt_stt1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mta2" style="strokeWidth=1;" edge="1" parent="1" source="mt_stt1" target="mt_orch_detect"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mta3" style="strokeWidth=1;" edge="1" parent="1" source="mt_orch_detect" target="mt_mode_switch"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mta4" style="strokeWidth=1;" edge="1" parent="1" source="mt_mode_switch" target="mt_config"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mta5" style="strokeWidth=1;" edge="1" parent="1" source="mt_config" target="mt_confirm"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- PHASE 2: DURING MEETING -->
+        <mxCell id="mt_phase2" value="PHASE 2: DURING MEETING (continuous loop)" style="text;fontSize=13;fontStyle=5;fillColor=#fff2cc;strokeColor=#d6b656;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="200" width="350" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mt_audio_in" value="Audio arrives&#xa;(multiple speakers)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="240" width="150" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_vad2" value="VAD detects&#xa;speech" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="240" y="240" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_stt2" value="STT transcribes&#xa;(continuous)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="390" y="240" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_diar2" value="Diarizer tags&#xa;speaker_id +&#xa;timestamp" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="235" width="130" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_log" value="Append to&#xa;meeting transcript:&#xa;{speaker, text, time}" style="shape=cylinder3;size=6;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="730" y="235" width="160" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mtb1" style="strokeWidth=1;" edge="1" parent="1" source="mt_audio_in" target="mt_vad2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtb2" style="strokeWidth=1;" edge="1" parent="1" source="mt_vad2" target="mt_stt2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtb3" style="strokeWidth=1;" edge="1" parent="1" source="mt_stt2" target="mt_diar2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtb4" style="strokeWidth=1;" edge="1" parent="1" source="mt_diar2" target="mt_log"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Decision: respond or stay silent -->
+        <mxCell id="mt_respond_check" value="Was Vayumi&#xa;called by name?" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="950" y="230" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_silent" value="Stay silent&#xa;(keep logging)" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="210" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_respond" value="Respond briefly&#xa;(minimal disruption)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="260" width="160" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mtb5" style="strokeWidth=1;" edge="1" parent="1" source="mt_log" target="mt_respond_check"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtb6" value="NO" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="mt_respond_check" target="mt_silent"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtb7" value="YES" style="fontSize=9;fontStyle=1;" edge="1" parent="1" source="mt_respond_check" target="mt_respond"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Loop arrow back -->
+        <mxCell id="mt_loop_label" value="Continuous loop — every speech segment goes through this" style="text;fontSize=9;fontColor=#666666;align=center;" vertex="1" parent="1">
+          <mxGeometry x="350" y="310" width="350" height="15" as="geometry" />
+        </mxCell>
+
+        <!-- PHASE 3: MULTI-SPEAKER EXAMPLE -->
+        <mxCell id="mt_phase3" value="PHASE 3: MULTI-SPEAKER TRANSCRIPT BUILDING" style="text;fontSize=13;fontStyle=5;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="345" width="400" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mt_timeline" value="Timeline Example (what gets logged):" style="text;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="380" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_t1" value="[10:00:05] Speaker_1 (Rahul): &quot;Let's discuss the project timeline&quot;" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="405" width="450" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_t2" value="[10:00:12] Speaker_2 (Prof. Sharma): &quot;When can you deliver phase 1?&quot;" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="435" width="450" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_t3" value="[10:00:20] Speaker_1 (Rahul): &quot;By end of next month if we scope it right&quot;" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="465" width="450" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_t4" value="[10:00:35] Speaker_3 (Unknown): &quot;What about the hardware component?&quot;" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="495" width="450" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_t5" value="[10:01:00] Speaker_1 (Rahul): &quot;Vayumi, what's on my calendar tomorrow?&quot;" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="525" width="450" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_t5_note" value="← Called by name!&#xa;Vayumi responds briefly:&#xa;&quot;Tomorrow you have 2 meetings.&quot;&#xa;Then goes back to silent logging." style="text;fontSize=9;align=left;fontColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="520" y="510" width="240" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- PHASE 4: END MEETING -->
+        <mxCell id="mt_phase4" value="PHASE 4: END MEETING" style="text;fontSize=13;fontStyle=5;fillColor=#f8cecc;strokeColor=#b85450;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="580" width="200" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mt_end_trigger" value="User says:&#xa;&quot;Vayumi, end meeting&quot;" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="620" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_mode_back" value="ModeManager.switch()&#xa;meeting → normal" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="250" y="620" width="160" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_gen_summary" value="LLM generates:&#xa;• Meeting summary&#xa;• Action items list&#xa;• Attendees list" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="610" width="180" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_store_meeting" value="Store in SQLite:&#xa;meetings table&#xa;(user_id, title,&#xa;notes, summary,&#xa;action_items,&#xa;attendees)" style="shape=cylinder3;size=6;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="670" y="605" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_store_mem" value="Store summary in&#xa;ChromaDB as&#xa;episodic memory&#xa;(user_id tagged)" style="shape=cylinder3;size=6;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="870" y="610" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_speak_summary" value="Vayumi speaks:&#xa;&quot;Meeting ended. Here's your&#xa;summary: 3 action items...&quot;" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="615" width="220" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mtc1" style="strokeWidth=2;strokeColor=#b85450;" edge="1" parent="1" source="mt_end_trigger" target="mt_mode_back"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtc2" style="strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="mt_mode_back" target="mt_gen_summary"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtc3" style="strokeWidth=1;" edge="1" parent="1" source="mt_gen_summary" target="mt_store_meeting"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtc4" style="strokeWidth=1;" edge="1" parent="1" source="mt_gen_summary" target="mt_store_mem"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtc5" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="mt_gen_summary" target="mt_speak_summary"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- PHASE 5: LATER RECALL -->
+        <mxCell id="mt_phase5" value="PHASE 5: LATER RECALL" style="text;fontSize=13;fontStyle=5;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="720" width="200" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_recall" value="Next day, user asks:&#xa;&quot;What did Prof. Sharma&#xa;say about the deadline?&quot;" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="760" width="200" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_vector_search" value="Context builder:&#xa;vector search for&#xa;&quot;Prof. Sharma deadline&quot;&#xa;(user_id scoped)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="290" y="760" width="180" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_finds" value="Finds meeting summary&#xa;from yesterday with&#xa;matching content" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="510" y="760" width="180" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="mt_answers" value="Vayumi answers:&#xa;&quot;In yesterday's meeting,&#xa;Prof. Sharma said the&#xa;deadline is March 15.&quot;" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="730" y="755" width="210" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mtd1" style="strokeWidth=1;" edge="1" parent="1" source="mt_recall" target="mt_vector_search"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtd2" style="strokeWidth=1;" edge="1" parent="1" source="mt_vector_search" target="mt_finds"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="mtd3" style="strokeWidth=1;" edge="1" parent="1" source="mt_finds" target="mt_answers"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page7" name="7. Scenario: Context Switch with Guest">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="gx_title" value="Scenario: Real-Time Context Switch When Guest Arrives" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="15" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Timeline visualization -->
+        <mxCell id="gx_timeline_line" value="" style="line;strokeWidth=3;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="80" y="60" width="1400" height="1" as="geometry" />
+        </mxCell>
+
+        <!-- T=0: Normal operation -->
+        <mxCell id="gx_t0_label" value="T=0" style="text;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="35" width="40" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t0" value="Rahul working with Vayumi&#xa;Mode: Normal&#xa;Context: Full (private memories, emails, reminders)&#xa;Tone: Casual, direct" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="75" width="300" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t0_ask" value="Rahul: &quot;Check my email from Prof. Sharma&quot;&#xa;Vayumi: &quot;Sure, Prof. Sharma sent you...&quot; (full email shown)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="155" width="350" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- T=1: New voice detected -->
+        <mxCell id="gx_t1_label" value="T=1" style="text;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="420" y="35" width="40" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t1_event" value="Diarizer detects NEW voice&#xa;(Speaker_2, not in contacts)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="390" y="75" width="230" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gx_t1_flow" value="1. Voice embedding extracted&#xa;2. Compared to Rahul's contacts → NO match or LOW confidence&#xa;3. Safe fallback: Persona Agent creates guest persona&#xa;4. Context Builder immediately:&#xa;   ✘ Hides private memories&#xa;   ✘ Hides email content&#xa;   ✘ Hides calendar details&#xa;   ✘ Hides reminders&#xa;   ✔ Keeps general knowledge&#xa;5. Tone shifts → polite, neutral" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="390" y="125" width="260" height="165" as="geometry" />
+        </mxCell>
+
+        <!-- T=2: Guest interaction -->
+        <mxCell id="gx_t2_label" value="T=2" style="text;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="700" y="35" width="40" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t2_guest" value="Guest: &quot;Is this Vayumi? Can I try?&quot;&#xa;Vayumi: &quot;Hi! Yes, I'm Vayumi. What's your name?&quot;&#xa;(polite tone, no private info exposed)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="680" y="75" width="310" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- T=3: Dual speaker handling -->
+        <mxCell id="gx_t3_label" value="T=3" style="text;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="700" y="140" width="40" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t3_dual" value="DUAL SPEAKER HANDLING" style="text;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="160" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t3_rahul" value="Rahul (Speaker_1):&#xa;&quot;Check my 3pm reminder&quot;&#xa;&#xa;Diarizer → Rahul (owner)&#xa;→ Full access restored for&#xa;   THIS response only&#xa;→ Vayumi: &quot;You have a 3pm&#xa;   meeting with the dean.&quot;" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="680" y="185" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t3_guest2" value="Guest (Speaker_2):&#xa;&quot;What's the weather?&quot;&#xa;&#xa;Diarizer → Guest (visitor)&#xa;→ No private access&#xa;→ Vayumi: &quot;Let me check...&#xa;   It's 28C and sunny.&quot;" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="960" y="185" width="220" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gx_t3_note" value="Key: Each response's context is built based on WHO spoke, not a global switch.&#xa;Rahul gets full access. Guest gets restricted access. Per-turn, per-speaker." style="text;fontSize=9;align=left;fontColor=#b85450;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="680" y="325" width="500" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- T=4: Guest leaves -->
+        <mxCell id="gx_t4_label" value="T=4" style="text;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="80" y="380" width="40" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t4_silence" value="Speaker_2 goes silent" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="410" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t4_timer" value="30-second silence&#xa;timer starts for&#xa;Speaker_2" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="260" y="405" width="140" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t4_depart" value="Timer expires →&#xa;Guest marked as&#xa;DEPARTED" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="405" width="150" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_t4_restore" value="Full context restored:&#xa;• Private memories: VISIBLE&#xa;• Emails: ACCESSIBLE&#xa;• Reminders: SHOWN&#xa;• Tone: back to casual" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="630" y="395" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gxe1" style="strokeWidth=1;" edge="1" parent="1" source="gx_t4_silence" target="gx_t4_timer"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="gxe2" value="30s" style="strokeWidth=1;fontSize=8;" edge="1" parent="1" source="gx_t4_timer" target="gx_t4_depart"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="gxe3" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="gx_t4_depart" target="gx_t4_restore"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Internal state diagram -->
+        <mxCell id="gx_state_title" value="INTERNAL STATE DURING THIS SCENARIO" style="text;fontSize=12;fontStyle=5;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="510" width="350" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gx_state_t0" value="T=0 State&#xa;active_speakers: [rahul]&#xa;persona_context: owner&#xa;memory_access: full&#xa;tone: casual" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="550" width="200" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_state_t1" value="T=1 State&#xa;active_speakers: [rahul, guest]&#xa;persona_context: mixed&#xa;memory_access: per-speaker&#xa;tone: per-speaker" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="300" y="550" width="220" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="gx_state_t4" value="T=4 State&#xa;active_speakers: [rahul]&#xa;persona_context: owner&#xa;memory_access: full&#xa;tone: casual (restored)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="570" y="550" width="220" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gxs1" value="guest arrives" style="strokeWidth=2;strokeColor=#d6b656;fontSize=8;" edge="1" parent="1" source="gx_state_t0" target="gx_state_t1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="gxs2" value="guest departs" style="strokeWidth=2;strokeColor=#82b366;fontSize=8;" edge="1" parent="1" source="gx_state_t1" target="gx_state_t4"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page8" name="8. Scenario: Skill Execution (URL via Text + Instant Feedback)">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="se_title" value="Scenario: Skill Execution — &quot;Read this website and summarize&quot;" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="15" width="700" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_subtitle" value="URL comes via text input (can't speak a URL). Shows instant feedback + background work + result streaming." style="text;fontSize=11;align=center;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="250" y="45" width="700" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1: User types URL in chat -->
+        <mxCell id="se_step1" value="1" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="85" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_user" value="User TYPES in chat UI:&#xa;&quot;Read this and tell me the&#xa;main points&#xa;https://example.com/article&quot;&#xa;&#xa;(OR says: &quot;Read that link&#xa;I just sent&quot; if URL was&#xa;typed a moment ago)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="70" y="75" width="250" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="se_input_note" value="TEXT INPUT PATH&#xa;(not voice — URLs can't be spoken)" style="text;fontSize=9;fontStyle=3;fontColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="70" y="200" width="250" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Step 2: handle_text_input dispatches -->
+        <mxCell id="se_step2" value="2" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="240" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_handler" value="ws/handler.py → handle_text_input()&#xa;→ process_user_turn(session, text,&#xa;   user_id, source=&quot;text&quot;)&#xa;&#xa;Same function as voice input uses —&#xa;voice and text converge here." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="70" y="232" width="290" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- Step 3: Context build -->
+        <mxCell id="se_step3" value="3" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="340" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_context" value="Context Builder assembles LLM input:&#xa;system prompt + Rahul's profile + skill registry&#xa;(registry includes web_reader: &quot;reads websites&quot;)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="70" y="335" width="340" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Step 4: Orchestrator detects long task + instant ack -->
+        <mxCell id="se_step4" value="4" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="410" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_orch" value="Orchestrator detects:&#xa;• URL + read intent → skill: web_reader&#xa;• This will take time (fetch + extract + summarize)&#xa;• INSTANT ACK FIRST" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;align=left;spacingLeft=5;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="400" width="310" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Step 4b: Instant acknowledgment -->
+        <mxCell id="se_step4b" value="4b" style="ellipse;fillColor=#82b366;fontColor=#ffffff;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="495" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_ack" value="INSTANT FEEDBACK (&lt; 500ms):&#xa;&#xa;Vayumi speaks: &quot;Sure, let me&#xa;read that for you.&quot;&#xa;&#xa;Streamed via stream_response()&#xa;→ text + TTS audio to client&#xa;&#xa;User hears Vayumi immediately —&#xa;no silence, no waiting." style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;fontStyle=1;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="70" y="485" width="310" height="150" as="geometry" />
+        </mxCell>
+
+        <!-- Step 5: Task Agent in background -->
+        <mxCell id="se_step5" value="5" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="85" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_task_load" value="BACKGROUND (while user heard the ack):&#xa;&#xa;Task Agent loads:&#xa;skills/web_reader/SKILL.md&#xa;&#xa;Reads instructions:&#xa;• Input: {url, question}&#xa;• Process: fetch → extract text&#xa;• Output: {success, result}" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;align=left;spacingLeft=5;strokeDashArray=4 4;" vertex="1" parent="1">
+          <mxGeometry x="510" y="75" width="260" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- Step 6: Skill run.py does extraction -->
+        <mxCell id="se_step6" value="6" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="230" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_skill_exec" value="Skill Runner executes:&#xa;web_reader/run.py&#xa;&#xa;run.py does ALL extraction:&#xa;• Fetches URL&#xa;• Strips HTML tags&#xa;• Extracts clean text&#xa;• Removes ads, nav, scripts&#xa;&#xa;output.json → {success: true,&#xa;   result: &quot;clean extracted text...&quot;}&#xa;&#xa;LLM NEVER sees raw HTML —&#xa;only clean text." style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="510" y="220" width="260" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Step 7: Task Agent summarizes with clean text -->
+        <mxCell id="se_step7" value="7" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="470" y="450" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_summarize" value="Task Agent: LLM call&#xa;&#xa;Input: CLEAN text only (not raw HTML)&#xa;Prompt: &quot;Summarize the main points.&quot;&#xa;&#xa;LLM returns structured summary." style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="510" y="440" width="280" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Step 8: Result streamed -->
+        <mxCell id="se_step8" value="8" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="85" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_assemble" value="Orchestrator formats result naturally.&#xa;Skill doc REMOVED from context.&#xa;Response returned to handler." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="910" y="80" width="280" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Step 9: stream_response again for result -->
+        <mxCell id="se_step9" value="9" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="165" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_stream" value="stream_response() — SAME function as ack:&#xa;&#xa;Pre-synthesize sentence 1&#xa;Sentence 1 plays ← sentence 2 synthesizing in parallel&#xa;Sentence 2 plays ← sentence 3 synthesizing in parallel&#xa;...&#xa;(1-sentence lookahead = gap-free speech)&#xa;&#xa;One streaming function for everything." style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="910" y="155" width="350" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- Step 10: Memory in background -->
+        <mxCell id="se_step10" value="10" style="ellipse;fillColor=#333333;fontColor=#ffffff;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="315" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="se_memory" value="BACKGROUND (async):&#xa;Memory Agent →&#xa;&quot;User read article from example.com&quot;&#xa;→ Embeds → ChromaDB (user_id tagged)&#xa;&#xa;Available for &quot;tell me later&quot; recall." style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;strokeDashArray=8 8;" vertex="1" parent="1">
+          <mxGeometry x="910" y="310" width="300" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Flow arrows -->
+        <mxCell id="sea1" style="strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="se_user" target="se_handler"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="sea2" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="se_handler" target="se_context"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="sea3" style="strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="se_context" target="se_orch"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="sea3b" value="instant" style="strokeWidth=3;strokeColor=#82b366;fontSize=8;fontStyle=1;" edge="1" parent="1" source="se_orch" target="se_ack"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="sea4" value="background&#xa;(after ack)" style="strokeWidth=2;strokeColor=#9673a6;fontSize=8;" edge="1" parent="1" source="se_orch" target="se_task_load">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="420" y="435" /><mxPoint x="420" y="140" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sea5" style="strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="se_task_load" target="se_skill_exec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="sea6" value="clean text" style="strokeWidth=2;strokeColor=#9673a6;fontSize=8;" edge="1" parent="1" source="se_skill_exec" target="se_summarize"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="sea7" value="formatted&#xa;result" style="strokeWidth=2;strokeColor=#6c8ebf;fontSize=8;" edge="1" parent="1" source="se_summarize" target="se_assemble">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="840" y="485" /><mxPoint x="840" y="108" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sea8" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="se_assemble" target="se_stream"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="sea9" value="async" style="strokeWidth=1;strokeColor=#d6b656;strokeDashArray=8 8;fontSize=8;" edge="1" parent="1" source="se_stream" target="se_memory"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- What user experiences -->
+        <mxCell id="se_ux_title" value="WHAT THE USER EXPERIENCES" style="text;fontSize=12;fontStyle=5;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="910" y="440" width="300" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="se_ux" value="1. User TYPES the URL in chat (can't speak a URL)&#xa;2. Vayumi immediately says &quot;Sure, let me read that&quot;&#xa;   (instant feedback — no silence)&#xa;3. Background: skill fetches + cleans + summarizes&#xa;4. Vayumi starts speaking the summary naturally&#xa;5. Summary streams sentence by sentence&#xa;6. Done — result also stored in memory for later recall" style="rounded=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="910" y="475" width="370" height="115" as="geometry" />
+        </mxCell>
+
+        <!-- Deferred variant callout -->
+        <mxCell id="se_defer_title" value="VARIANT: &quot;TELL ME LATER&quot;" style="text;fontSize=11;fontStyle=5;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="910" y="610" width="240" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="se_defer" value="User types: &quot;Read this, I'll ask later&quot; + URL&#xa;→ Ack: &quot;Got it, I'll read that and keep it ready.&quot;&#xa;→ Skill runs in background&#xa;→ Stored as deferred artifact metadata:&#xa;   artifact_type=deferred_read, source_url, created_at&#xa;→ Hours later, user asks &quot;What was that article?&quot;&#xa;→ Retrieval filters deferred artifacts first, then semantic rank&#xa;→ Vayumi answers from memory" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="910" y="645" width="370" height="115" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page9" name="9. WebSocket Handler — Single Entry Point">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="ws_title" value="WebSocket Handler — Single Entry Point Architecture" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="15" width="600" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ws_subtitle" value="One file. One entry function. All real-time communication flows through here." style="text;fontSize=11;align=center;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="45" width="600" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Client connects -->
+        <mxCell id="ws_client" value="Client Connects&#xa;(Browser / ESP32 / Mobile)&#xa;via WebSocket" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="90" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- websocket_endpoint() -->
+        <mxCell id="ws_entry" value="websocket_endpoint(websocket)&#xa;&#xa;THE SINGLE ENTRY POINT&#xa;(ws/handler.py)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="400" y="80" width="300" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Auth phase -->
+        <mxCell id="ws_auth" value="authenticate_connection()&#xa;&#xa;1. Receive first message (canonical auth path)&#xa;2. Validate JWT token&#xa;3. Optional legacy fallback: query-param token&#xa;4. Extract user_id&#xa;5. Create Session object&#xa;6. Send auth_ok + session_id" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="80" y="200" width="250" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Auth fail -->
+        <mxCell id="ws_auth_fail" value="Auth Failed?&#xa;→ send auth_error&#xa;→ close(4003)&#xa;→ return None" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="80" y="330" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Session created -->
+        <mxCell id="ws_session" value="Session Created:&#xa;• session_id&#xa;• user_id (bound)&#xa;• websocket ref&#xa;• mode: normal&#xa;• working_memory: []&#xa;• task_state: idle" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="390" y="200" width="180" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Message loop -->
+        <mxCell id="ws_loop" value="message_loop(session, websocket)&#xa;&#xa;async for msg in websocket.iter_json():&#xa;    handler = MESSAGE_HANDLERS[msg.type]&#xa;    await handler(session, msg)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;fontStyle=1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="200" width="350" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Handler dispatch table -->
+        <mxCell id="ws_dispatch_title" value="MESSAGE_HANDLERS dict (7 handlers)" style="text;fontSize=12;fontStyle=5;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- wake handler -->
+        <mxCell id="ws_h_wake" value="&quot;wake&quot;&#xa;handle_wake()&#xa;&#xa;→ activation_state = ACTIVE&#xa;→ start 30s timer&#xa;→ send status: listening" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="80" y="380" width="170" height="95" as="geometry" />
+        </mxCell>
+
+        <!-- audio_chunk handler -->
+        <mxCell id="ws_h_audio" value="&quot;audio_chunk&quot;&#xa;handle_audio_chunk()&#xa;&#xa;→ if SLEEP: ignore&#xa;→ base64 decode&#xa;→ echo-aware VAD&#xa;→ if SPEAKING: interrupt_handler&#xa;→ STT → Diarizer&#xa;→ process_user_turn(source=voice)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="265" y="380" width="210" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- text_input handler -->
+        <mxCell id="ws_h_text" value="&quot;text_input&quot;&#xa;handle_text_input()&#xa;&#xa;→ auto-wake if SLEEP&#xa;→ process_user_turn(source=text)&#xa;&#xa;Used for URLs, written commands." style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="490" y="380" width="200" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- interrupt handler -->
+        <mxCell id="ws_h_interrupt" value="&quot;interrupt&quot;&#xa;handle_interrupt()&#xa;&#xa;→ read msg.action&#xa;→ interrupt_handler.handle()&#xa;  (stop/redirect/add_context)&#xa;→ playback_state = IDLE" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="80" y="520" width="195" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- playback_done handler -->
+        <mxCell id="ws_h_playback" value="&quot;playback_done&quot;&#xa;handle_playback_done()&#xa;&#xa;→ playback_state = IDLE&#xa;→ activation_state = ACTIVE&#xa;→ reset 30s timer&#xa;&#xa;Closes the echo gating cycle." style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="290" y="520" width="200" height="115" as="geometry" />
+        </mxCell>
+
+        <!-- mode_switch handler -->
+        <mxCell id="ws_h_mode" value="&quot;mode_switch&quot;&#xa;handle_mode_switch()&#xa;&#xa;→ mode_manager.switch()&#xa;→ send mode_changed" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="505" y="520" width="170" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- speaker_label handler -->
+        <mxCell id="ws_h_speaker" value="&quot;speaker_label&quot;&#xa;handle_speaker_label()&#xa;&#xa;→ persona_agent.label()" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="690" y="520" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- CONVERGENCE: process_user_turn -->
+        <mxCell id="ws_converge_title" value="CONVERGENCE POINT" style="text;fontSize=12;fontStyle=5;fillColor=#82b366;fontColor=#ffffff;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="200" y="640" width="200" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ws_process" value="process_user_turn(session, text, speaker_id, source)&#xa;&#xa;Voice and text input BOTH call this same function.&#xa;OWNS all state transitions for SPEAKING/PLAYING.&#xa;&#xa;1. If task_state=running → queue input, return&#xa;2. Append to working_memory&#xa;3. Send status: processing&#xa;4. context_builder.build(session, text, speaker_id)&#xa;5. orchestrator.run(session, context, text)&#xa;6. Set activation_state=SPEAKING, playback_state=PLAYING&#xa;7. If result is {ack, result} → stream_response(ack) then stream_response(result)&#xa;   Otherwise → stream_response(result)&#xa;8. memory_agent.process_turn() — background async&#xa;9. _drain_input_queue(): cancel intent → discard all; else → process LAST only&#xa;   (State reset happens when client sends playback_done)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=10;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="120" y="690" width="460" height="230" as="geometry" />
+        </mxCell>
+
+        <!-- stream_response -->
+        <mxCell id="ws_stream" value="stream_response(session, response)&#xa;&#xa;ONE function for ALL responses:&#xa;• Does NOT set activation/playback state&#xa;• Caller owns state transitions&#xa;• 1-SENTENCE TTS LOOKAHEAD:&#xa;  Pre-synthesizes sentence N+1 while N plays&#xa;  (eliminates gaps in speech)&#xa;&#xa;For each sentence:&#xa;  → await pre-synthesized audio (already done)&#xa;  → start synthesizing NEXT sentence&#xa;  → send response_text (text)&#xa;  → send audio_chunk (base64 in JSON)&#xa;  → check activation_state==INTERRUPTED? → cancel + break&#xa;  → send is_final when done" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="650" y="690" width="290" height="230" as="geometry" />
+        </mxCell>
+
+        <!-- Cleanup -->
+        <mxCell id="ws_cleanup" value="cleanup_session()&#xa;&#xa;Guaranteed via try/finally:&#xa;• Cancel running tasks&#xa;• Flush working memory&#xa;• Remove session from store" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="680" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Flow arrows -->
+        <mxCell id="wsa1" style="strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="ws_client" target="ws_entry"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="wsa2" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="ws_entry" target="ws_auth"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="wsa3" value="fail" style="strokeWidth=1;strokeColor=#b85450;fontSize=8;" edge="1" parent="1" source="ws_auth" target="ws_auth_fail"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="wsa4" value="success" style="strokeWidth=2;strokeColor=#6c8ebf;fontSize=8;" edge="1" parent="1" source="ws_auth" target="ws_session"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="wsa5" style="strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="ws_session" target="ws_loop"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="wsa6" style="strokeWidth=1;strokeColor=#6c8ebf;" edge="1" parent="1" source="ws_loop" target="ws_h_audio">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="190" y="380" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="wsa7" style="strokeWidth=1;strokeColor=#6c8ebf;" edge="1" parent="1" source="ws_loop" target="ws_h_text">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="430" y="380" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="wsa8" style="strokeWidth=1;strokeColor=#b85450;" edge="1" parent="1" source="ws_loop" target="ws_h_interrupt">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="655" y="380" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="wsa9" style="strokeWidth=1;strokeColor=#d6b656;" edge="1" parent="1" source="ws_loop" target="ws_h_mode">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="855" y="380" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="wsa10" style="strokeWidth=1;strokeColor=#d6b656;" edge="1" parent="1" source="ws_loop" target="ws_h_speaker">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1045" y="380" /></Array></mxGeometry>
+        </mxCell>
+
+        <!-- Converge arrows -->
+        <mxCell id="wsc1" value="voice path" style="strokeWidth=2;strokeColor=#6c8ebf;fontSize=8;strokeDashArray=4 4;" edge="1" parent="1" source="ws_h_audio" target="ws_process"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="wsc2" value="text path" style="strokeWidth=2;strokeColor=#6c8ebf;fontSize=8;strokeDashArray=4 4;" edge="1" parent="1" source="ws_h_text" target="ws_process"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="wsc3" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="ws_process" target="ws_stream"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Disconnect -->
+        <mxCell id="wsd1" value="disconnect" style="strokeWidth=1;strokeColor=#b85450;strokeDashArray=4 4;fontSize=8;" edge="1" parent="1" source="ws_entry" target="ws_cleanup">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1130" y="115" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Design callout -->
+        <mxCell id="ws_why_title" value="WHY THIS DESIGN" style="text;fontSize=11;fontStyle=5;fillColor=#333333;fontColor=#ffffff;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="810" width="180" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="ws_why" value="• One file → easy to find any bug&#xa;• Dict dispatch → no if/elif chains&#xa;• New msg type = 1 function + 1 dict entry&#xa;• Voice + text → same process function&#xa;• All responses → same stream function&#xa;• Guaranteed cleanup on disconnect" style="rounded=1;fillColor=#f5f5f5;strokeColor=#333333;fontSize=9;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="845" width="280" height="105" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="page10" name="10. Wake Word + Echo State Machine">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="w_title" value="Wake Word, Activation States, and Echo Gating" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="350" y="20" width="600" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ============ ACTIVATION STATE MACHINE ============ -->
+        <mxCell id="w_section1" value="Activation State Machine (session.activation_state)" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="80" width="400" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- SLEEP state -->
+        <mxCell id="w_sleep" value="SLEEP&#xa;&#xa;ESP32: wake word listening (ESP-SR)&#xa;Browser: mic off, UI shows 'sleeping'&#xa;No audio streaming to server" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="50" y="140" width="260" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ACTIVE state -->
+        <mxCell id="w_active" value="ACTIVE&#xa;&#xa;Listening for user speech&#xa;VAD at normal sensitivity&#xa;30s silence timer running&#xa;playback_state = IDLE" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="500" y="140" width="260" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- SPEAKING state -->
+        <mxCell id="w_speaking" value="SPEAKING&#xa;&#xa;TTS audio playing on client&#xa;VAD at RAISED threshold (echo gating)&#xa;playback_state = PLAYING&#xa;Only loud sustained speech or&#xa;wake word triggers interrupt" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="950" y="140" width="280" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- INTERRUPTED state -->
+        <mxCell id="w_interrupted" value="INTERRUPTED&#xa;&#xa;TTS paused (add_context)&#xa;Processing new context&#xa;playback_state = IDLE" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="950" y="340" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Transitions -->
+        <mxCell id="w_t1" value="wake word detected&#xa;or button pressed&#xa;→ send {type:wake}" style="rounded=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=9;" edge="1" parent="1" source="w_sleep" target="w_active"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="w_t2" value="30s silence timeout&#xa;→ send {type:sleep}" style="rounded=1;strokeWidth=2;strokeColor=#666666;fontSize=9;" edge="1" parent="1" source="w_active" target="w_sleep">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="400" y="280" /><mxPoint x="300" y="280" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="w_t3" value="Vayumi starts speaking&#xa;(stream_response begins)&#xa;playback_state → PLAYING" style="rounded=1;strokeWidth=2;strokeColor=#82b366;fontSize=9;" edge="1" parent="1" source="w_active" target="w_speaking"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="w_t4" value="Client sends playback_done&#xa;playback_state → IDLE&#xa;Timer resets (30s)" style="rounded=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=9;" edge="1" parent="1" source="w_speaking" target="w_active">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="820" y="130" /><mxPoint x="750" y="130" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="w_t5" value="User interrupts (stop/redirect)&#xa;via wake word or echo-cancelled speech" style="rounded=1;strokeWidth=2;strokeColor=#b85450;fontSize=9;" edge="1" parent="1" source="w_speaking" target="w_active">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="820" y="300" /><mxPoint x="750" y="300" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="w_t6" value="add_context interrupt&#xa;TTS paused" style="rounded=1;strokeWidth=2;strokeColor=#b85450;fontSize=9;" edge="1" parent="1" source="w_speaking" target="w_interrupted"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="w_t7" value="Context merged&#xa;Resume or regen" style="rounded=1;strokeWidth=2;strokeColor=#6c8ebf;fontSize=9;" edge="1" parent="1" source="w_interrupted" target="w_active">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="750" y="390" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- User turn resets -->
+        <mxCell id="w_turn_reset" value="Every user turn&#xa;(speech or text)&#xa;resets 30s timer" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="530" y="300" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="w_tr1" style="rounded=1;strokeWidth=1;strokeColor=#d6b656;dashed=1;" edge="1" parent="1" source="w_turn_reset" target="w_active"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ============ ECHO GATING DETAIL ============ -->
+        <mxCell id="w_section2" value="Echo Gating Detail (what happens to audio during each state)" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="490" width="500" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Echo flow -->
+        <mxCell id="w_audio_in" value="Audio from&#xa;Client" style="shape=parallelogram;perimeter=parallelogramPerimeter;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="550" width="120" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_state_check" value="activation_state?" style="rhombus;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="240" y="540" width="150" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_sleep_drop" value="SLEEP → DROP&#xa;(no processing)" style="rounded=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="240" y="660" width="150" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_active_vad" value="ACTIVE → Normal VAD&#xa;(standard threshold)" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="480" y="540" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_speaking_check" value="SPEAKING →&#xa;playback_state?" style="rhombus;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="730" y="530" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_playing" value="PLAYING:&#xa;Raised energy threshold&#xa;+ min 300ms sustained&#xa;Short bursts IGNORED" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="960" y="520" width="190" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_idle_vad" value="IDLE:&#xa;Normal threshold&#xa;(shouldn't happen —&#xa;SPEAKING implies PLAYING)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="960" y="620" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_e1" style="strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="w_audio_in" target="w_state_check"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_e2" value="SLEEP" style="strokeWidth=2;strokeColor=#666666;fontSize=9;" edge="1" parent="1" source="w_state_check" target="w_sleep_drop"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_e3" value="ACTIVE" style="strokeWidth=2;strokeColor=#6c8ebf;fontSize=9;" edge="1" parent="1" source="w_state_check" target="w_active_vad"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_e4" value="SPEAKING" style="strokeWidth=2;strokeColor=#82b366;fontSize=9;" edge="1" parent="1" source="w_state_check" target="w_speaking_check"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_e5" value="PLAYING" style="strokeWidth=2;strokeColor=#b85450;fontSize=9;" edge="1" parent="1" source="w_speaking_check" target="w_playing"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_e6" value="IDLE" style="strokeWidth=2;strokeColor=#82b366;fontSize=9;" edge="1" parent="1" source="w_speaking_check" target="w_idle_vad"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- STT result from interrupt -->
+        <mxCell id="w_stt_result" value="If speech passes VAD:&#xa;STT → classify → interrupt type&#xa;(stop / redirect / add_context)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="960" y="440" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="w_e7" style="strokeWidth=1;strokeColor=#9673a6;dashed=1;" edge="1" parent="1" source="w_playing" target="w_stt_result"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ============ ESP32 AEC DETAIL ============ -->
+        <mxCell id="w_section3" value="ESP32-S3-AUDIO-Board: Hardware AEC Pipeline" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="50" y="750" width="400" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_es7210" value="ES7210&#xa;Dual Mic Array&#xa;(I2S ADC)" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="810" width="130" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="w_adf_aec" value="ESP-ADF&#xa;AEC" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="240" y="810" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="w_adf_ns" value="NS&#xa;(Noise Supp.)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="400" y="810" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="w_adf_bss" value="BSS&#xa;(Source Sep.)" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="570" y="810" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="w_clean" value="Clean Audio&#xa;→ WebSocket&#xa;→ Server" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="740" y="810" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_es8311" value="ES8311&#xa;Speaker DAC&#xa;(I2S output)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="240" y="920" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_p1" style="strokeWidth=2;strokeColor=#d6b656;" edge="1" parent="1" source="w_es7210" target="w_adf_aec"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_p2" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="w_adf_aec" target="w_adf_ns"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_p3" style="strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="w_adf_ns" target="w_adf_bss"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_p4" style="strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="w_adf_bss" target="w_clean"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="w_p5" value="reference signal&#xa;(what speaker is playing)" style="strokeWidth=2;strokeColor=#b85450;dashed=1;fontSize=8;" edge="1" parent="1" source="w_es8311" target="w_adf_aec"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Wake word -->
+        <mxCell id="w_espsr" value="ESP-SR&#xa;Wake Word&#xa;'Hi Vayumi'" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="570" y="920" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="w_wake_out" value="Detected →&#xa;{type: wake}&#xa;Start streaming" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="740" y="920" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="w_p6" value="clean audio&#xa;(AEC output)" style="strokeWidth=1;strokeColor=#9673a6;dashed=1;fontSize=8;" edge="1" parent="1" source="w_adf_bss" target="w_espsr">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="625" y="890" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="w_p7" style="strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="w_espsr" target="w_wake_out"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- LED -->
+        <mxCell id="w_led" value="LED Ring Status:&#xa;Dim = SLEEP | Blue = ACTIVE | Yellow = PROCESSING&#xa;White = SPEAKING | Red = Error" style="text;fontSize=10;align=left;fillColor=#f5f5f5;strokeColor=#666666;rounded=1;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1020" width="450" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Meeting mode note -->
+        <mxCell id="w_meeting_note" value="Meeting Mode Exception:&#xa;Active window timer DISABLED — stays ACTIVE for entire meeting&#xa;Wake word needed only for directing commands to Vayumi, not for logging" style="text;fontSize=10;align=left;fillColor=#fff2cc;strokeColor=#d6b656;rounded=1;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1090" width="500" height="50" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
