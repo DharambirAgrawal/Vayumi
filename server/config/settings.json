@@ -9,8 +9,8 @@
     "vectordb_path": "data/vectordb"
   },
   "tts": {
-    "model_path": "kokoro-v0_19.onnx",
-    "voices_path": "voices.bin",
+    "model_path": "models/kokoro-v0_19.onnx",
+    "voices_path": "models/voices.bin",
     "default_voice": "af",
     "default_speed": 1.0
   },

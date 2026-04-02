@@ -11,7 +11,7 @@
 #   1. Initialize SQLite database (WAL mode, create tables if not exist)
 #   2. Initialize ChromaDB persistent client
 #   3. Load SpeechBrain ECAPA-TDNN model (speaker encoder — ~400MB, cached)
-#   4. Load Kokoro-ONNX TTS model
+#   4. Load Kokoro-ONNX TTS model (server/models/kokoro-v0_19.onnx + server/models/voices.bin)
 #   5. Load sentence-transformers embedding model (all-MiniLM-L6-v2)
 #   6. Load silero-vad model
 #   7. Initialize LLMRouter (Groq primary, Gemini fallback)
@@ -63,8 +63,8 @@ from server.mcps.mcp_runner import MCPRunner
 async def lifespan(app: FastAPI):
     # --- STARTUP ---
     # TODO: Initialize all shared services here:
-    #   app.state.sqlite_store = SQLiteStore("data/vayumi.db")
-    #   app.state.vector_store = VectorStore("data/vectordb")
+    #   app.state.sqlite_store = SQLiteStore()  # default: server.paths.DEFAULT_SQLITE_DB
+    #   app.state.vector_store = VectorStore()  # default: server.paths.DEFAULT_VECTORDB_DIR
     #   app.state.embedder = Embedder()
     #   app.state.stt = STTEngine()
     #   app.state.tts = TTSEngine()

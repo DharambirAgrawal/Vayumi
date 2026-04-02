@@ -1013,7 +1013,7 @@ class SpeakerIdentifier:
     def __init__(self):
         self.encoder = EncoderClassifier.from_hparams(
             source="speechbrain/spkrec-ecapa-voxceleb",
-            savedir="models/speaker_encoder"
+            savedir="server/models/speaker_encoder"
         )
         self.session_speakers = {}
 
@@ -1250,7 +1250,9 @@ import numpy as np
 import io, wave
 
 class TTSEngine:
-    def __init__(self, model_path="kokoro-v0_19.onnx", voices_path="voices.bin"):
+    # Default paths: server/models/kokoro-v0_19.onnx and server/models/voices.bin
+    # (see server.paths.DEFAULT_KOKORO_ONNX, DEFAULT_KOKORO_VOICES)
+    def __init__(self, model_path="server/models/kokoro-v0_19.onnx", voices_path="server/models/voices.bin"):
         self.tts = Kokoro(model_path, voices_path)
         self.default_voice = "af"
         self._stopped = False
@@ -2024,7 +2026,8 @@ ChromaDB is used for Phase 1. For production with multiple users and larger data
 ```python
 import chromadb
 
-client = chromadb.PersistentClient(path="data/vectordb")
+# Runtime default: server.paths.DEFAULT_VECTORDB_DIR → <repo>/server/data/vectordb
+client = chromadb.PersistentClient(path="server/data/vectordb")
 
 memory_collection = client.get_or_create_collection(
     name="episodic_memory",
@@ -2101,7 +2104,8 @@ SQLite has write-locking limitations. With multiple background agents writing as
 ```python
 import sqlite3
 
-conn = sqlite3.connect("data/vayumi.db")
+# Runtime default: server.paths.DEFAULT_SQLITE_DB → <repo>/server/data/vayumi.db
+conn = sqlite3.connect("server/data/vayumi.db")
 conn.execute("PRAGMA journal_mode=WAL")
 conn.execute("PRAGMA busy_timeout=5000")
 ```
@@ -2473,6 +2477,7 @@ ChromaDB setup (episodic memory, user-scoped)
 ```text
 vayumi/
 ├── server/
+│   ├── paths.py                    ← Resolved server/data and server/models paths (cwd-independent)
 │   ├── main.py                     ← FastAPI app entrypoint, mounts routes
 │   ├── ws/
 │   │   └── handler.py              ← Unified WebSocket handler (single entry point)
@@ -2516,8 +2521,15 @@ vayumi/
 │   │   ├── router.py               ← LLMRouter (Groq primary, Gemini fallback)
 │   │   ├── groq_client.py          ← Groq API wrapper
 │   │   └── gemini_client.py        ← Gemini API wrapper
-│   └── config/
-│       └── settings.json           ← Server-level settings (ports, paths, limits)
+│   ├── config/
+│   │   └── settings.json           ← Server-level settings (ports, paths, limits)
+│   ├── data/
+│   │   ├── vayumi.db               ← SQLite (users, reminders, meetings, etc.)
+│   │   └── vectordb/               ← ChromaDB persistent
+│   └── models/
+│       ├── kokoro-v0_19.onnx       ← Kokoro TTS (download separately)
+│       ├── voices.bin              ← Kokoro voice embeddings (download separately)
+│       └── speaker_encoder/        ← SpeechBrain ECAPA cache (downloaded on first run)
 ├── client/
 │   ├── browser/
 │   │   ├── index.html
@@ -2532,9 +2544,6 @@ vayumi/
 │       │   └── led.c              ← RGB LED ring status (sleep/active/speaking/error)
 │       ├── CMakeLists.txt
 │       └── sdkconfig               ← ESP-IDF build config
-├── data/
-│   ├── vayumi.db                   ← SQLite (users, reminders, meetings, etc.)
-│   └── vectordb/                   ← ChromaDB persistent
 ├── requirements.txt
 └── README.md
 ```
@@ -2594,7 +2603,7 @@ Data isolation by design. No code path can accidentally leak data between users.
 
 | Model | Size | Purpose |
 |---|---|---|
-| `kokoro-v0_19.onnx` + `voices.bin` | ~80MB | Local TTS |
+| `server/models/kokoro-v0_19.onnx` + `server/models/voices.bin` | ~80MB | Local TTS (place files here) |
 | `all-MiniLM-L6-v2` | ~80MB | Local text embeddings (auto-downloaded by sentence-transformers) |
 | `spkrec-ecapa-voxceleb` | ~400MB | Speaker verification embeddings (auto-downloaded by SpeechBrain on first run) |
 

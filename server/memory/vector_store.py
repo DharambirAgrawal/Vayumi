@@ -8,7 +8,7 @@
 #   Used for episodic memory storage and retrieval.
 #
 # STORAGE:
-#   Phase 1: ChromaDB PersistentClient (local, file-based at data/vectordb/)
+#   Phase 1: ChromaDB PersistentClient (local, file-based at server/data/vectordb/)
 #   Production: Migrate to Qdrant hosted when:
 #     - Any single user exceeds ~50,000 memory entries
 #     - Total entries across all users exceed ~200,000
@@ -19,7 +19,8 @@
 #
 # CLASS: VectorStore
 #
-#   __init__(self, persist_path: str = "data/vectordb"):
+#   __init__(self, persist_path: str | Path | None = None):
+#     Default: server.paths.DEFAULT_VECTORDB_DIR
 #     - Creates ChromaDB PersistentClient at persist_path
 #     - Gets or creates "episodic_memory" collection with cosine similarity
 #
@@ -52,11 +53,16 @@
 # =============================================================================
 
 import chromadb
+from pathlib import Path
+
+from server.paths import DEFAULT_VECTORDB_DIR
 
 
 class VectorStore:
-    def __init__(self, persist_path: str = "data/vectordb"):
-        self.client = chromadb.PersistentClient(path=persist_path)
+    def __init__(self, persist_path: str | Path | None = None):
+        path = Path(persist_path) if persist_path is not None else DEFAULT_VECTORDB_DIR
+        path.mkdir(parents=True, exist_ok=True)
+        self.client = chromadb.PersistentClient(path=str(path))
         self.collection = self.client.get_or_create_collection(
             name="episodic_memory",
             metadata={"hnsw:space": "cosine"},

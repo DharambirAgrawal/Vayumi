@@ -9,7 +9,7 @@
 #   episodes, and injected flags.
 #
 # DATABASE SETUP:
-#   Path: data/vayumi.db
+#   Default path: server/data/vayumi.db (see server.paths.DEFAULT_SQLITE_DB)
 #   Pragmas (set at connection time):
 #     PRAGMA journal_mode=WAL     — better concurrent read/write performance
 #     PRAGMA busy_timeout=5000    — wait up to 5s on lock contention
@@ -29,7 +29,8 @@
 #
 # CLASS: SQLiteStore
 #
-#   __init__(self, db_path: str = "data/vayumi.db"):
+#   __init__(self, db_path: str | Path | None = None):
+#     Default: server.paths.DEFAULT_SQLITE_DB
 #     - Opens connection with WAL mode and busy timeout
 #     - Calls init_db() to create tables if not exist
 #
@@ -117,13 +118,17 @@
 import json
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
 from server.auth.models import UserAccount
+from server.paths import DEFAULT_SQLITE_DB
 
 
 class SQLiteStore:
-    def __init__(self, db_path: str = "data/vayumi.db"):
-        self.conn = sqlite3.connect(db_path)
+    def __init__(self, db_path: str | Path | None = None):
+        path = Path(db_path) if db_path is not None else DEFAULT_SQLITE_DB
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(path)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.row_factory = sqlite3.Row

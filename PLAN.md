@@ -23,14 +23,23 @@ vayumi/
 │   ├── mcps/        ← Callable tool integrations
 │   ├── memory/      ← Storage wrappers (SQLite, ChromaDB, embeddings)
 │   ├── llm/         ← LLM routing and API clients
-│   └── config/      ← Server settings
+│   ├── config/      ← Server settings
+│   ├── data/        ← Persistent data (SQLite DB, ChromaDB vector store)
+│   └── models/      ← Downloaded ML weights (e.g. SpeechBrain speaker encoder cache)
 ├── client/          ← Frontend clients
 │   ├── browser/     ← Web UI
 │   └── esp32/       ← ESP32-S3-AUDIO-Board firmware (ESP-IDF + ESP-ADF)
-├── data/            ← Persistent data (SQLite DB, vector DB)
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## server/paths.py
+
+**Purpose:** Single source of truth for filesystem paths under the `server/` package. Resolves `server/data/` (SQLite, ChromaDB) and `server/models/` (downloaded weights) using `Path(__file__)`, so locations stay correct regardless of process working directory.
+
+**Exports:** `SERVER_ROOT`, `DATA_DIR`, `MODELS_DIR`, `DEFAULT_SQLITE_DB`, `DEFAULT_VECTORDB_DIR`, `DEFAULT_KOKORO_ONNX`, `DEFAULT_KOKORO_VOICES`, `DEFAULT_SPEAKER_ENCODER_CACHE`.
 
 ---
 
@@ -410,7 +419,7 @@ New sessions start with `activation_state="SLEEP"`, `playback_state="IDLE"`, `ta
 - Yields audio chunks for immediate playback
 - Sentence boundary detection: `.`, `!`, `?`, or long pause markers
 
-**Depends on:** kokoro-onnx library, model files (kokoro-v0_19.onnx, voices.bin)
+**Depends on:** kokoro-onnx library; model files in `server/models/`: `kokoro-v0_19.onnx`, `voices.bin` (see `server.paths.DEFAULT_KOKORO_*`).
 
 ---
 
@@ -617,7 +626,7 @@ Each entry has: `name`, `description`, `when_to_use` (for always-on), `requires_
 - Connection initialization with WAL mode
 
 **Key logic:**
-- `__init__`: connects to `data/vayumi.db`, enables WAL mode, creates tables if not exist
+- `__init__`: connects to `server.paths.DEFAULT_SQLITE_DB` (i.e. `server/data/vayumi.db`), enables WAL mode, creates tables if not exist
 - Every query includes `WHERE user_id = ?` (except user lookup by email for login)
 - Returns typed objects (not raw tuples)
 
@@ -706,8 +715,8 @@ Each entry has: `name`, `description`, `when_to_use` (for always-on), `requires_
     "vectordb_path": "data/vectordb"
   },
   "voice": {
-    "tts_model_path": "kokoro-v0_19.onnx",
-    "tts_voices_path": "voices.bin",
+    "tts_model_path": "models/kokoro-v0_19.onnx",
+    "tts_voices_path": "models/voices.bin",
     "vad_sensitivity": 2
   },
   "llm": {
@@ -843,7 +852,7 @@ Each entry has: `name`, `description`, `when_to_use` (for always-on), `requires_
 
 ---
 
-## data/vayumi.db
+## server/data/vayumi.db
 
 **Purpose:** SQLite database file. Created automatically on first run.
 
@@ -857,7 +866,7 @@ Each entry has: `name`, `description`, `when_to_use` (for always-on), `requires_
 
 ---
 
-## data/vectordb/
+## server/data/vectordb/
 
 **Purpose:** ChromaDB persistent storage directory. Created automatically.
 

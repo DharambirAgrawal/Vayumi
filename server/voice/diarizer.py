@@ -11,7 +11,7 @@
 # MODEL: SpeechBrain ECAPA-TDNN (spkrec-ecapa-voxceleb)
 #   - Accuracy: State-of-the-art for speaker verification
 #   - Latency: ~200-400ms per embedding on CPU (runs via asyncio.to_thread)
-#   - Model size: ~400MB download (cached after first run in models/speaker_encoder)
+#   - Model size: ~400MB download (cached after first run in server/models/speaker_encoder)
 #   - Output: 192-dimensional embedding vector per audio segment
 #   - Loaded ONCE at server startup, shared across all sessions
 #
@@ -32,7 +32,7 @@
 #     - Loads SpeechBrain encoder:
 #       self.encoder = EncoderClassifier.from_hparams(
 #         source="speechbrain/spkrec-ecapa-voxceleb",
-#         savedir="models/speaker_encoder"
+#         savedir=str(server.paths.DEFAULT_SPEAKER_ENCODER_CACHE)
 #       )
 #     - self.session_speakers: dict = {} — temporary speaker tracks per session
 #
@@ -80,14 +80,17 @@ import numpy as np
 import torch
 from speechbrain.inference.speaker import EncoderClassifier
 
+from server.paths import DEFAULT_SPEAKER_ENCODER_CACHE
+
 RECOGNITION_THRESHOLD = 0.75
 
 
 class SpeakerIdentifier:
     def __init__(self):
+        DEFAULT_SPEAKER_ENCODER_CACHE.mkdir(parents=True, exist_ok=True)
         self.encoder = EncoderClassifier.from_hparams(
             source="speechbrain/spkrec-ecapa-voxceleb",
-            savedir="models/speaker_encoder",
+            savedir=str(DEFAULT_SPEAKER_ENCODER_CACHE),
         )
         self.session_speakers: dict[str, np.ndarray] = {}
 

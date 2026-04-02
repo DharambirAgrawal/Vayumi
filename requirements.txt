@@ -18,7 +18,7 @@ groq                          # Groq API (AsyncGroq for non-blocking LLM + Whisp
 google-generativeai           # Google Gemini API
 
 # --- TTS (Local) ---
-kokoro-onnx                   # Kokoro ONNX TTS engine (requires kokoro-v0_19.onnx + voices.bin)
+kokoro-onnx                   # Kokoro ONNX TTS — place kokoro-v0_19.onnx + voices.bin in server/models/
 
 # --- Voice / Audio ---
 numpy                         # PCM conversion, audio processing

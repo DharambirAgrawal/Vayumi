@@ -1,3 +1,4 @@
 .env
-data/
-models/
+# Server-local: SQLite, ChromaDB, downloaded ML weights (SpeechBrain, etc.)
+server/data/
+server/models/
