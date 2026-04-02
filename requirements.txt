@@ -1,0 +1,36 @@
+# =============================================================================
+# Vayumi — Python Dependencies
+# =============================================================================
+# Install: pip install -r requirements.txt
+# Python: 3.11+
+# =============================================================================
+
+# --- Web Framework ---
+fastapi
+uvicorn[standard]
+
+# --- Authentication ---
+bcrypt
+PyJWT
+
+# --- LLM Providers ---
+groq                          # Groq API (AsyncGroq for non-blocking LLM + Whisper STT)
+google-generativeai           # Google Gemini API
+
+# --- TTS (Local) ---
+kokoro-onnx                   # Kokoro ONNX TTS engine (requires kokoro-v0_19.onnx + voices.bin)
+
+# --- Voice / Audio ---
+numpy                         # PCM conversion, audio processing
+torch --index-url https://download.pytorch.org/whl/cpu
+torchaudio --index-url https://download.pytorch.org/whl/cpu
+speechbrain                   # Speaker verification (ECAPA-TDNN for diarizer)
+# silero-vad                  # Voice activity detection (install from GitHub or pip)
+
+# --- Embeddings & Vector DB ---
+sentence-transformers         # all-MiniLM-L6-v2 for text embeddings
+chromadb                      # Vector DB for episodic memory (Phase 1)
+
+# --- Web Reader Skill ---
+requests                      # HTTP fetching for web_reader skill
+beautifulsoup4                # HTML parsing for web_reader skill

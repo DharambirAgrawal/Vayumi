@@ -1,0 +1,69 @@
+<!--
+=============================================================================
+client/browser/index.html — Vayumi Browser Client
+=============================================================================
+
+PURPOSE:
+  The main HTML page for the Vayumi browser client. Contains:
+    - Login form (email/password → POST /api/auth/login → get JWT token)
+    - Main interface (shown after login):
+      - Status indicator (sleeping/listening/processing/speaking)
+      - Microphone button (click to activate → sends {"type":"wake"})
+      - Transcript display (shows conversation history with speaker labels)
+      - Text input field (for typing URLs, commands — sends {"type":"text_input"})
+      - Mode switch button (normal/meeting/focus → sends {"type":"mode_switch"})
+    - Audio playback area (invisible — plays TTS audio received from server)
+
+SCRIPTS LOADED:
+  - app.js: Login logic, WebSocket connection, audio capture/playback, message handling
+  - ui.js: DOM manipulation, status updates, transcript rendering
+
+WEBSOCKET FLOW:
+  1. User logs in → receives JWT token
+  2. app.js opens WebSocket to ws://server:8000/ws/vayumi
+  3. First message: {"type":"auth","token":"<jwt>"}
+  4. Server responds: {"type":"auth_ok","user_id":"...","session_id":"..."}
+  5. UI switches from login to main interface
+  6. Mic button click → {"type":"wake"} → start streaming audio
+  7. Audio chunks sent as {"type":"audio_chunk","data":"<base64>"}
+  8. Receive: status events, transcript, response_text, audio_chunk
+  9. On disconnect: show reconnecting state
+
+AUDIO CAPTURE:
+  Uses MediaRecorder API or AudioWorklet to capture mic audio
+  Format: 16kHz, 16-bit, mono PCM (matches server expectations)
+  Echo cancellation enabled: {echoCancellation: true} in getUserMedia constraints
+
+AUDIO PLAYBACK:
+  Uses AudioContext to play received WAV audio chunks
+  Sends {"type":"playback_done"} when all audio finishes playing
+
+STYLES:
+  Inline or minimal CSS for clean, functional UI
+  Dark theme preferred for ambient device feel
+=============================================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vayumi</title>
+    <!-- TODO: Add styles (inline or linked CSS) -->
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-screen">
+        <!-- TODO: email input, password input, login button, register link -->
+    </div>
+
+    <!-- Main Interface (hidden until auth) -->
+    <div id="main-interface" style="display:none;">
+        <!-- TODO: status indicator, mic button, transcript display,
+             text input, mode switch button -->
+    </div>
+
+    <script src="app.js"></script>
+    <script src="ui.js"></script>
+</body>
+</html>

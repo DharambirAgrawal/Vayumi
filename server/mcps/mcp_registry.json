@@ -1,0 +1,41 @@
+{
+  "always_on": [
+    {
+      "name": "web_search",
+      "description": "Search the web. Use for: news, prices, current events, facts that may have changed.",
+      "when_to_use": "When user asks about something time-sensitive or you don't know the answer"
+    },
+    {
+      "name": "get_datetime",
+      "description": "Get current date and time",
+      "when_to_use": "When user asks what time or date it is"
+    },
+    {
+      "name": "set_reminder",
+      "description": "Set a timed reminder for the user",
+      "when_to_use": "When user says 'remind me' or sets a time-based task"
+    },
+    {
+      "name": "get_reminders",
+      "description": "List today's reminders for the user",
+      "when_to_use": "When user asks about their reminders or schedule"
+    }
+  ],
+  "on_demand": [
+    {
+      "name": "gmail",
+      "description": "Read and send emails from user's Gmail",
+      "requires_auth": true
+    },
+    {
+      "name": "google_calendar",
+      "description": "Read and create calendar events",
+      "requires_auth": true
+    },
+    {
+      "name": "smart_home",
+      "description": "Control smart home devices (lights, temperature)",
+      "requires_auth": true
+    }
+  ]
+}

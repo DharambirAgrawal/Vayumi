@@ -1,0 +1,11 @@
+{
+  "skills": [
+    {
+      "id": "web_reader",
+      "name": "Web Reader",
+      "description": "Given a URL, reads the page content and answers questions about it",
+      "trigger_keywords": ["url", "website", "read this link", "open this", "read this"],
+      "doc_path": "server/skills/web_reader/SKILL.md"
+    }
+  ]
+}
