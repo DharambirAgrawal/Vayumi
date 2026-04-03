@@ -13,6 +13,7 @@ This document describes every file in the Vayumi project, what it is responsible
 ```
 vayumi/
 ├── server/          ← All backend logic
+│   ├── .env.example ← Template; copy to server/.env (secrets, not committed)
 │   ├── main.py
 │   ├── ws/          ← Unified WebSocket handler (single entry point)
 │   ├── auth/        ← User accounts, login, JWT
@@ -27,7 +28,7 @@ vayumi/
 │   ├── data/        ← Persistent data (SQLite DB, ChromaDB vector store)
 │   └── models/      ← Downloaded ML weights (e.g. SpeechBrain speaker encoder cache)
 ├── client/          ← Frontend clients
-│   ├── browser/     ← Web UI
+│   ├── browser/     ← Web UI (.env.example = URL / config reference only)
 │   └── esp32/       ← ESP32-S3-AUDIO-Board firmware (ESP-IDF + ESP-ADF)
 ├── requirements.txt
 └── README.md

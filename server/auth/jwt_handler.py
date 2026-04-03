@@ -1,44 +1,3 @@
-# =============================================================================
-# server/auth/jwt_handler.py — JWT Token Creation & Validation
-# =============================================================================
-#
-# PURPOSE:
-#   Handles JWT token lifecycle — creation on login and validation on every
-#   WebSocket connection and REST API call.
-#
-# CONFIG:
-#   SECRET_KEY: str — loaded from env var VAYUMI_JWT_SECRET (must be set)
-#   ALGORITHM: str — "HS256"
-#   TOKEN_EXPIRY_HOURS: int — 24 (default, configurable)
-#
-# FUNCTIONS:
-#
-#   create_token(user_id: str) -> str:
-#     Creates a JWT token containing:
-#       - "sub": user_id
-#       - "exp": datetime.utcnow() + timedelta(hours=TOKEN_EXPIRY_HOURS)
-#       - "iat": datetime.utcnow()
-#     Returns encoded JWT string.
-#
-#   validate_token(token: str) -> str | None:
-#     Decodes and validates a JWT token.
-#     Returns user_id (from "sub" claim) if valid.
-#     Returns None if:
-#       - Token is expired (jwt.ExpiredSignatureError)
-#       - Token is invalid/malformed (jwt.InvalidTokenError)
-#       - "sub" claim is missing
-#
-# USAGE:
-#   - create_token is called by auth/router.py on successful login
-#   - validate_token is called by:
-#       - ws/handler.py authenticate_connection (WebSocket auth)
-#       - auth/router.py get_me endpoint (REST auth)
-#
-# DEPENDENCIES:
-#   - jwt (PyJWT library — import as `import jwt`)
-#   - datetime, os
-# =============================================================================
-
 import os
 from datetime import datetime, timedelta
 
@@ -50,8 +9,62 @@ TOKEN_EXPIRY_HOURS = 24
 
 
 def create_token(user_id: str) -> str:
-    pass
+    """Create a signed JWT token for the given user.
+
+    The token carries three claims:
+      - ``sub``: the user identifier
+      - ``iat``: the UTC timestamp of issuance
+      - ``exp``: the UTC expiry timestamp (``TOKEN_EXPIRY_HOURS`` from now)
+
+    Parameters
+    ----------
+    user_id:
+        The unique identifier of the authenticated user.
+
+    Returns
+    -------
+    str
+        An encoded JWT string ready to hand to the client.
+    """
+    now = datetime.utcnow()
+    payload = {
+        "sub": user_id,
+        "iat": now,
+        "exp": now + timedelta(hours=TOKEN_EXPIRY_HOURS),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def validate_token(token: str) -> str | None:
-    pass
+    """Decode and validate a JWT token, returning the user id on success.
+
+    Parameters
+    ----------
+    token:
+        The raw JWT string received from the client (typically via an
+        ``Authorization: Bearer <token>`` header or a WebSocket query
+        parameter).
+
+    Returns
+    -------
+    str | None
+        The ``sub`` claim (user id) when the token is valid and not
+        expired, or ``None`` when validation fails for any reason:
+
+        - The token has expired (``jwt.ExpiredSignatureError``).
+        - The token is malformed or the signature doesn't match
+          (``jwt.InvalidTokenError``).
+        - The ``sub`` claim is missing from the payload.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+    user_id: str | None = payload.get("sub")
+    if not user_id:
+        return None
+
+    return user_id

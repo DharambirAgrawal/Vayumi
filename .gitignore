@@ -1,4 +1,14 @@
+# Secrets — never commit (use *.example templates for templates)
 .env
+server/.env
+client/browser/.env
+
 # Server-local: SQLite, ChromaDB, downloaded ML weights (SpeechBrain, etc.)
 server/data/
 server/models/
+
+__pycache__/
+*.pyc
+
+venv
+data

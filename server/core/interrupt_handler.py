@@ -1,70 +1,3 @@
-# =============================================================================
-# server/core/interrupt_handler.py — Interrupt Detection & Handling
-# =============================================================================
-#
-# PURPOSE:
-#   Handles user interruptions during Vayumi's speech. Classifies interrupt
-#   type and dispatches appropriate action (stop, redirect, add_context).
-#
-# INTERRUPT TYPES:
-#   "stop"        — User says "stop", "quit", "cancel", "shut up", "be quiet", "enough"
-#                    Action: Stop TTS, cancel running task, set ACTIVE state
-#   "redirect"    — User says something new (not a stop/pause word)
-#                    Action: Stop TTS, set ACTIVE, route new input through process_user_turn
-#   "add_context" — User says "wait", "hold on", "pause", "one sec", "hang on"
-#                    Action: Pause TTS, set INTERRUPTED state, caller merges context
-#                    then resumes TTS or regenerates response
-#
-# CLASS: InterruptHandler
-#
-#   __init__(self, tts_engine, stt_engine, diarizer):
-#     Stores references to TTS (for stop/pause/resume), STT (for transcribing
-#     interrupt speech), and diarizer (for identifying who interrupted).
-#
-#   async handle(self, session, action: str):
-#     Handles a typed interrupt action. Called by:
-#       - handle_interrupt in ws/handler.py (client button press)
-#       - handle_speech_interrupt below (after classifying speech)
-#     Logic per action:
-#       "stop":
-#         - await tts_engine.stop()
-#         - If session.task_state["status"] == "running" → set to idle
-#         - session.activation_state = "ACTIVE"
-#       "redirect":
-#         - await tts_engine.stop()
-#         - session.activation_state = "ACTIVE"
-#         - Caller routes new input to process_user_turn
-#       "add_context":
-#         - await tts_engine.pause()
-#         - session.activation_state = "INTERRUPTED"
-#         - Caller merges context, then resume or regenerate
-#     Always:
-#       - session.playback_state = "IDLE"
-#       - session.reset_active_window_timer()
-#
-#   async handle_speech_interrupt(self, session, audio_bytes: bytes):
-#     Called when VAD detects speech during SPEAKING state.
-#     Steps:
-#       1. Transcribe speech via stt_engine.transcribe(audio_bytes)
-#       2. Classify interrupt type via _classify_interrupt(text)
-#       3. Call self.handle(session, action)
-#       4. If action == "redirect":
-#            - Identify speaker via diarizer.identify(audio_bytes, session.user_id)
-#            - Call process_user_turn(session, text, speaker_id, source="voice")
-#              (imported from ws/handler to avoid circular: pass as callback or late import)
-#
-#   def _classify_interrupt(self, text: str) -> str:
-#     Classifies transcribed interrupt speech into action type.
-#     stop_words = {"stop", "quit", "cancel", "shut up", "be quiet", "enough"}
-#     pause_words = {"wait", "hold on", "pause", "one sec", "hang on"}
-#     text_lower = text.lower().strip()
-#     if any(w in text_lower for w in stop_words): return "stop"
-#     if any(w in text_lower for w in pause_words): return "add_context"
-#     return "redirect"
-#
-# IMPORTS NEEDED:
-# =============================================================================
-
 from server.voice.tts import TTSEngine
 from server.voice.stt import STTEngine
 from server.voice.diarizer import SpeakerIdentifier
@@ -81,10 +14,90 @@ class InterruptHandler:
         self.diarizer = diarizer
 
     async def handle(self, session, action: str):
-        pass
+        """
+        Handle a classified interrupt action: 'stop', 'redirect', or 'add_context'.
+
+        - stop:        Stop TTS, cancel any running task, set ACTIVE state.
+        - redirect:    Stop TTS, set ACTIVE state. Caller routes new input onward.
+        - add_context: Pause TTS, set INTERRUPTED state. Caller merges context
+                       then resumes or regenerates.
+
+        Always resets playback_state to IDLE and restarts the active window timer.
+        """
+        if action == "stop":
+            await self.tts_engine.stop()
+            if (hasattr(session, "task_state")
+                    and isinstance(session.task_state, dict)
+                    and session.task_state.get("status") == "running"):
+                session.task_state["status"] = "idle"
+            session.activation_state = "ACTIVE"
+
+        elif action == "redirect":
+            await self.tts_engine.stop()
+            session.activation_state = "ACTIVE"
+
+        elif action == "add_context":
+            await self.tts_engine.pause()
+            session.activation_state = "INTERRUPTED"
+
+        # Common finalization regardless of action type
+        session.playback_state = "IDLE"
+        session.reset_active_window_timer()
 
     async def handle_speech_interrupt(self, session, audio_bytes: bytes):
-        pass
+        """
+        Process a speech-based interrupt detected by VAD during SPEAKING state.
+
+        1. Transcribe the audio via the STT engine.
+        2. Classify the transcript into an interrupt action.
+        3. Execute the interrupt via self.handle().
+        4. If the action is 'redirect', identify the speaker and route the
+           new input through process_user_turn for further processing.
+        """
+        # Step 1: transcribe the interrupt speech
+        text = await self.stt_engine.transcribe(audio_bytes)
+
+        # Step 2: classify what kind of interrupt this is
+        action = self._classify_interrupt(text)
+
+        # Step 3: execute the interrupt handling
+        await self.handle(session, action)
+
+        # Step 4: if redirect, identify speaker and route the new input
+        if action == "redirect":
+            speaker_id = await self.diarizer.identify(
+                audio_bytes, session.user_id
+            )
+            # Late import to avoid circular dependency between
+            # server.core.interrupt_handler and server.ws.handler
+            from server.ws.handler import process_user_turn
+            await process_user_turn(
+                session, text, speaker_id, source="voice"
+            )
 
     def _classify_interrupt(self, text: str) -> str:
-        pass
+        """
+        Classify transcribed interrupt text into an action type.
+
+        Uses substring matching against known stop and pause phrases.
+        Falls back to 'redirect' if the text doesn't match any known
+        stop or pause pattern, indicating the user wants to say
+        something new.
+
+        Returns:
+            'stop'        — user wants to cancel/stop everything
+            'add_context' — user wants to pause and add information
+            'redirect'    — user is saying something new entirely
+        """
+        text_lower = text.lower().strip()
+
+        # Check stop words first (higher priority — explicit cancellation)
+        if any(w in text_lower for w in STOP_WORDS):
+            return "stop"
+
+        # Check pause/hold words
+        if any(w in text_lower for w in PAUSE_WORDS):
+            return "add_context"
+
+        # Default: treat as new input that should redirect the conversation
+        return "redirect"

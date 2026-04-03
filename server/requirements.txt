@@ -8,10 +8,12 @@
 # --- Web Framework ---
 fastapi
 uvicorn[standard]
+python-dotenv                 # Load .env files
 
 # --- Authentication ---
 bcrypt
 PyJWT
+email-validator              # Required by Pydantic EmailStr fields
 
 # --- LLM Providers ---
 groq                          # Groq API (AsyncGroq for non-blocking LLM + Whisper STT)
@@ -34,3 +36,6 @@ chromadb                      # Vector DB for episodic memory (Phase 1)
 # --- Web Reader Skill ---
 requests                      # HTTP fetching for web_reader skill
 beautifulsoup4                # HTML parsing for web_reader skill
+
+# --- Web Search MCP ---
+aiohttp                       # Async HTTP client for Tavily search MCP

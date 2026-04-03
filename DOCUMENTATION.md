@@ -2477,6 +2477,7 @@ ChromaDB setup (episodic memory, user-scoped)
 ```text
 vayumi/
 ├── server/
+│   ├── .env.example                ← Template for API keys / JWT secret (copy to server/.env)
 │   ├── paths.py                    ← Resolved server/data and server/models paths (cwd-independent)
 │   ├── main.py                     ← FastAPI app entrypoint, mounts routes
 │   ├── ws/
@@ -2532,6 +2533,7 @@ vayumi/
 │       └── speaker_encoder/        ← SpeechBrain ECAPA cache (downloaded on first run)
 ├── client/
 │   ├── browser/
+│   │   ├── .env.example            ← URL / config reference (static JS does not load .env by default)
 │   │   ├── index.html
 │   │   ├── app.js                  ← Login + WebSocket + audio logic
 │   │   └── ui.js                   ← Status, transcript UI
@@ -2632,14 +2634,15 @@ speechbrain (voice embeddings for diarizer speaker identification, uses ECAPA-TD
 cd vayumi
 pip install -r requirements.txt
 
-# Set environment variables
-export GROQ_API_KEY="your_key"
-export GEMINI_API_KEY="your_key"
+# Server secrets: copy server/.env.example → server/.env and edit, then export
+# (or wire python-dotenv in server/main.py to load server/.env)
+cp server/.env.example server/.env
+# export GROQ_API_KEY / GEMINI_API_KEY / VAYUMI_JWT_SECRET as needed
 
 # Run server
 uvicorn server.main:app --host 0.0.0.0 --port 8000
 
-# Open browser client
+# Browser client: static files; see client/browser/.env.example for URL conventions
 open client/browser/index.html
 ```
 
