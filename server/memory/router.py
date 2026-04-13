@@ -76,7 +76,7 @@ class MemoryRouter:
         length_bonus = min(0.2, (len(words) - 4) * 0.01)
         memory_keywords = {
             "prefer", "remember", "always", "never", "important",
-            "meeting", "deadline", "i like", "i dislike", "my ",
+            "meeting", "deadline", "i like", "i dislike", "my",
         }
         keyword_bonus = 0.1 if any(kw in text_lower for kw in memory_keywords) else 0.0
         return min(1.0, base + length_bonus + keyword_bonus)
