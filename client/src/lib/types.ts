@@ -14,7 +14,7 @@ export type ConnectionState =
 
 export type Mode = 'conversation' | 'meeting';
 export type ClientType = 'web' | 'hardware';
-export type ContentType = 'text' | 'image' | 'link' | 'voice';
+export type ContentType = 'text' | 'image' | 'link' | 'voice' | 'audio' | 'video';
 export type RespondVia = 'voice_and_chat' | 'chat_only' | 'voice_only';
 
 export interface AudioConfig {
