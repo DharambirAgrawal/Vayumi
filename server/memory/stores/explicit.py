@@ -8,6 +8,17 @@ from typing import Dict, List, Optional
 
 from memory.models import MemoryRecord, MemoryType, UserModel
 
+# Allowlists for safe SQL identifier construction
+_UPDATABLE_COLUMNS = frozenset({
+    "type", "summary", "speaker_id", "created_at", "source_url",
+    "blob_path", "chunk_ids", "graph_node_id", "metadata",
+})
+_SORTABLE_COLUMNS = frozenset({
+    "id", "type", "summary", "speaker_id", "created_at",
+    "source_url", "blob_path", "graph_node_id",
+})
+_SORT_DIRECTIONS = frozenset({"ASC", "DESC"})
+
 
 class ExplicitStore:
     """SQLite-backed canonical index for memory records."""
@@ -97,6 +108,9 @@ class ExplicitStore:
     def update(self, memory_id: str, fields: Dict) -> bool:
         if not fields:
             return True
+        unknown = set(fields) - _UPDATABLE_COLUMNS
+        if unknown:
+            raise ValueError(f"Unknown or non-updatable column(s): {unknown}")
         assignments = []
         values = []
         for key, value in fields.items():
@@ -121,6 +135,22 @@ class ExplicitStore:
             cur = conn.execute("DELETE FROM memory_records WHERE id = ?", (memory_id,))
             conn.commit()
             return cur.rowcount > 0
+
+    @staticmethod
+    def _parse_order_by(order_by: str) -> str:
+        """Validate and construct a safe ORDER BY clause from an allowlist."""
+        parts = order_by.strip().split()
+        if len(parts) == 1:
+            col, direction = parts[0], "ASC"
+        elif len(parts) == 2:
+            col, direction = parts[0], parts[1].upper()
+        else:
+            raise ValueError(f"Invalid order_by expression: {order_by!r}")
+        if col not in _SORTABLE_COLUMNS:
+            raise ValueError(f"Column {col!r} is not in the sortable columns allowlist")
+        if direction not in _SORT_DIRECTIONS:
+            raise ValueError(f"Sort direction {direction!r} must be ASC or DESC")
+        return f"{col} {direction}"
 
     def filter(
         self,
@@ -152,7 +182,8 @@ class ExplicitStore:
             values.append(f"%{source_url}%")
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        query = f"SELECT * FROM memory_records {where} ORDER BY {order_by} LIMIT ?"
+        safe_order_by = self._parse_order_by(order_by)
+        query = f"SELECT * FROM memory_records {where} ORDER BY {safe_order_by} LIMIT ?"
         values.append(limit)
 
         with self._connect() as conn:

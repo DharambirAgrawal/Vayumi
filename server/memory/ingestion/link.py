@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
+import socket
 import uuid
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -76,7 +78,72 @@ class LinkIngester:
         self.explicit_store.insert(record)
         return IngestResponse(memory_id=memory_id, store="link", chunk_count=1, success=True)
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _validate_url(self, url: str) -> None:
+        """Raise ValueError if the URL is unsafe to fetch.
+
+        Checks:
+        - Scheme must be http or https.
+        - Resolved IP must not be loopback, private, link-local, reserved,
+          multicast, or unspecified (blocks SSRF to internal services and cloud
+          metadata endpoints like 169.254.169.254).
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError(
+                f"Unsupported URL scheme {parsed.scheme!r}; only http and https are allowed."
+            )
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("URL contains no hostname.")
+        try:
+            addr_infos = socket.getaddrinfo(hostname, None)
+        except socket.gaierror as exc:
+            raise ValueError(f"Cannot resolve hostname {hostname!r}: {exc}") from exc
+        for addr_info in addr_infos:
+            ip_str = addr_info[4][0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except ValueError:
+                continue
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                raise ValueError(
+                    f"URL resolves to a non-public IP address ({ip_str}) and cannot be fetched."
+                )
+
+    def _safe_get(
+        self, url: str, headers: dict, timeout: int, max_redirects: int = 5
+    ) -> requests.Response:
+        """GET *url*, re-validating each redirect target before following it."""
+        for _ in range(max_redirects + 1):
+            resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=False)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get("Location")
+                if not location:
+                    return resp
+                url = urljoin(url, location)
+                self._validate_url(url)
+            else:
+                return resp
+        raise ValueError(f"Exceeded {max_redirects} redirects while fetching URL.")
+
     def fetch(self, url: str) -> str:
+        # Validate before issuing any network request to prevent SSRF.
+        try:
+            self._validate_url(url)
+        except ValueError as exc:
+            return f"URL validation failed: {exc}"
+
         # Try Jina reader first for cleaner article extraction, then fall back to direct HTML parsing.
         jina_url = f"https://r.jina.ai/{url}"
         headers = {"User-Agent": "MemoryOS/1.0 (+https://example.local)"}
@@ -89,7 +156,7 @@ class LinkIngester:
             pass
 
         try:
-            resp = requests.get(url, headers=headers, timeout=12)
+            resp = self._safe_get(url, headers=headers, timeout=12)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
 

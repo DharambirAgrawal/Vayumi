@@ -8,8 +8,12 @@ import logging
 
 from typing import Optional
 
-import librosa
-import numpy as np
+try:
+    import librosa
+    import numpy as np
+    _SPEAKER_RECOGNITION_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _SPEAKER_RECOGNITION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +42,16 @@ class SpeakerRecognitionEngine:
         self.match_threshold = match_threshold
         self._profiles: dict[str, VoiceProfile] = {}
 
+    def _require_deps(self) -> None:
+        """Raise RuntimeError if optional speaker-recognition dependencies are missing."""
+        if not _SPEAKER_RECOGNITION_AVAILABLE:
+            raise RuntimeError(
+                "Speaker recognition requires 'librosa' and 'numpy'. "
+                "Install them with: pip install librosa numpy"
+            )
+
     def enroll_owner(self, session_id: str, audio_data: bytes, sample_rate: int = 16000) -> VoiceProfile:
+        self._require_deps()
         embedding = self._extract_embedding(audio_data, sample_rate)
         profile = VoiceProfile(speaker_label="owner", embedding=embedding.tolist())
         self._profiles[session_id] = profile
@@ -46,6 +59,7 @@ class SpeakerRecognitionEngine:
         return profile
 
     def identify(self, session_id: str, audio_data: bytes, sample_rate: int = 16000) -> SpeakerIdentityResult:
+        self._require_deps()
         profile = self._profiles.get(session_id)
         if profile is None:
             return SpeakerIdentityResult(

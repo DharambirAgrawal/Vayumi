@@ -54,10 +54,29 @@ class MemoryRouter:
         return re.sub(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b", repl, text)
 
     def should_save(self, text: str, confidence_threshold: float = 0.7) -> bool:
-        _ = confidence_threshold
         stripped = text.strip().lower()
         if not stripped:
             return False
         if stripped in {"ok", "thanks", "thank you", "sure", "cool", "got it"}:
             return False
-        return len(stripped.split()) >= 4
+        words = stripped.split()
+        if len(words) < 4:
+            return False
+        score = self._compute_save_confidence(words, stripped)
+        return score >= confidence_threshold
+
+    def _compute_save_confidence(self, words: list, text_lower: str) -> float:
+        """Return a save-worthiness confidence score in [0.0, 1.0].
+
+        Base score starts at 0.7 (matching the default threshold) for any text
+        that passes the word-count gate.  Additional length and keyword bonuses
+        allow callers to raise the threshold for higher-precision filtering.
+        """
+        base = 0.7
+        length_bonus = min(0.2, (len(words) - 4) * 0.01)
+        memory_keywords = {
+            "prefer", "remember", "always", "never", "important",
+            "meeting", "deadline", "i like", "i dislike", "my ",
+        }
+        keyword_bonus = 0.1 if any(kw in text_lower for kw in memory_keywords) else 0.0
+        return min(1.0, base + length_bonus + keyword_bonus)
