@@ -1,983 +1,814 @@
-# Vayumi — Detailed Implementation Plan
-### Every File, What It Does, What It Contains
+# Vayumi — AI Agent Voice Platform
+## Phase 1: WebSocket Layer + React Client
 
-**Version:** 1.3  
-**Status:** Pre-implementation reference  
-
-This document describes every file in the Vayumi project, what it is responsible for, what it contains, and how it connects to other files. Use this as a checklist and reference while building.
+> **Scope of this document:** The real-time WebSocket communication layer between the React web client and the Python backend server. Includes all state machines, audio pipeline, client-exposed functions, server-exposed functions, and what the AI agent itself can control at runtime.
 
 ---
 
-## Directory Overview
+## 1. System Overview
 
 ```
-vayumi/
-├── server/          ← All backend logic
-│   ├── .env.example ← Template; copy to server/.env (secrets, not committed)
-│   ├── main.py
-│   ├── ws/          ← Unified WebSocket handler (single entry point)
-│   ├── auth/        ← User accounts, login, JWT
-│   ├── core/        ← Central brain: orchestrator, context, modes
-│   ├── agents/      ← Specialized AI agents
-│   ├── voice/       ← Audio pipeline: STT, TTS, diarization
-│   ├── skills/      ← Pluggable skill system
-│   ├── mcps/        ← Callable tool integrations
-│   ├── memory/      ← Storage wrappers (SQLite, ChromaDB, embeddings)
-│   ├── llm/         ← LLM routing and API clients
-│   ├── config/      ← Server settings
-│   ├── data/        ← Persistent data (SQLite DB, ChromaDB vector store)
-│   └── models/      ← Downloaded ML weights (e.g. SpeechBrain speaker encoder cache)
-├── client/          ← Frontend clients
-│   ├── browser/     ← Web UI (.env.example = URL / config reference only)
-│   └── esp32/       ← ESP32-S3-AUDIO-Board firmware (ESP-IDF + ESP-ADF)
-├── requirements.txt
-└── README.md
+┌─────────────────────────────────────────────────────────────────┐
+│                        VAYUMI PLATFORM                          │
+│                                                                 │
+│   ┌──────────────────┐          ┌──────────────────────────┐   │
+│   │   React Client   │◄────────►│    Python Server         │   │
+│   │  (Browser / PWA) │ WebSocket│  (FastAPI + asyncio)     │   │
+│   │                  │          │                          │   │
+│   │ • Wake word (JS) │          │ • VAD (server-side)      │   │
+│   │ • VAD (browser)  │          │ • Diarization            │   │
+│   │ • Audio capture  │          │ • AI Agent core          │   │
+│   │ • Chatbot UI     │          │ • TTS / STT              │   │
+│   │ • Mode switcher  │          │ • Tool execution         │   │
+│   └──────────────────┘          └──────────────────────────┘   │
+│                                                                 │
+│   ┌──────────────────┐                                         │
+│   │   ESP32-S3       │──────────────────────────────────────►  │
+│   │  (Hardware)      │ WebSocket (raw audio, no VAD/wake)      │
+│   └──────────────────┘                                         │
+│                                                                 │
+│         One active connection at a time (Web OR Hardware)       │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## server/paths.py
-
-**Purpose:** Single source of truth for filesystem paths under the `server/` package. Resolves `server/data/` (SQLite, ChromaDB) and `server/models/` (downloaded weights) using `Path(__file__)`, so locations stay correct regardless of process working directory.
-
-**Exports:** `SERVER_ROOT`, `DATA_DIR`, `MODELS_DIR`, `DEFAULT_SQLITE_DB`, `DEFAULT_VECTORDB_DIR`, `DEFAULT_KOKORO_ONNX`, `DEFAULT_KOKORO_VOICES`, `DEFAULT_SPEAKER_ENCODER_CACHE`.
+**Key design rule:** Only ONE primary client is connected and active as the voice source at any time. However the chatbot panel on the web client remains usable even when the hardware is the active voice source, and the AI's response can be routed back through the hardware speaker.
 
 ---
 
-## server/main.py
+## 2. Architecture Decisions
 
-**Purpose:** Application entrypoint. Creates the FastAPI app, mounts routes, and starts background services.
-
-**Contains:**
-- FastAPI app instance
-- WebSocket endpoint at `/ws/vayumi` — calls `websocket_endpoint()` from `ws/handler.py`
-- REST route mounting (auth routes, API routes)
-- Startup event: initializes SQLite (WAL mode), ChromaDB, loads registries
-- Shutdown event: cleanup
-
-**Key logic:**
-- Does NOT contain WebSocket message handling directly — delegates to the unified handler
-- Mounts the single `/ws/vayumi` route that calls `websocket_endpoint()`
-
-**Depends on:** `auth/`, `ws/handler.py`, `memory/`
-
----
-
-## server/ws/handler.py
-
-**Purpose:** Unified WebSocket handler. **Single entry point** for all real-time client communication. Auth, message dispatch, response streaming, and cleanup all live here.
-
-**Contains:**
-- `websocket_endpoint(websocket)` — the single entry function called by FastAPI
-- `authenticate_connection(websocket)` — validates first auth message (canonical), returns Session or None
-- `message_loop(session, websocket)` — receives messages, dispatches via `MESSAGE_HANDLERS` dict
-- `MESSAGE_HANDLERS` — dict mapping message types to handler functions:
-  - `wake` → `handle_wake` (transition SLEEP → ACTIVE, start active window timer)
-  - `audio_chunk` → `handle_audio_chunk` (ignore if SLEEP; echo-aware VAD → STT → diarize → process_user_turn)
-  - `text_input` → `handle_text_input` (direct text → process_user_turn, resets active timer)
-  - `interrupt` → `handle_interrupt` (stop current response, set playback_state=IDLE)
-  - `playback_done` → `handle_playback_done` (set playback_state=IDLE, transition to ACTIVE, reset timer)
-  - `mode_switch` → `handle_mode_switch` (switch mode, notify client)
-  - `speaker_label` → `handle_speaker_label` (label a speaker)
-- `process_user_turn(session, text, speaker_id, source)` — **shared processing path** for both voice and text input. Builds context, calls orchestrator, streams response (sets `playback_state=PLAYING`), fires background memory write. Calls `_drain_input_queue` after completion.
-- `_drain_input_queue(session)` — after a task completes, drains the input queue: if any queued item is a cancel intent ("never mind", "cancel", etc.) → discards entire queue; otherwise processes only the **last** queued item (most recent intent wins).
-- `CANCEL_WORDS` — set of cancel phrases checked during queue drain.
-- Identity mapping contract:
-  - `user_id`: authenticated account owner (data isolation scope)
-  - `speaker_id`: current utterance speaker track (`speaker_2`, `rahul`, etc.)
-  - `persona_id`: policy/tone/access identity derived from `speaker_id`
-- `stream_response(session, response)` — streams text + TTS audio to client sentence by sentence. Uses **1-sentence TTS lookahead** (pre-synthesizes sentence N+1 while sentence N is being sent to avoid speech gaps). Does NOT own state — caller sets `activation_state`/`playback_state` before calling. Client sends `playback_done` when audio finishes.
-- `cleanup_session(session)` — called on disconnect (guaranteed via try/finally). Cancels active window timer.
-
-**Key design:**
-- One file, one entry point — easy to debug
-- Adding a new message type = one async function + one dict entry
-- Voice and text input converge at `process_user_turn` — zero duplication
-- All responses flow through `stream_response` — consistent behavior for acks, results, conversations
-- Canonical auth path is first WS message `{"type":"auth","token":"..."}`; query-param token is optional legacy compatibility only
-- Echo-aware: `handle_audio_chunk` checks `activation_state` (ignores in SLEEP) and `playback_state` (routes to interrupt handler during SPEAKING)
-- Active window management: timer resets on user turn, playback_done, and text input; fires `sleep` event on 30s silence; disabled during meeting mode
-- Session starts in `SLEEP` / `IDLE` state; `wake` message transitions to `ACTIVE`
-
-**Depends on:** `auth/jwt_handler.py`, `core/orchestrator.py`, `core/context_builder.py`, `core/interrupt_handler.py`, `core/mode_manager.py`, `voice/vad.py`, `voice/stt.py`, `voice/diarizer.py`, `voice/tts.py`, `agents/memory_agent.py`, `agents/persona_agent.py`
-
----
-
-### Identity Contract (Cross-Module)
-
-| Field | Meaning | Produced by | Consumed by |
-|---|---|---|---|
-| `user_id` | Authenticated account owner | Auth/JWT | Storage, rate limits, isolation |
-| `speaker_id` | Current utterance speaker track | Diarizer (voice) or default `user_id` (text) | Persona Agent, context builder |
-| `persona_id` | Persona policy identity for response/access | Persona Agent | Context builder, orchestrator |
-
-Rules:
-- Data access isolation always uses `user_id`.
-- Tone/access policy uses `persona_id`.
-- If mapping confidence is low, `persona_id = guest_unknown` (safe default).
-
-### Session Object (canonical field list)
-
-Every WebSocket connection creates one `Session`. This is the most-used object in the system.
-
-| Field | Type | Purpose |
+| Decision | Choice | Reason |
 |---|---|---|
-| `session_id` | `str` | Unique session identifier |
-| `user_id` | `str` | Authenticated account owner (from JWT) |
-| `websocket` | `WebSocket` | The active connection |
-| `client_type` | `str` | `"browser"` / `"esp32"` / `"mobile"` |
-| `active_speaker` | `str` | Current speaker's `persona_id` |
-| `mode` | `str` | `"normal"` / `"meeting"` / `"focus"` |
-| `working_memory` | `list` | Current conversation turns |
-| `task_state` | `dict` | `{"status": "idle"}` or `{"status": "running", ...}` |
-| `input_queue` | `list` | User inputs received while a task is running |
-| `activation_state` | `str` | `"SLEEP"` / `"ACTIVE"` / `"SPEAKING"` / `"INTERRUPTED"` |
-| `playback_state` | `str` | `"IDLE"` / `"PLAYING"` (controls echo gating) |
-| `_active_window_handle` | `asyncio.TimerHandle` | 30s active window cancel handle |
-| `connected_at` | `datetime` | Connection timestamp |
-
-Methods: `send(data)`, `reset_active_window_timer()`, `_on_active_timeout()`.
-
-New sessions start with `activation_state="SLEEP"`, `playback_state="IDLE"`, `task_state={"status":"idle"}`, `input_queue=[]`.
+| Transport | WebSocket (binary + JSON frames) | Ultra-low latency, full-duplex, browser-native |
+| Audio format | 16-bit PCM, 16kHz mono, chunked | Universal STT compatibility, low overhead |
+| Wake word (web) | Browser JS (Porcupine or custom WASM) | Saves server CPU; ESP32 can't run it |
+| VAD (web) | Browser JS (Silero WASM or WebRTC VAD) | Stop streaming silence; reduce bandwidth |
+| VAD (ESP32) | Server-side | ESP32 S3 too constrained |
+| Backend | Python FastAPI + `websockets` | Async-first, fast, easy AI integration |
+| Session state | Server holds canonical state | Single source of truth |
+| Interruption | Client signals → server queues/flushes | Prevents echo feedback loops |
 
 ---
 
-## server/auth/router.py
+## 3. Connection & Session Lifecycle
 
-**Purpose:** HTTP endpoints for user registration and login.
+### 3.1 Handshake Protocol
 
-**Contains:**
-- `POST /api/auth/register` — creates new user account (email, password, display name)
-- `POST /api/auth/login` — validates credentials, returns JWT token
-- `GET /api/users/me` — returns authenticated user's profile
+When the user clicks **Connect** on the web client (or the ESP32 powers on), this sequence happens:
 
-**Key logic:**
-- Password hashing with bcrypt on registration
-- JWT token generation on successful login
-- Token includes `user_id` and expiration
+```
+Client                                  Server
+  │                                        │
+  │── WS Connect (ws://host/ws/audio) ────►│
+  │                                        │
+  │◄─ { type: "hello",                     │
+  │     session_id: "abc123",              │
+  │     server_version: "1.0",             │
+  │     client_type_accepted: "web",       │
+  │     modes: ["conversation","meeting"], │
+  │     wake_word: "vayumi" }  ────────────│
+  │                                        │
+  │── { type: "client_ready",              │
+  │     client_type: "web",               │
+  │     capabilities: ["vad","wake_word"], │
+  │     audio_config: {                    │
+  │       sample_rate: 16000,             │
+  │       channels: 1,                    │
+  │       bit_depth: 16 } } ─────────────►│
+  │                                        │
+  │◄─ { type: "session_started",          │
+  │     session_id: "abc123",             │
+  │     active: true } ────────────────────│
+  │                                        │
+```
 
-**Depends on:** `auth/jwt_handler.py`, `auth/models.py`, `memory/sqlite_store.py`
+### 3.2 Connection States (Client)
 
----
+```
+DISCONNECTED
+    │
+    │ [User clicks Connect button]
+    ▼
+CONNECTING
+    │
+    │ [WS open + hello received]
+    ▼
+CONNECTED_IDLE          ◄──────────────────────────┐
+    │                                               │
+    │ [Wake word detected]                          │
+    ▼                                               │
+WAKE_DETECTED                                       │
+    │                                               │
+    │ [VAD: speech started]                         │
+    ▼                                               │
+STREAMING_AUDIO ──────────────────────────────────►│
+    │                                               │
+    │ [VAD: silence / user stops]                   │
+    ▼                                               │
+WAITING_RESPONSE                                    │
+    │                                               │
+    │ [Server: AI starts speaking]                  │
+    ▼                                               │
+AI_SPEAKING ────────────────[silence/done]──────────┘
+    │
+    │ [Wake word "vayumi" detected mid-speech]
+    ▼
+INTERRUPTING ──► sends interrupt signal ──► back to WAKE_DETECTED
+```
 
-## server/auth/jwt_handler.py
+### 3.3 Disconnection & Reconnect
 
-**Purpose:** Creates and validates JWT tokens.
-
-**Contains:**
-- `create_token(user_id)` — generates a signed JWT with expiry
-- `validate_token(token)` — verifies signature, checks expiry, returns `user_id` or `None`
-- JWT secret key (loaded from environment variable `JWT_SECRET`)
-
-**Key logic:**
-- Tokens expire after configurable period (default: 24 hours)
-- Used by both REST endpoints and WebSocket auth
-
-**Depends on:** PyJWT library
-
----
-
-## server/auth/models.py
-
-**Purpose:** Data model for user accounts.
-
-**Contains:**
-- `UserAccount` dataclass/pydantic model with fields:
-  - `user_id`, `display_name`, `email`, `password_hash`
-  - `voice_embedding`, `embedding_model_version`
-  - `profile` (JSON: occupation, goals, tone, language)
-  - `enabled_mcps` (JSON array)
-  - `created_at`
-
-**Depends on:** nothing (pure data model)
-
----
-
-## server/core/orchestrator.py
-
-**Purpose:** The Central Consciousness. Decides what to do with each turn, coordinates agents, assembles responses.
-
-**Contains:**
-- `Orchestrator` class with `run(session, context, input_text)` method
-- Intent detection logic: is this a simple reply? Skill-needed? MCP call? Multi-step?
-- Agent coordination: runs Task Agent if needed, fires Memory Agent in background
-- Response assembly: combines agent results into final text
-- Long-running task detection: if task will take time, returns instant acknowledgment first
-
-**Key logic:**
-1. Receives `context` from `process_user_turn` (built by `context_builder.build(session, text, speaker_id)`)
-2. Makes LLM call via `llm/router.py` with assembled context
-3. If task will take time → generates instant ack ("Sure, let me check that"), returns structured `{"ack": str, "result": str}` dict; `ws/handler.py` streams both via `stream_response`
-4. If LLM response includes tool call → dispatch to skill_runner or MCP
-5. If multi-step → loop with Task Agent
-6. Returns response to handler: `str`, `AsyncIterator[str]`, or `{"ack": str, "result": str}` dict
-7. Deferred tasks ("tell me later") → runs task, stores result as deferred artifact metadata in episodic memory instead of responding immediately
-8. Memory Agent is fired by `process_user_turn` (not orchestrator) — `asyncio.create_task(memory_agent.process_turn(...))`
-
-**Depends on:** `core/context_builder.py`, `core/mode_manager.py`, `agents/*`, `llm/router.py`, `skills/skill_runner.py`, `mcps/`
+- Client always attempts auto-reconnect with exponential backoff (1s → 2s → 4s → max 30s)
+- Server holds session state for 60 seconds after disconnect (configurable) so reconnect resumes context
+- On clean disconnect (user clicks Disconnect), server flushes session immediately
 
 ---
 
-## server/core/context_builder.py
+## 4. WebSocket Message Protocol
 
-**Purpose:** Assembles the LLM context window for each turn. This is the brain's "working desk" — it decides what information the LLM sees.
+All messages are JSON except audio chunks which are **binary frames**.
 
-**Contains:**
-- `ContextBuilder` class
-- `build(session, input_text, speaker_id)` method that returns the full prompt array
-- Token budget management: counts tokens, trims to fit
-- Priority rules for trimming (oldest conversation first, then memories)
+### 4.1 Frame Types
 
-**Key logic:**
-1. Load permanent system prompt (~300 tokens)
-2. Load user profile from session's `user_id` (~150 tokens)
-3. Load active persona context based on `speaker_id` (~200 tokens)
-4. Load injected flags if any (0-100 tokens)
-5. Query relevant memories via `memory/vector_store.py` (0-500 tokens, filtered by user_id)
-6. Load skill registry summary (~100 tokens)
-7. Load MCP registry summary (~50 tokens, filtered by user's enabled MCPs)
-8. Append conversation window from session working memory
-9. Append current input
-10. Trim if over budget
+```
+TEXT FRAME  →  JSON control/event messages
+BINARY FRAME → Raw PCM audio (client→server) OR TTS audio (server→client)
+```
 
-**Depends on:** `memory/vector_store.py`, `memory/sqlite_store.py`, `skills/skill_registry.json`, `mcps/mcp_registry.json`
+### 4.2 Client → Server Messages
 
----
-
-## server/core/mode_manager.py
-
-**Purpose:** Handles mode switching (normal, meeting, focus) per session.
-
-**Contains:**
-- `ModeManager` class
-- `NormalMode`, `MeetingMode`, `FocusMode` classes with `on_enter()` and `on_exit()` hooks
-- `switch(session, mode_name, trigger)` method
-
-**Key logic:**
-- Meeting mode: increases diarizer sensitivity, starts transcript logging, suppresses casual responses
-- Focus mode: filters non-critical flags, responds only to direct questions
-- Normal mode: default behavior
-- Mode state is stored on the Session object (per-user, per-connection)
-
-**Depends on:** nothing directly (called by `ws/handler.py` `handle_mode_switch` and by orchestrator for mode-aware behavior)
-
----
-
-## server/core/interrupt_handler.py
-
-**Purpose:** Detects and handles interruptions — when the user speaks while Vayumi is speaking. Echo-aware: only triggers on real user speech, not Vayumi's own voice.
-
-**Contains:**
-- `InterruptHandler` class
-- `handle(session, interrupt_event)` method — handles typed interrupt events (from client button or classified speech)
-- `handle_speech_interrupt(session, audio_bytes)` — called by `handle_audio_chunk` when VAD detects speech during SPEAKING state. Transcribes the speech, classifies as stop/redirect/add_context.
-- `stop_current_response(session)` — stops TTS, cancels task, resets playback/activation state
-- Three interrupt types: `stop`, `redirect`, `add_context`
-
-**Key logic:**
-- `stop`: cancels TTS playback and current task, `activation_state → ACTIVE`, `playback_state → IDLE`
-- `redirect`: cancels current response, routes new input to orchestrator, resets states
-- `add_context`: pauses TTS, appends new info to current task context, `activation_state → INTERRUPTED`
-- Interrupt position tracking (which sentence was Vayumi on when interrupted)
-- All interrupt paths reset `session.playback_state = "IDLE"` and call `session.reset_active_window_timer()`
-- Two interrupt entry paths:
-  1. Client sends `{"type":"interrupt"}` (button press or ESP32 wake word during speech) → `handle_interrupt` in handler
-  2. Echo-cancelled speech detected by VAD during SPEAKING state → `handle_speech_interrupt` classifies intent
-
-**Depends on:** `voice/tts.py` (to stop/pause audio), `voice/stt.py` (to transcribe interrupt speech)
-
----
-
-## server/agents/base_agent.py
-
-**Purpose:** Base interface that all agents implement.
-
-**Contains:**
-- `BaseAgent` abstract class with:
-  - `async run(context: AgentContext) -> AgentResult`
-  - `async run_background(context: AgentContext) -> None`
-- `AgentContext` dataclass: `user_id`, `input_text`, `speaker_id`, `mode`, `working_memory`, `injected_flags`, `skill_registry`, `mcp_registry`
-- `AgentResult` dataclass: `response_text`, `memories_to_write`, `skills_executed`, `flags_consumed`, `follow_up_tasks`
-
-**Depends on:** nothing (pure interface)
-
----
-
-## server/agents/memory_agent.py
-
-**Purpose:** Writes memories in background after each response. Memory *reading* is done by context_builder via vector_store directly.
-
-**Contains:**
-- `MemoryAgent` class (extends BaseAgent)
-- `process_turn(session, text, response)`: canonical method called by `process_user_turn` via `asyncio.create_task`. Decides if current turn is memorable, summarizes, embeds, stores. (Internally calls `run_background` from BaseAgent interface.)
-
-**Key logic:**
-- Summarizes conversation chunks every 10-20 turns
-- Embeds summaries via `memory/embedder.py`
-- Stores in ChromaDB via `memory/vector_store.py` (tagged with `user_id`)
-- Stores structured data (reminders, people, dates) in SQLite via `memory/sqlite_store.py`
-- Tags memories with sensitivity: `private`, `shared`, `public`
-
-**Depends on:** `memory/vector_store.py`, `memory/sqlite_store.py`, `memory/embedder.py`, `llm/router.py` (for summarization LLM call)
-
----
-
-## server/agents/task_agent.py
-
-**Purpose:** Handles multi-step task execution. Called when a task needs skill execution or multiple passes.
-
-**Contains:**
-- `TaskAgent` class (extends BaseAgent)
-- `run()`: reads skill doc, creates execution plan, executes steps, returns result
-
-**Key logic:**
-- Loads the skill SKILL.md into context
-- Plans steps: [extract, process, summarize, format]
-- Executes each step (may involve LLM calls or skill runner calls)
-- Returns structured result to orchestrator
-
-**Depends on:** `skills/skill_runner.py`, `llm/router.py`
-
----
-
-## server/agents/search_agent.py
-
-**Purpose:** Handles web search tasks. Decides if search is needed, builds queries, summarizes results.
-
-**Contains:**
-- `SearchAgent` class (extends BaseAgent)
-- `run()`: takes search intent, calls web_search MCP, processes results, returns summary
-
-**Key logic:**
-- Builds effective search queries from user intent
-- Calls `mcps/web_search.py`
-- Summarizes results with LLM
-- Returns formatted answer
-
-**Depends on:** `mcps/web_search.py`, `llm/router.py`
-
----
-
-## server/agents/persona_agent.py
-
-**Purpose:** Manages speaker state and context switching when different people are detected in the room. Also handles learning new people from introductions.
-
-**Contains:**
-- `PersonaAgent` class (extends BaseAgent)
-- `run()`: triggered on speaker change, loads appropriate persona context
-- `label_speaker(session, speaker_id, name)`: called when owner introduces someone or corrects a misidentification
-- `_create_persona_from_introduction(session, speaker_id, name, relationship)`: builds a new persona from conversational introduction
-
-**Key logic:**
-- Looks up speaker_id in authenticated user's contacts (via SQLite, filtered by `user_id`)
-- If known: loads their persona profile (tone, known_facts, memory_access)
-- If unknown: creates temporary guest persona
-- Hides private data when non-owner is speaking
-- Tracks guest arrival/departure using silence thresholds
-- **Learning new people:** When owner says "this is Chris, my college friend":
-  1. Orchestrator detects introduction intent, calls persona_agent
-  2. Takes Speaker_2's voice embedding from diarizer's session_speakers
-  3. Saves to contacts table (name, voice_embedding, relationship_context)
-  4. Creates persona context (role: known_contact, memory_access: shared_only)
-  5. Future sessions: diarizer matches Chris's voice automatically → persona loaded
-- **Manual correction via label_speaker():** Reassigns a speaker_id to a name (called from `handle_speaker_label` in ws/handler.py or from voice command "that was Chris")
-
-**Depends on:** `memory/sqlite_store.py` (contacts table), `core/context_builder.py`, `voice/diarizer.py` (for voice embedding access)
-
----
-
-## server/voice/stt.py
-
-**Purpose:** Speech-to-text wrapper around Groq Whisper API.
-
-**Contains:**
-- `STTEngine` class
-- `transcribe(audio_bytes)` method → returns text string
-- Error handling: retries on timeout, returns error message on failure
-
-**Key logic:**
-- Sends audio to Groq Whisper API
-- Returns transcription text
-- Fast (~200ms for short utterances)
-
-**Depends on:** Groq SDK, `GROQ_API_KEY`
-
----
-
-## server/voice/tts.py
-
-**Purpose:** Text-to-speech using Kokoro-ONNX. Runs locally, no API needed.
-
-**Contains:**
-- `TTSEngine` class
-- `synthesize_stream(text_generator)` — accepts streaming text, yields audio chunks per sentence
-- `stop()` — cancels current synthesis
-- `pause()` / `resume()` — for interrupt handling
-
-**Key logic:**
-- Buffers incoming tokens until sentence boundary
-- Synthesizes each complete sentence into audio
-- Yields audio chunks for immediate playback
-- Sentence boundary detection: `.`, `!`, `?`, or long pause markers
-
-**Depends on:** kokoro-onnx library; model files in `server/models/`: `kokoro-v0_19.onnx`, `voices.bin` (see `server.paths.DEFAULT_KOKORO_*`).
-
----
-
-## server/voice/diarizer.py
-
-**Purpose:** Identifies who is speaking based on voice embeddings.
-
-**Embedding model:** SpeechBrain ECAPA-TDNN (`spkrec-ecapa-voxceleb`)
-- 192-dim embedding vector per audio segment
-- ~200-400ms per inference on CPU (runs via `asyncio.to_thread` to avoid blocking)
-- ~400MB model download (cached after first run)
-- Loaded once at server startup, shared across sessions
-
-**Contains:**
-- `SpeakerIdentifier` class
-- `__init__()` — loads `EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb")`
-- `identify(audio_segment, user_id)` — async, returns speaker_id. Embedding extraction via `asyncio.to_thread`
-- `_embed(audio_segment)` — blocking call that converts audio to tensor and runs `encoder.encode_batch`
-- `register_speaker(user_id, name, audio_sample)` — async, enrolls a new voice
-- `reassign_speaker(session, speaker_id, name)` — manual correction of misidentified speaker
-
-**Key logic:**
-- Extracts voice embedding from audio segment using ECAPA-TDNN
-- Compares against known speakers (loaded from user's contacts table, scoped by `user_id`)
-- If cosine similarity > threshold: returns known speaker ID (e.g., "chris")
-- If similarity between thresholds: uncertain — defaults to guest (safe fallback, no private data exposed)
-- If no match: assigns temporary speaker ID (speaker_1, speaker_2, etc.)
-- Registered speakers persist across sessions (stored in contacts table with voice_embedding)
-- Primary job: distinguish "owner" vs "not owner" — this is the most reliable and most important distinction
-
-**Accuracy notes (with ECAPA-TDNN):**
-- Owner vs one other person: ~90%+ (most common scenario)
-- Owner vs enrolled contact: ~85% (depends on enrollment audio quality)
-- 2 unknown guests: ~70-80% within a session
-- 3+ simultaneous/overlapping speakers: best-effort only
-- Different conditions (whispering, phone, noise) degrade accuracy
-
-**Depends on:** `memory/sqlite_store.py` (contacts table with voice_embedding), `speechbrain`, `torch`
-
----
-
-### Meeting-Mode Acceptance Criteria (Phase 1)
-
-- If diarizer confidence is low, speaker is treated as `guest_unknown` (never owner-escalated).
-- Mixed-speaker meeting must not expose owner-private memory on guest turns.
-- `speaker_label` correction must relabel transcript/persona mapping within the same session.
-- Owner introduction ("this is Chris") must create/update contact enrollment for future sessions.
-- Meeting summary remains useful even when attribution confidence is imperfect.
-
----
-
-## server/voice/vad.py
-
-**Purpose:** Voice Activity Detection — determines when someone is speaking vs silence. Includes echo-aware gating to prevent Vayumi's own voice from triggering false detections.
-
-**Contains:**
-- `VADEngine` class
-- `process(audio_chunk, session)` — returns `VADResult(has_speech)`. Echo-aware: checks `session.playback_state` before deciding.
-- Configurable thresholds: `normal_threshold` (for IDLE playback), `echo_threshold` (raised, for PLAYING playback)
-- `compute_energy(chunk)` — calculates audio energy for threshold comparison
-- `_sustained_speech(chunk)` — checks if detected speech exceeds minimum duration (~300ms)
-
-**Key logic:**
-- Filters out background noise
-- Detects speech onset and offset
-- **Echo gating:** When `session.playback_state == "PLAYING"`:
-  - Requires higher energy threshold (above echo residue level)
-  - Requires sustained duration (>300ms) — short echo bursts are ignored
-  - Only loud, sustained human speech passes through
-- When `session.playback_state == "IDLE"`: normal sensitivity
-- ESP32 sends echo-cancelled audio (hardware AEC), so gating is a safety net
-- Browser audio has no hardware AEC, so gating is the primary defense
-- Used to: only send speech to STT (save API calls), detect interrupts, detect guest departure
-
-**Depends on:** webrtcvad or silero-vad library
-
----
-
-## server/skills/skill_runner.py
-
-**Purpose:** Loads skill documentation and executes skills.
-
-**Contains:**
-- `SkillRunner` class
-- `load_skill_doc(skill_id)` — reads and returns SKILL.md content
-- `execute(skill_id, input_data)` — runs the skill's run.py with input, returns output
-- `SkillRegistry` class — loads and queries skill_registry.json
-
-**Key logic:**
-- Registry is loaded once at startup, provides `lookup(keywords)` to match user intent to skill
-- Skill doc is injected into context only when executing that skill
-- Execution: writes input.json, runs run.py, reads output.json
-- Timeout: 30 seconds max per skill execution
-
-**Depends on:** `skills/skill_registry.json`, individual skill directories
-
----
-
-## server/skills/skill_registry.json
-
-**Purpose:** Lightweight index of all available skills. Always loaded in context (~100 tokens).
-
-**Contains:** Array of skill entries, each with:
-- `id`: unique skill identifier
-- `name`: human-readable name
-- `description`: one-line description (what the LLM sees)
-- `trigger_keywords`: words that suggest this skill is needed
-- `doc_path`: path to the full SKILL.md
-
----
-
-## server/skills/web_reader/ (example skill)
-
-### SKILL.md
-- Description of what web_reader does
-- Input format: `{"url": "...", "question": "..."}`
-- Output format: `{"success": true, "result": "...", "metadata": {...}}`
-- Requirements: requests, beautifulsoup4
-- Usage example
-
-### run.py
-- Reads input.json
-- Fetches the URL
-- Extracts text content
-- Writes output.json with extracted text
-
----
-
-## server/mcps/mcp_registry.json
-
-**Purpose:** Registry of all available MCP tools. Split into always-on and on-demand.
-
-**Contains:**
-- `always_on`: tools always listed in context (web_search, set_reminder, get_datetime, get_reminders)
-- `on_demand`: tools available only when user enables them (gmail, google_calendar, smart_home)
-
-Each entry has: `name`, `description`, `when_to_use` (for always-on), `requires_auth` (for on-demand)
-
----
-
-## server/mcps/web_search.py
-
-**Purpose:** Web search MCP. Searches the web and returns results.
-
-**Contains:**
-- `web_search(query)` function
-- Returns structured results: list of `{title, url, snippet}`
-
-**Key logic:**
-- Calls a search API (DuckDuckGo, SerpAPI, or similar)
-- Returns top 5 results with snippets
-- SearchAgent then summarizes these with LLM
-
-**Depends on:** search API library
-
----
-
-## server/mcps/reminders.py
-
-**Purpose:** Reminder MCP. Create, list, and manage reminders.
-
-**Contains:**
-- `set_reminder(user_id, text, due_datetime)` — creates reminder in SQLite
-- `get_reminders(user_id, date)` — returns reminders for a date
-- `complete_reminder(user_id, reminder_id)` — marks as done
-
-**Key logic:**
-- All queries scoped by `user_id`
-- Background check: on each turn, check if any reminder is due and inject flag
-
-**Depends on:** `memory/sqlite_store.py`
-
----
-
-## server/memory/vector_store.py
-
-**Purpose:** Wrapper around ChromaDB for semantic memory search.
-
-**Contains:**
-- `VectorStore` class
-- `store(user_id, content, metadata)` — embeds and stores a memory
-- `query(user_id, query_text, top_k)` — semantic search, filtered by user_id
-- `delete(user_id, memory_id)` — removes a memory
-
-**Key logic:**
-- Every store and query operation includes `user_id` in metadata/filter
-- Uses `memory/embedder.py` for embedding generation
-- ChromaDB collection: `episodic_memory` with cosine similarity
-- Deferred artifacts (`artifact_type="deferred_read"`) store metadata: `source_url`, `created_at`, `sensitivity`
-- Deferred retrieval path filters by `user_id + artifact_type`, then semantic rank, then recency rank
-
-**Depends on:** chromadb library, `memory/embedder.py`
-
----
-
-## server/memory/sqlite_store.py
-
-**Purpose:** Wrapper around SQLite for structured data (users, reminders, meetings, contacts, memory episodes, flags).
-
-**Contains:**
-- `SQLiteStore` class
-- CRUD methods for each table: `create_user()`, `get_user()`, `create_reminder()`, `get_reminders()`, etc.
-- All methods require `user_id` parameter for data isolation
-- Connection initialization with WAL mode
-
-**Key logic:**
-- `__init__`: connects to `server.paths.DEFAULT_SQLITE_DB` (i.e. `server/data/vayumi.db`), enables WAL mode, creates tables if not exist
-- Every query includes `WHERE user_id = ?` (except user lookup by email for login)
-- Returns typed objects (not raw tuples)
-
-**Depends on:** sqlite3 stdlib
-
----
-
-## server/memory/embedder.py
-
-**Purpose:** Generates text embeddings using sentence-transformers.
-
-**Contains:**
-- `Embedder` class
-- `embed(text)` → returns list of floats (384-dim vector)
-- Model loaded once at startup, reused for all embedding calls
-
-**Key logic:**
-- Uses `all-MiniLM-L6-v2` model (local, free)
-- Called by vector_store for both storing and querying
-- Called async (never blocks response)
-
-**Depends on:** sentence-transformers library
-
----
-
-## server/llm/router.py
-
-**Purpose:** Routes LLM requests to the right provider (Groq or Gemini) based on task type and rate limits.
-
-**Contains:**
-- `LLMRouter` class
-- `route(user_id, task_type, estimated_tokens)` → returns (provider, model) or rate limit error
-- `stream(provider, model, prompt)` → async generator of tokens
-- Per-user rate limiter
-- Global rate limit tracking for Groq API
-
-**Key logic:**
-- Fast tasks (orchestrate, memory, search) → small Groq model
-- Complex tasks (task agent, reasoning) → large Groq model
-- If Groq rate limited → fallback to Gemini
-- Per-user fairness: each user gets max N requests per minute
-
-**Depends on:** `llm/groq_client.py`, `llm/gemini_client.py`
-
----
-
-## server/llm/groq_client.py
-
-**Purpose:** Wrapper around Groq API for LLM calls.
-
-**Contains:**
-- `GroqClient` class
-- `stream_chat(model, messages)` → async generator of tokens
-- Error handling: timeout, rate limit, API errors
-
-**Depends on:** groq SDK, `GROQ_API_KEY`
-
----
-
-## server/llm/gemini_client.py
-
-**Purpose:** Wrapper around Google Gemini API for fallback LLM calls.
-
-**Contains:**
-- `GeminiClient` class
-- `stream_chat(model, messages)` → async generator of tokens
-- Error handling: timeout, API errors
-
-**Depends on:** google-generativeai SDK, `GEMINI_API_KEY`
-
----
-
-## server/config/settings.json
-
-**Purpose:** Server-level configuration (not per-user).
-
-**Contains:**
+#### Audio stream start
 ```json
 {
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8000
-  },
-  "database": {
-    "sqlite_path": "data/vayumi.db",
-    "vectordb_path": "data/vectordb"
-  },
-  "voice": {
-    "tts_model_path": "models/kokoro-v0_19.onnx",
-    "tts_voices_path": "models/voices.bin",
-    "vad_sensitivity": 2
-  },
-  "llm": {
-    "groq_rpm_limit": 30,
-    "per_user_rpm_limit": 10,
-    "per_user_tpm_limit": 50000,
-    "default_max_tokens": 1000
-  },
-  "context": {
-    "simple_turn_budget": 2500,
-    "complex_turn_budget": 4000,
-    "max_conversation_turns": 20,
-    "max_retrieved_memories": 5
-  },
-  "session": {
-    "reconnect_window_seconds": 60,
-    "jwt_expiry_hours": 24
+  "type": "audio_stream_start",
+  "trigger": "wake_word",        // "wake_word" | "manual" | "meeting_mode"
+  "timestamp": 1712345678.123
+}
+```
+
+#### Audio chunk (binary frame)
+```
+[BINARY] Raw 16-bit PCM, 16kHz mono
+Chunk size: 20ms = 320 samples = 640 bytes
+```
+
+#### Audio stream end
+```json
+{
+  "type": "audio_stream_end",
+  "reason": "vad_silence",       // "vad_silence" | "manual" | "timeout"
+  "duration_ms": 3200
+}
+```
+
+#### Interrupt signal
+```json
+{
+  "type": "interrupt",
+  "trigger": "wake_word",        // "wake_word" | "user_button"
+  "timestamp": 1712345678.456,
+  "wake_confidence": 0.94        // optional, from wake word engine
+}
+```
+
+#### Mode switch request
+```json
+{
+  "type": "mode_switch",
+  "mode": "meeting",             // "conversation" | "meeting"
+  "requested_by": "user_voice"   // "user_voice" | "ui_button"
+}
+```
+
+#### Chatbot message (text/link/image/voice)
+```json
+{
+  "type": "chatbot_message",
+  "content_type": "text",        // "text" | "link" | "image" | "voice"
+  "text": "What is in this image?",
+  "attachments": [
+    {
+      "type": "image",
+      "data": "<base64>",        // or "url": "https://..."
+      "mime_type": "image/jpeg"
+    }
+  ],
+  "respond_via": "voice_and_chat"  // "voice_and_chat" | "chat_only" | "voice_only"
+}
+```
+
+#### Ping (keepalive)
+```json
+{ "type": "ping", "ts": 1712345678.000 }
+```
+
+---
+
+### 4.3 Server → Client Messages
+
+#### Session events
+```json
+{ "type": "session_started", "session_id": "abc123", "active": true }
+{ "type": "session_ended", "reason": "user_disconnect" }
+```
+
+#### Speech events
+```json
+{ "type": "vad_speech_start" }
+{ "type": "vad_speech_end" }
+
+{ "type": "transcription_partial", "text": "what is the weat" }
+{ "type": "transcription_final",   "text": "what is the weather today", "confidence": 0.97 }
+```
+
+#### AI Agent events
+```json
+{ "type": "agent_thinking" }
+
+{
+  "type": "agent_response_start",
+  "response_id": "resp_001",
+  "text": "The weather in Chennai today is..."
+}
+
+{ "type": "agent_response_end", "response_id": "resp_001" }
+
+{
+  "type": "agent_tool_call",
+  "tool": "get_weather",
+  "args": { "city": "Chennai" },
+  "status": "running"            // "running" | "done" | "failed"
+}
+```
+
+#### TTS audio (binary frames)
+```
+[BINARY] Raw PCM or Opus-encoded audio of AI's voice response
+Preceded by:  { "type": "tts_stream_start", "response_id": "resp_001", "format": "pcm_16k" }
+Followed by:  { "type": "tts_stream_end",   "response_id": "resp_001" }
+```
+
+#### Interrupt acknowledgement
+```json
+{
+  "type": "interrupt_ack",
+  "flushed_response_id": "resp_001",
+  "queued_chars_dropped": 142
+}
+```
+
+#### Mode events
+```json
+{
+  "type": "mode_changed",
+  "mode": "meeting",
+  "features": {
+    "diarization": true,
+    "vad_sensitivity": "high",
+    "wake_word_in_meeting": true
   }
+}
+```
+
+#### Diarization events (meeting mode only)
+```json
+{
+  "type": "diarization_segment",
+  "speaker": "Speaker_1",
+  "text": "I think we should move the deadline",
+  "start_ms": 12400,
+  "end_ms": 15800
+}
+```
+
+#### Chatbot response
+```json
+{
+  "type": "chatbot_response",
+  "text": "The image shows a whiteboard with...",
+  "spoken": true,                // whether it was also sent to TTS
+  "response_id": "resp_002"
+}
+```
+
+#### Pong
+```json
+{ "type": "pong", "ts": 1712345678.000, "server_ts": 1712345678.001 }
+```
+
+#### Error
+```json
+{
+  "type": "error",
+  "code": "audio_decode_failed",
+  "message": "Could not decode PCM chunk",
+  "fatal": false
 }
 ```
 
 ---
 
-## client/browser/index.html
+## 5. Audio Pipeline
 
-**Purpose:** Main HTML page for the browser client.
-
-**Contains:**
-- Login form (email + password)
-- Main UI after login: status indicator, transcript area, mode toggle button
-- Audio elements for playback
-- Includes app.js and ui.js
-
----
-
-## client/browser/app.js
-
-**Purpose:** Core client logic — authentication, WebSocket connection, audio streaming.
-
-**Contains:**
-- Login flow: POST to /api/auth/login, store JWT token
-- WebSocket connection to `/ws/vayumi`
-- First message (canonical): `{"type": "auth", "token": "..."}`
-- Optional legacy compatibility: token in query param (if enabled server-side)
-- MediaRecorder setup: captures mic audio, sends as audio_chunk events
-- Audio playback: receives audio_chunk events, plays via AudioContext
-- Event sending: interrupt, mode_switch, speaker_label
-- Reconnection logic on disconnect
-
----
-
-## client/browser/ui.js
-
-**Purpose:** UI updates — status display, transcript rendering, mode indicator.
-
-**Contains:**
-- Status indicator updates (listening / processing / speaking / idle)
-- Transcript display: shows user speech and Vayumi responses
-- Mode indicator: shows current mode (normal / meeting / focus)
-- Flag notifications: shows toast-style alerts for email, reminder, etc.
-
----
-
-## client/esp32/ (ESP32-S3-AUDIO-Board Firmware)
-
-**Board:** ESP32-S3-AUDIO-Board (ESP32-S3R8, 16MB Flash, 8MB PSRAM, ES7210 mic ADC, ES8311 speaker DAC, 7x RGB LED ring, PCF85063 RTC)
-
-**Framework:** ESP-IDF + ESP-ADF (C). Required for access to AEC/NS/BSS audio front-end pipeline and ESP-SR wake word detection. MicroPython/Arduino cannot access these features.
-
-### client/esp32/main/main.c
-
-**Purpose:** Application entrypoint. WiFi init, task orchestration, component initialization.
-
-**Contains:**
-- WiFi STA setup (credentials from NVS)
-- Component initialization order: audio pipeline → wake word → WebSocket → LED
-- FreeRTOS task creation for audio streaming and wake word detection
-- Reconnection logic with exponential backoff on WiFi/WS disconnect
-
-### client/esp32/main/audio_pipeline.c
-
-**Purpose:** ESP-ADF audio front-end pipeline. Handles echo cancellation, noise suppression, and audio I/O.
-
-**Contains:**
-- I2S configuration for ES7210 (mic input) and ES8311 (speaker output)
-- AEC (Acoustic Echo Cancellation): feeds speaker output as reference signal, subtracts from mic input
-- NS (Noise Suppression): removes ambient noise from cleaned audio
-- BSS (Blind Source Separation): isolates human voice from residual noise
-- `audio_capture_task()` — reads clean audio from pipeline, writes to WebSocket send buffer
-- `audio_playback_task()` — reads received audio from WebSocket, writes to ES8311 speaker
-- Playback tracking: sets flag when TTS audio starts, sends `playback_done` when buffer drains
-
-**Key logic:**
-- AEC reference loop: the same audio data sent to the speaker is simultaneously fed to the AEC algorithm as the reference signal. This is what enables echo cancellation.
-- Pipeline runs continuously during ACTIVE/SPEAKING states, pauses during SLEEP.
-
-### client/esp32/main/ws_client.c
-
-**Purpose:** WebSocket client. Handles connection, authentication, and bidirectional message exchange.
-
-**Contains:**
-- WebSocket connection to server (configurable URL from NVS)
-- Auth on connect: sends `{"type":"auth","token":"<device_token>"}` as first message
-- Send: audio chunks (base64 encoded), JSON control messages (`wake`, `interrupt`, `playback_done`, `mode_switch`)
-- Receive: audio chunks (decode + write to playback buffer), JSON control messages (`sleep`, `status`, `mode_changed`)
-- Disconnect detection + reconnection with exponential backoff
-- 60s grace period handling: if reconnect succeeds within window, session resumes
-
-### client/esp32/main/wake_word.c
-
-**Purpose:** On-device wake word detection using ESP-SR.
-
-**Contains:**
-- ESP-SR model initialization with custom wake phrase "Hi Vayumi"
-- `wake_word_task()` — runs continuously during SLEEP state, listens for wake word
-- On detection: sends `{"type":"wake"}` via WebSocket, starts audio pipeline streaming, transitions LED to blue
-- Confidence threshold filtering to reduce false activations
-- Works through speaker playback (AEC provides clean audio to the wake word detector)
-
-### client/esp32/main/led.c
-
-**Purpose:** RGB LED ring status control.
-
-**Contains:**
-- WS2812B LED driver (7 LEDs)
-- Status patterns:
-  - Dim/off: SLEEP (wake word listening)
-  - Blue pulse: ACTIVE (listening for speech)
-  - Yellow: PROCESSING (waiting for server response)
-  - White stream: SPEAKING (TTS playing)
-  - Red flash: error (WiFi disconnect, auth failure)
-  - Green flash: boot/connect success
-
----
-
-## server/data/vayumi.db
-
-**Purpose:** SQLite database file. Created automatically on first run.
-
-**Contains tables:**
-- `users` — registered user accounts
-- `reminders` — user reminders (per user_id)
-- `meetings` — meeting records (per user_id)
-- `contacts` — known speakers/contacts (per user_id)
-- `memory_episodes` — summarized memory entries (per user_id)
-- `injected_flags` — flag injection log (per user_id)
-
----
-
-## server/data/vectordb/
-
-**Purpose:** ChromaDB persistent storage directory. Created automatically.
-
-**Contains:** ChromaDB's internal files for the `episodic_memory` collection. All entries have `user_id` in metadata for isolation.
-
----
-
-## requirements.txt
-
-**Purpose:** Python dependencies for the server.
-
-**Contains:**
-```
-fastapi
-uvicorn[standard]
-websockets
-chromadb
-sentence-transformers
-groq
-google-generativeai
-kokoro-onnx
-bcrypt
-PyJWT
-python-multipart
-numpy
-silero-vad
-speechbrain
-torch
-torchaudio
-```
-
-**Notes on dependencies:**
-- `silero-vad`: ML-based VAD (streaming-capable). Alternative: `webrtcvad` (simpler, C-based, no ML). Choose one — the `VADEngine` implementation differs significantly.
-- `speechbrain`: ECAPA-TDNN model for diarizer voice embeddings (~400MB download, ~200-400ms/inference on CPU). Good accuracy for owner-vs-guest.
-- `torch` + `torchaudio`: required by both `silero-vad` and `speechbrain`. Install CPU-only build to save space: `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu`
-- `numpy`: required by TTS (PCM conversion), VAD, and diarizer.
-
----
-
-## How Files Connect (Dependency Flow)
+### 5.1 Web Client Audio Pipeline
 
 ```
-main.py
-  ├── ws/handler.py  ← SINGLE ENTRY POINT for all WebSocket communication
-  │     ├── auth/jwt_handler.py (connection auth)
-  │     ├── voice/vad.py (echo-aware) → voice/stt.py → voice/diarizer.py (audio path)
-  │     ├── core/context_builder.py (builds LLM context)
-  │     ├── core/orchestrator.py (processes turns)
-  │     │     ├── agents/task_agent.py ← skills/skill_runner.py, llm/router.py
-  │     │     ├── agents/search_agent.py ← mcps/web_search.py, llm/router.py
-  │     │     ├── core/mode_manager.py (per-session)
-  │     │     ├── skills/skill_runner.py ← skills/*/
-  │     │     ├── mcps/* (called via orchestrator validation)
-  │     │     └── llm/router.py ← llm/groq_client.py, llm/gemini_client.py
-  │     ├── agents/memory_agent.py ← memory/*, llm/router.py (background, async)
-  │     ├── agents/persona_agent.py ← memory/sqlite_store.py (speaker labels)
-  │     ├── core/interrupt_handler.py (stop/redirect, echo-aware)
-  │     └── voice/tts.py (response streaming audio)
-  ├── auth/router.py ← auth/jwt_handler.py, auth/models.py, memory/sqlite_store.py
-  ├── core/context_builder.py
-  │     ├── memory/vector_store.py ← memory/embedder.py
-  │     ├── memory/sqlite_store.py
-  │     ├── skills/skill_registry.json
-  │     └── mcps/mcp_registry.json
-  └── memory/ (initialized at startup: SQLite WAL mode, ChromaDB client)
-
-ESP32-S3-AUDIO-Board (client-side, separate codebase):
-  audio_pipeline.c (AEC+NS+BSS) → clean audio → ws_client.c → server
-  wake_word.c (ESP-SR) → {"type":"wake"} → ws_client.c → server
-  ws_client.c ← server audio → audio_pipeline.c → speaker (ES8311)
-  led.c ← state changes from ws_client.c
+Microphone (getUserMedia)
+    │
+    ▼
+AudioWorklet (runs in audio thread)
+    │  raw 32-bit float samples
+    ▼
+Resampler → 16kHz
+    │
+    ▼
+16-bit PCM converter
+    │
+    ├──► Wake Word Engine (Porcupine WASM / custom)
+    │         │ "vayumi" detected?
+    │         ▼
+    │    trigger: audio_stream_start
+    │         │
+    │         ▼
+    └──► VAD (Silero WASM / WebRTC VAD)
+              │ speech? → chunk to server
+              │ silence? → audio_stream_end
+              ▼
+         WebSocket binary frames → Server
 ```
 
-Message flow through the handler:
+**Why AudioWorklet and not ScriptProcessor?**
+ScriptProcessor runs on the main thread and causes dropouts under UI load. AudioWorklet runs on a dedicated audio thread — no dropouts even during heavy React renders.
+
+### 5.2 ESP32-S3 Audio Pipeline (for reference)
 
 ```
-Client connects → websocket_endpoint()
-  → authenticate_connection() → Session created (activation_state=SLEEP, playback_state=IDLE)
-  → message_loop():
-      "wake"          → handle_wake → SLEEP→ACTIVE, start 30s timer
-      "audio_chunk"   → handle_audio_chunk:
-                           if SLEEP: ignore (no audio processing)
-                           if ACTIVE: echo-aware VAD → STT → diarize → process_user_turn
-                           if SPEAKING: echo-aware VAD → interrupt_handler (classify & handle)
-      "text_input"    → handle_text_input → process_user_turn, reset timer
-      "interrupt"     → handle_interrupt → stop TTS, playback_state=IDLE, ACTIVE
-      "playback_done" → handle_playback_done → playback_state=IDLE, ACTIVE, reset timer
-      "mode_switch"   → handle_mode_switch → mode_manager.switch
-      "speaker_label" → handle_speaker_label → persona_agent
+I2S Microphone (INMP441)
+    │ 32-bit, 44.1kHz
+    ▼
+Downsample → 16kHz (on-chip DSP)
+    │
+    ▼
+16-bit PCM
+    │
+    ▼  (NO wake word, NO VAD — server handles both)
+WebSocket binary frames → Server
+```
 
-  process_user_turn (shared by voice + text):
-      → context_builder.build()
-      → orchestrator.run()
-        → [if long task] returns ack/result payload; handler streams ack first, then result
-        → [if deferred] task runs, result stored in memory, no response now
-      → sets activation_state=SPEAKING, playback_state=PLAYING (caller owns state)
-      → stream_response() → text + TTS audio (1-sentence lookahead for gap-free speech)
-      → memory_agent.process_turn() (background, async)
-      → _drain_input_queue():
-          if any queued item is cancel intent → discard all
-          otherwise → process only LAST queued item (most recent wins)
+Server applies VAD server-side for ESP32 connections. Wake word is also detected server-side for ESP32.
 
-  Active window timeout (30s silence) → send {"type":"sleep"} → SLEEP
-  Meeting mode: timeout disabled (stays ACTIVE for entire meeting)
+### 5.3 Server Audio Pipeline
 
-  Client disconnects → cleanup_session() (cancel timers, release resources)
+```
+WebSocket binary frames
+    │
+    ▼
+Jitter buffer (50ms)
+    │
+    ├──[if ESP32]──► VAD (py-webrtcvad or Silero)
+    │                     │ speech start/end events
+    │
+    ├──[if ESP32]──► Wake word detector (OpenWakeWord)
+    │
+    ▼
+STT Engine (Whisper / Deepgram streaming)
+    │  partial + final transcriptions
+    ▼
+AI Agent (LangChain / custom)
+    │  tool calls, reasoning
+    ▼
+TTS Engine (ElevenLabs / Coqui / Piper)
+    │  PCM audio chunks
+    ▼
+WebSocket binary frames → Client
 ```
 
 ---
 
-*Plan Version 1.4 — Added: input queue drain rules (cancel-discards-all / last-item-wins), TTS 1-sentence lookahead in stream_response, SpeechBrain ECAPA-TDNN specified as diarizer model with latency notes, torch/torchaudio as explicit dependencies, caller-owns-state clarification.*
-*Previous: v1.3 — echo cancellation, wake word, Session object definition, ESP32 firmware plan*
-*This plan covers every file needed for Phase 1, including basic ESP32-S3-AUDIO-Board firmware (WiFi, WebSocket, AEC pipeline, wake word). Advanced ESP32 features (OTA updates, battery management, LCD display) are Phase 2. Skills and MCPs beyond web_reader and web_search will be added in Phase 2 with no changes to any of the server files listed above.*
+## 6. Interruption Handling
+
+This is the trickiest part. Here is the full flow:
+
+```
+AI is speaking  (server streaming TTS audio to client)
+    │
+    │  User says "Vayumi"
+    │
+    ▼
+Client wake word engine fires
+    │
+    ├──► Client immediately MUTES the audio playback (stops playing TTS)
+    │
+    ├──► Client sends: { "type": "interrupt", "trigger": "wake_word" }
+    │
+    │                              Server receives interrupt
+    │                                    │
+    │                                    ├──► Cancels TTS generation
+    │                                    ├──► Drops queued audio frames
+    │                                    ├──► Cancels any pending tool calls (if safe)
+    │                                    ├──► Sends: { "type": "interrupt_ack", ... }
+    │                                    ├──► Sends: { "type": "vad_speech_start" }
+    │                                    └──► Begins listening for new audio
+    │
+    ◄── interrupt_ack received
+    │
+    └──► Client starts streaming new audio immediately
+```
+
+**Echo prevention:** When AI is speaking through speakers and the microphone picks it up, the wake word engine must NOT fire on the AI's own voice saying a word that sounds like "vayumi". Mitigations:
+
+- Acoustic Echo Cancellation (AEC) via browser's `echoCancellation: true` on getUserMedia
+- On server: short lock-out window (200ms) after TTS stream starts, ignore wake events
+- Wake word confidence threshold raised to 0.90+ during AI speech
+
+---
+
+## 7. Multi-Client Routing Logic
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    SERVER SESSION MANAGER                │
+│                                                          │
+│  active_voice_source: "web" | "hardware" | null         │
+│                                                          │
+│  ┌─────────────────┐      ┌────────────────────────┐    │
+│  │  Web Client     │      │  ESP32 Client          │    │
+│  │  connected: T   │      │  connected: T          │    │
+│  │  voice: ACTIVE  │      │  voice: STANDBY        │    │
+│  │  chat: ACTIVE   │      │  voice: can't activate │    │
+│  └─────────────────┘      └────────────────────────┘    │
+│                                                          │
+│  Web is voice source:                                    │
+│  → Chatbot also active (web only, no conflict)          │
+│                                                          │
+│  Hardware is voice source:                               │
+│  → Web chatbot still active                             │
+│  → AI voice responses go → Hardware speaker             │
+│  → Chatbot text responses also shown on web              │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Conflict rules:**
+
+| Web connected | Hardware connected | Voice source | Chatbot |
+|---|---|---|---|
+| Yes | No | Web | Web |
+| No | Yes | Hardware | — |
+| Yes | Yes | Hardware (priority) | Web chatbot active, responses via HW speaker |
+| Yes | Yes | Web forced | User explicitly switched; HW goes standby |
+
+---
+
+## 8. Modes
+
+### 8.1 Conversation Mode (default)
+
+- Standard VAD sensitivity
+- Single speaker assumed
+- Wake word: "Vayumi" to start each exchange
+- TTS: normal latency target (< 800ms first chunk)
+
+### 8.2 Meeting Mode
+
+Activated by: user says "switch to meeting mode" OR UI button
+
+- **Diarization ON** — speaker-labeled transcription segments streamed in real time
+- **Elevated VAD sensitivity** — catches soft speech, side conversations
+- **Continuous listening** — no wake word needed to transcribe (passive recording)
+- **Wake word still active** — "Vayumi" still interrupts and takes a command
+- **Output** — running transcript shown in UI + saved to session
+- **Exit** — user says "Vayumi, end meeting" OR UI button
+
+---
+
+## 9. Functions Exposed by the Client
+
+These are callable from within your app code — they wrap the WebSocket protocol cleanly.
+
+### 9.1 Connection Management
+
+```typescript
+VayumiClient.connect(serverUrl: string, options?: ConnectOptions): Promise<void>
+// Opens WS, sends client_ready, waits for session_started
+
+VayumiClient.disconnect(reason?: string): void
+// Graceful close, sends disconnect event
+
+VayumiClient.getConnectionState(): ConnectionState
+// "disconnected" | "connecting" | "connected_idle" | "streaming" | "ai_speaking"
+
+VayumiClient.onStateChange(cb: (state: ConnectionState) => void): Unsubscribe
+```
+
+### 9.2 Audio Control
+
+```typescript
+VayumiClient.startMicrophone(): Promise<void>
+// Requests mic permission, starts AudioWorklet pipeline
+
+VayumiClient.stopMicrophone(): void
+
+VayumiClient.setWakeWordEnabled(enabled: boolean): void
+// Toggle wake word detection (e.g. disable in chatbot-only mode)
+
+VayumiClient.setVADEnabled(enabled: boolean): void
+
+VayumiClient.triggerManualPushToTalk(): void
+// Bypass wake word, start streaming immediately (push-to-talk button)
+
+VayumiClient.releaseManualPushToTalk(): void
+```
+
+### 9.3 Interrupt
+
+```typescript
+VayumiClient.interrupt(): void
+// Sends interrupt signal, mutes local playback immediately
+// Use when wake word fires mid-AI-speech
+```
+
+### 9.4 Mode Switching
+
+```typescript
+VayumiClient.switchMode(mode: 'conversation' | 'meeting'): Promise<void>
+// Sends mode_switch, waits for mode_changed ack
+
+VayumiClient.getCurrentMode(): 'conversation' | 'meeting'
+```
+
+### 9.5 Chatbot
+
+```typescript
+VayumiClient.sendChatMessage(message: ChatMessage): Promise<void>
+// message: { text?, attachments?: Attachment[], respondVia: 'voice_and_chat' | 'chat_only' | 'voice_only' }
+
+VayumiClient.onChatResponse(cb: (response: ChatResponse) => void): Unsubscribe
+```
+
+### 9.6 Event Subscriptions
+
+```typescript
+VayumiClient.on('wake_word_detected', cb: (confidence: number) => void)
+VayumiClient.on('vad_speech_start', cb: () => void)
+VayumiClient.on('vad_speech_end', cb: () => void)
+VayumiClient.on('transcription_partial', cb: (text: string) => void)
+VayumiClient.on('transcription_final', cb: (text: string, confidence: number) => void)
+VayumiClient.on('agent_thinking', cb: () => void)
+VayumiClient.on('agent_speaking', cb: (responseId: string) => void)
+VayumiClient.on('agent_done', cb: (responseId: string) => void)
+VayumiClient.on('interrupt_ack', cb: (info: InterruptAck) => void)
+VayumiClient.on('mode_changed', cb: (mode: Mode, features: ModeFeatures) => void)
+VayumiClient.on('diarization_segment', cb: (segment: DiarizationSegment) => void)
+VayumiClient.on('error', cb: (error: VayumiError) => void)
+```
+
+---
+
+## 10. Functions Exposed by the Server
+
+These are Python async functions/endpoints your server provides.
+
+### 10.1 WebSocket Handler
+
+```python
+@app.websocket("/ws/audio")
+async def audio_websocket(websocket: WebSocket):
+    # Handles the full client lifecycle
+
+@app.websocket("/ws/hardware")
+async def hardware_websocket(websocket: WebSocket):
+    # Dedicated endpoint for ESP32 — no wake word, server-side VAD
+```
+
+### 10.2 Session API (internal)
+
+```python
+SessionManager.create_session(client_type: str) -> Session
+SessionManager.get_session(session_id: str) -> Session | None
+SessionManager.set_voice_source(session_id: str, client_type: str) -> None
+SessionManager.release_voice_source(session_id: str) -> None
+SessionManager.end_session(session_id: str) -> None
+```
+
+### 10.3 Audio Processing API (internal)
+
+```python
+AudioPipeline.process_chunk(chunk: bytes, session: Session) -> None
+# Routes to VAD, wake word (if hardware), STT buffer
+
+AudioPipeline.flush(session: Session) -> Transcript
+# End of utterance — sends accumulated audio to STT, returns transcript
+
+AudioPipeline.interrupt(session: Session) -> None
+# Cancels TTS, drops audio queue
+```
+
+### 10.4 Agent API (internal)
+
+```python
+AgentRunner.run(transcript: str, session: Session) -> AsyncIterator[AgentEvent]
+# Runs the AI agent, yields events (thinking, tool_call, response_chunk, done)
+
+AgentRunner.cancel(session: Session) -> None
+# Graceful cancellation on interrupt
+```
+
+### 10.5 TTS API (internal)
+
+```python
+TTSEngine.synthesize_stream(text: str, session: Session) -> AsyncIterator[bytes]
+# Streams PCM chunks as text is generated (low first-chunk latency)
+
+TTSEngine.cancel(session: Session) -> None
+```
+
+### 10.6 REST Endpoints (optional utility)
+
+```
+GET  /health               → server status + active sessions count
+GET  /session/{id}/status  → session state
+POST /session/{id}/mode    → force mode switch via REST (for admin/testing)
+GET  /session/{id}/transcript → full transcript of current session
+```
+
+---
+
+## 11. AI Agent — What It Can Control at Runtime
+
+The AI agent runs server-side and has the following tools it can call. These are the "actions" the AI can take in response to user commands.
+
+### 11.1 Client Control Tools (agent → server → client via WS)
+
+These let the AI reach back and control the client UI/behavior:
+
+| Tool | What it does | Example trigger |
+|---|---|---|
+| `switch_mode(mode)` | Switches client to conversation/meeting mode | "switch to meeting mode" |
+| `set_vad_sensitivity(level)` | Adjusts VAD threshold on client | "be more sensitive" |
+| `mute_microphone()` | Tells client to mute itself | "stop listening" |
+| `unmute_microphone()` | Tells client to resume | "start listening again" |
+| `show_in_chat(content)` | Pushes text/card/link to chatbot UI | "show me the result" |
+| `request_image_from_user()` | Prompts user to upload image | "send me a photo of it" |
+| `set_wake_word_sensitivity(level)` | Adjusts confidence threshold | after repeated false triggers |
+
+### 11.2 Session Tools (agent → session state)
+
+| Tool | What it does |
+|---|---|
+| `get_session_transcript()` | Reads full session transcript so far |
+| `get_meeting_summary()` | Summarizes meeting transcript with speakers |
+| `save_session_note(note)` | Adds a note to session context |
+| `get_active_client_type()` | Returns "web" or "hardware" |
+| `get_chatbot_attachments()` | Gets any images/links user sent via chatbot |
+
+### 11.3 External/Domain Tools (agent → world)
+
+These are where you plug in your actual capabilities:
+
+| Tool | What it does |
+|---|---|
+| `web_search(query)` | Search the web |
+| `get_weather(location)` | Current weather |
+| `read_url(url, instruction?)` | Fetch, clean, and instruction-shape a webpage/link user sent |
+| `analyze_image(image_data)` | Describe or answer questions about an image |
+| `transcribe_audio(audio_data)` | Transcribe a voice clip user sent via chatbot |
+| `set_timer(seconds, label)` | Set a timer, notify client when done |
+| `get_time()` | Current time and date |
+
+> **Note:** These are the foundational tools for Phase 1. Domain tools like calendar, smart home, etc. are added in later phases by registering them with the AgentRunner.
+
+---
+
+## 12. React Client — UI Structure
+
+```
+┌─────────────────────────────────────────────────────┐
+│  VAYUMI                                    [●] Live  │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│          ┌──────────────────────────┐               │
+│          │   Connection Toggle      │               │
+│          │   [  Connect  ]          │               │
+│          └──────────────────────────┘               │
+│                                                     │
+│          ┌──────────────────────────┐               │
+│          │   Orb / Visualizer       │               │
+│          │   (idle/wake/speaking)   │               │
+│          └──────────────────────────┘               │
+│                                                     │
+│  Status: "Listening for Vayumi..."                  │
+│  Transcription: "What is the weather in..."         │
+│                                                     │
+│  [Conversation]    [Meeting Mode]                   │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│  CHATBOT                                            │
+│  ┌─────────────────────────────────────────────────┐│
+│  │ AI: The weather today in Chennai is 34°C...     ││
+│  │ You: [image attached] What's in this?           ││
+│  │ AI: The image shows a circuit board with...     ││
+│  └─────────────────────────────────────────────────┘│
+│  [ 📎 ] [ 🎤 ] [______ Type a message ______] [Send]│
+└─────────────────────────────────────────────────────┘
+```
+
+### Key UI States
+
+| State | Orb appearance | Status text |
+|---|---|---|
+| Disconnected | Grey, static | "Not connected" |
+| Connected, idle | Soft pulse | "Listening for Vayumi…" |
+| Wake detected | Bright expand | "I'm listening…" |
+| Streaming audio | Waveform rings | "Hearing you…" |
+| Agent thinking | Slow rotation | "Thinking…" |
+| AI speaking | Flowing waves | "Speaking…" |
+| Interrupted | Quick flash | "Interrupted" |
+| Meeting mode | Blue tint, always active | "Meeting recording…" |
+
+---
+
+## 13. Performance Targets
+
+| Metric | Target |
+|---|---|
+| Wake word → audio stream start | < 100ms |
+| Last speech sample → STT result | < 600ms (streaming STT) |
+| STT final → first TTS audio chunk | < 300ms |
+| Interrupt signal → audio muted (client) | < 20ms (local mute is instant) |
+| Interrupt signal → server flush complete | < 200ms |
+| WebSocket reconnect (auto) | < 2s |
+| Audio chunk size | 640 bytes (20ms) |
+| Max end-to-end latency (wake → first word heard) | < 1.2s |
+
+---
+
+## 14. File Structure (Phase 1)
+
+```
+vayumi/
+├── client/                        # React app
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── VayumiClient.ts    # Main SDK (all WS logic)
+│   │   │   ├── AudioWorklet.ts    # Audio capture + resampling
+│   │   │   ├── WakeWordEngine.ts  # Wake word wrapper (Porcupine/custom)
+│   │   │   ├── VADEngine.ts       # Silero/WebRTC VAD wrapper
+│   │   │   └── AudioPlayer.ts     # TTS playback + mute on interrupt
+│   │   ├── components/
+│   │   │   ├── ConnectToggle.tsx  # The main on/off button
+│   │   │   ├── Orb.tsx            # Animated visualizer orb
+│   │   │   ├── Transcript.tsx     # Live partial + final text
+│   │   │   ├── ChatPanel.tsx      # Chatbot UI
+│   │   │   ├── ModeToggle.tsx     # Conversation / Meeting switch
+│   │   │   └── StatusBar.tsx      # Connection status
+│   │   └── App.tsx
+│   └── package.json
+│
+├── server/                        # Python backend
+│   ├── main.py                    # FastAPI app, WS endpoints
+│   ├── session/
+│   │   ├── manager.py             # SessionManager
+│   │   └── models.py              # Session, ClientType, Mode dataclasses
+│   ├── audio/
+│   │   ├── pipeline.py            # AudioPipeline
+│   │   ├── vad.py                 # VAD wrapper (webrtcvad + Silero)
+│   │   └── wake_word.py           # OpenWakeWord (for hardware clients)
+│   ├── agent/
+│   │   ├── runner.py              # AgentRunner (LangChain / custom)
+│   │   ├── tools/
+│   │   │   ├── client_control.py  # Tools that send WS events to client
+│   │   │   ├── session_tools.py   # Tools that read/write session
+│   │   │   └── external.py        # Web search, weather, image analysis
+│   │   └── prompts.py
+│   ├── tts/
+│   │   └── engine.py              # TTS streaming wrapper
+│   ├── stt/
+│   │   └── engine.py              # STT streaming wrapper (Whisper/Deepgram)
+│   └── diarization/
+│       └── engine.py              # Speaker diarization (meeting mode)
+│
+└── docs/
+    └── vayumi-platform-spec.md    # ← this document
+```
+
+---
+
+## 15. What to Build Next (Phase 2+)
+
+This document covers Phase 1: the WebSocket layer and React client. After this is stable:
+
+| Phase | What |
+|---|---|
+| 2 | STT integration (Whisper streaming or Deepgram) |
+| 3 | AI agent core + tool registry |
+| 4 | TTS integration + audio playback pipeline |
+| 5 | ESP32-S3 firmware (WebSocket client, I2S mic, DAC speaker) |
+| 6 | Meeting mode — diarization pipeline |
+| 7 | Chatbot image/link/voice analysis |
+| 8 | Wake word custom training ("Vayumi" model) |
+| 9 | Mobile PWA packaging |
+
+---
+
+*Document version: 1.0 — Phase 1 scope*
+*Project: Vayumi AI Agent Platform*
