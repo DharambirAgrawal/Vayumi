@@ -1,0 +1,1405 @@
+<mxfile host="app.diagrams.net" agent="GPT-5.3-Codex" compressed="false" pages="10">
+  <diagram id="page01" name="01 Overview">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p1_title" value="VAYUMI ORCHESTRATION OVERVIEW (Client + Server, Full Duplex)" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="980" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_client_bg" value="CLIENT APP" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="420" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_gateway_bg" value="REALTIME TRANSPORT" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="500" y="80" width="300" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_server_bg" value="SERVER ORCHESTRATION" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="840" y="80" width="780" height="520" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_mem_bg" value="MEMORY PLANE" style="rounded=1;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="40" y="630" width="760" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_tools_bg" value="TOOL AND MCP PLANE" style="rounded=1;fillColor=#FFF3E0;strokeColor=#EF6C00;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="840" y="630" width="780" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_user" value="User (voice + typed chat)" style="ellipse;fillColor=#A5D6A7;strokeColor=#2E7D32;fontStyle=1;fontSize=12;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="90" y="130" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_client" value="Mic capture + text input&#xa;Local interrupt detector&#xa;Playback + live captions" style="rounded=1;fillColor=#BBDEFB;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="220" width="340" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_backchannel" value="Client-local backchannel clips&#xa;triggered by local pause cues while user speaks&#xa;no supervisor round-trip" style="rounded=1;fillColor=#E1F5FE;strokeColor=#0288D1;fontSize=11;fontColor=#01579B;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="340" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_stream" value="Audio/Text stream over WebSocket&#xa;Session id + mode + timing hints" style="rounded=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="530" y="230" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_ingress" value="Ingress + safety checks&#xa;Turn boundary detection" style="rounded=1;fillColor=#D1C4E9;strokeColor=#673AB7;fontSize=11;fontColor=#311B92;" vertex="1" parent="1">
+          <mxGeometry x="870" y="120" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_context" value="Context assembler&#xa;Warm profile + active tasks + pending results + selective retrieval" style="rounded=1;fillColor=#D1C4E9;strokeColor=#673AB7;fontSize=11;fontColor=#311B92;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="120" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_scheduler" value="Inference scheduler&#xa;Priority: user turn &gt; sub-agent &gt; summarizer" style="rounded=1;fillColor=#C5E1A5;strokeColor=#558B2F;fontSize=11;fontColor=#33691E;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="120" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_main" value="Main Agent control loop&#xa;- talks to user&#xa;- delegates tasks (DELEGATE/STOP/ANSWER_TO)&#xa;- keeps direct tools minimal" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontStyle=1;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="870" y="230" width="350" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_sub" value="Sub-agent workers&#xa;Tool-heavy task execution&#xa;Report STEP/NEEDS_INFO/DONE/ERROR&#xa;No speaking controls" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="230" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_sum" value="Summarizer worker&#xa;Background compression and fact extraction" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="230" width="150" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_tts" value="Voice renderer&#xa;Sentence-level streaming audio" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="870" y="360" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_events" value="UX event stream&#xa;tool_started, tool_done, task_step, task_done" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="360" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_notifier" value="Proactive notifier loop (background)&#xa;peek signal bus for DONE/NEEDS_INFO&#xa;gates: not speaking + debounce -> synthetic chat turn via Main" style="rounded=1;fillColor=#FFF9C4;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="450" width="470" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_profile" value="Warm profile cache (always available)&#xa;name, preferences, communication style" style="rounded=1;fillColor=#9FA8DA;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="70" y="690" width="350" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_retrieval" value="On-demand retrieval (only when needed)&#xa;targeted memory lookup, not every turn" style="rounded=1;fillColor=#9FA8DA;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="450" y="690" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_versioned" value="Versioned facts&#xa;active value + superseded history" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="70" y="810" width="330" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_session" value="Session history store&#xa;rolling raw turns + compressed summaries" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="430" y="810" width="340" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_router" value="Main control router&#xa;respond_via + queue/replace + stop/resume" style="rounded=1;fillColor=#FFCC80;strokeColor=#EF6C00;fontSize=11;fontStyle=1;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="870" y="690" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_builtin" value="Main direct tools&#xa;web_search + memory_* + lightweight helpers" style="rounded=1;fillColor=#FFE0B2;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="690" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_mcp" value="Delegated tool pool (sub-agents)&#xa;research, productivity, comms, DB, filesystem, HTTP" style="rounded=1;fillColor=#FFE0B2;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1410" y="690" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_toolux" value="Tool UX contract&#xa;1) announce intent&#xa;2) run tool&#xa;3) return result" style="rounded=1;fillColor=#FFF8E1;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="870" y="810" width="360" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_note" value="Note: conversation-mode overview. Retrieval enters context only on-demand; proactive DONE/NEEDS_INFO notifications can surface without a new user utterance." style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1000" width="1580" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e0a" value="local pause cues" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0288D1;" edge="1" parent="1" source="p1_client" target="p1_backchannel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e0b" value="clip playback" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0288D1;" edge="1" parent="1" source="p1_backchannel" target="p1_user">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p1_user" target="p1_client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p1_client" target="p1_stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p1_stream" target="p1_ingress">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#673AB7;" edge="1" parent="1" source="p1_ingress" target="p1_context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#558B2F;" edge="1" parent="1" source="p1_context" target="p1_scheduler">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e6" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;" edge="1" parent="1" source="p1_scheduler" target="p1_main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e7" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" edge="1" parent="1" source="p1_scheduler" target="p1_sub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e8" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p1_scheduler" target="p1_sum">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e9" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00796B;" edge="1" parent="1" source="p1_main" target="p1_tts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e10" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FF8F00;" edge="1" parent="1" source="p1_main" target="p1_events">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p1_tts" target="p1_client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p1_events" target="p1_client">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e13" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p1_profile" target="p1_context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e14" value="on-demand only" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;dashed=1;" edge="1" parent="1" source="p1_retrieval" target="p1_context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e15" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p1_versioned" target="p1_profile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e16" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p1_main" target="p1_session">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e17" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p1_main" target="p1_router">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e18" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p1_router" target="p1_builtin">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e19" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p1_router" target="p1_mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e20" value="UX preview" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p1_router" target="p1_toolux">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e21" value="signal reports" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p1_sub" target="p1_notifier">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e22" value="synthetic turn" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p1_notifier" target="p1_main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e23" value="proactive UX emit" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p1_notifier" target="p1_events">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page02" name="02 Latency Critical Path">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p2_title" value="LATENCY-OPTIMIZED TURN PIPELINE" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="680" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_bg_fast" value="RESPONSE-CRITICAL PATH (must stay fast)" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1120" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_bg_async" value="POST-RESPONSE AND BACKGROUND WORK (non-blocking)" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="40" y="670" width="1120" height="430" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_bg_guard" value="LONG-INPUT PROTECTION" style="rounded=1;fillColor=#FFF8E1;strokeColor=#F9A825;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="80" width="920" height="1020" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_start" value="User message arrives" style="ellipse;fillColor=#A5D6A7;strokeColor=#2E7D32;fontStyle=1;fontSize=12;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="90" y="140" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_pre" value="Fast preflight&#xa;- estimate token load&#xa;- parse mode + task context" style="rounded=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="360" y="130" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_decision" value="Within context budget?" style="rhombus;fillColor=#FFF176;strokeColor=#F9A825;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="670" y="130" width="210" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_parallel" value="Concurrent I/O in parallel&#xa;- refresh session state&#xa;- collect pending task signals" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="920" y="130" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_context" value="Build turn context&#xa;warm profile + active tasks + pending results" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="90" y="260" width="310" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_llm" value="Main reasoning starts&#xa;stream first text chunk quickly" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontStyle=1;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="430" y="260" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_toolux" value="If tool needed: announce intent first&#xa;then run tool and stream progress" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="720" y="260" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_tts" value="Voice rendering + playback starts" style="rounded=1;fillColor=#A5D6A7;strokeColor=#2E7D32;fontStyle=1;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="90" y="370" width="300" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_done" value="User hears first response token" style="ellipse;fillColor=#66BB6A;strokeColor=#1B5E20;fontStyle=1;fontSize=12;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="430" y="378" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_slo" value="Target: first useful response in about 1.0s (or better) on normal turns" style="rounded=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="720" y="370" width="370" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_after" value="After response is sent" style="ellipse;fillColor=#CE93D8;strokeColor=#7B1FA2;fontStyle=1;fontSize=12;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="90" y="730" width="220" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_check" value="Check history size and quality&#xa;If over soft threshold (e.g., &gt;20k), enqueue compression" style="rounded=1;fillColor=#D1C4E9;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="360" y="720" width="350" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_queue" value="Compression queue&#xa;idle windows + turn gaps" style="rounded=1;fillColor=#E1BEE7;strokeColor=#8E24AA;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="750" y="720" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_worker" value="Summarizer worker&#xa;compress oldest raw turns&#xa;keep recent turns verbatim" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="970" y="720" width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_write" value="Write summary + update memory indexes" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="360" y="840" width="350" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_note" value="Compression is moved off the user-visible critical path.&#xa;It must not delay the first response." style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontStyle=1;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="750" y="840" width="390" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_long_start" value="If message is very long (chat paste / long dictation)" style="ellipse;fillColor=#FFE082;strokeColor=#F9A825;fontStyle=1;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="150" width="340" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_ack" value="Immediate acknowledgement&#xa;&#39;I got it, processing this in chunks&#39;" style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontStyle=1;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="230" width="340" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_chunk" value="Chunk + normalize input&#xa;dedupe, sectioning, citation extraction" style="rounded=1;fillColor=#FFF3E0;strokeColor=#FB8C00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1610" y="230" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_async_agent" value="Async doc-analysis sub-agent&#xa;works on chunk set while user sees progress" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="340" width="320" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_merge" value="Merge chunk summaries into turn context&#xa;then continue normal answer stream" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="1590" y="340" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_emergency" value="Emergency guard&#xa;if projected tokens exceed hard limit:&#xa;- trim oldest raw turns now&#xa;- keep summaries + recent turns&#xa;- continue without blocking UX" style="rounded=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="470" width="650" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_rule" value="Rule: check budget before inference, but run heavy compression only after response." style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontStyle=1;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="610" width="650" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p2_start" target="p2_pre">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p2_pre" target="p2_decision">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e3" value="yes" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00796B;" edge="1" parent="1" source="p2_decision" target="p2_parallel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00796B;" edge="1" parent="1" source="p2_parallel" target="p2_context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;" edge="1" parent="1" source="p2_context" target="p2_llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e6" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FF8F00;" edge="1" parent="1" source="p2_llm" target="p2_toolux">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e7" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p2_llm" target="p2_tts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e8" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p2_tts" target="p2_done">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e9" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p2_done" target="p2_slo">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e10" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p2_done" target="p2_after">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p2_after" target="p2_check">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#8E24AA;" edge="1" parent="1" source="p2_check" target="p2_queue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e13" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p2_queue" target="p2_worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e14" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p2_worker" target="p2_write">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e15" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p2_write" target="p2_note">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e16" value="no" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FB8C00;" edge="1" parent="1" source="p2_decision" target="p2_long_start">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e17" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p2_long_start" target="p2_ack">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e18" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FB8C00;" edge="1" parent="1" source="p2_ack" target="p2_chunk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e19" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" edge="1" parent="1" source="p2_chunk" target="p2_async_agent">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e20" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00796B;" edge="1" parent="1" source="p2_async_agent" target="p2_merge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e21" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#C62828;" edge="1" parent="1" source="p2_merge" target="p2_emergency">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e22" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9E9E9E;" edge="1" parent="1" source="p2_emergency" target="p2_rule">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page03" name="03 Multi-Agent Coordination">
+    <mxGraphModel dx="1141" dy="560" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p3_title" parent="1" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" value="MULTI-AGENT COORDINATION FOR COMPLEX TASKS" vertex="1">
+          <mxGeometry height="30" width="860" x="40" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_bg_main" parent="1" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#4A148C;" value="COORDINATION FLOW" vertex="1">
+          <mxGeometry height="920" width="1220" x="40" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_bg_case" parent="1" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" value="EXAMPLE TASK CLUSTERS" vertex="1">
+          <mxGeometry height="920" width="860" x="1290" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_user" parent="1" style="ellipse;fillColor=#A5D6A7;strokeColor=#2E7D32;fontStyle=1;fontSize=11;fontColor=#1B5E20;" value="User goal:&#xa;&#39;Plan a vendor migration, compare options, and draft stakeholder updates&#39;" vertex="1">
+          <mxGeometry height="70" width="420" x="90" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_plan" parent="1" style="rounded=1;fillColor=#D1C4E9;strokeColor=#673AB7;fontSize=11;fontColor=#311B92;" value="Main Agent builds task graph&#xa;- break goal into parallel work packages&#xa;- assign capability requirements" vertex="1">
+          <mxGeometry height="80" width="360" x="560" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_registry" parent="1" style="rounded=1;fillColor=#C5E1A5;strokeColor=#558B2F;fontSize=11;fontColor=#33691E;" value="Capability map&#xa;research, retrieval, communication, execution" vertex="1">
+          <mxGeometry height="80" width="260" x="960" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_a" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Sub-agent A&#xa;Market and vendor research" vertex="1">
+          <mxGeometry height="90" width="220" x="90" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_b" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Sub-agent B&#xa;Internal dependency and risk scan" vertex="1">
+          <mxGeometry height="90" width="220" x="340" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_c" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Sub-agent C&#xa;Stakeholder communication drafts" vertex="1">
+          <mxGeometry height="90" width="220" x="590" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_d" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Sub-agent D&#xa;Action execution (tickets, docs, tasks)" vertex="1">
+          <mxGeometry height="90" width="220" x="840" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_sched" parent="1" style="rounded=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=11;fontStyle=1;fontColor=#1B5E20;" value="Shared inference scheduler&#xa;interleaves all workers&#xa;main user turn always preempts" vertex="1">
+          <mxGeometry height="80" width="580" x="280" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_signal" parent="1" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontStyle=1;fontColor=#4A148C;" value="Sub-agent reports to Main only&#xa;STEP, DONE, NEEDS_INFO, ERROR" vertex="1">
+          <mxGeometry height="80" width="300" x="90" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_board" parent="1" style="rounded=1;fillColor=#B39DDB;strokeColor=#5E35B1;fontSize=11;fontColor=#311B92;" value="Main context task board&#xa;running tasks, blocked tasks, latest progress" vertex="1">
+          <mxGeometry height="80" width="310" x="420" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_userask" parent="1" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="If any task needs user input, ask only that question&#xa;other tasks continue in parallel" vertex="1">
+          <mxGeometry height="80" width="420" x="760" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_merge" parent="1" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontStyle=1;fontColor=#004D40;" value="Coordinator merges outputs&#xa;conflict resolution + citation checks + final strategy" vertex="1">
+          <mxGeometry height="90" width="450" x="220" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_reply" parent="1" style="rounded=1;fillColor=#26A69A;strokeColor=#004D40;fontSize=11;fontStyle=1;fontColor=#E0F2F1;" value="Single coherent answer to user&#xa;plus optional actionable next steps" vertex="1">
+          <mxGeometry height="90" width="470" x="710" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_toolux" parent="1" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" value="Tool experience rule&#xa;announce intention before each expensive tool call" vertex="1">
+          <mxGeometry height="70" width="450" x="220" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_stability" parent="1" style="rounded=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;" value="Stability rule&#xa;Main controls speech stop/queue/replace/resume&#xa;sub-agents never control speaking" vertex="1">
+          <mxGeometry height="70" width="470" x="710" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case1" parent="1" style="rounded=1;fillColor=#DCEDC8;strokeColor=#689F38;fontSize=11;fontColor=#33691E;" value="Case A: Deep Research&#xa;- A scans sources&#xa;- B validates claims&#xa;- C drafts summary" vertex="1">
+          <mxGeometry height="120" width="250" x="1330" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case2" parent="1" style="rounded=1;fillColor=#DCEDC8;strokeColor=#689F38;fontSize=11;fontColor=#33691E;" value="Case B: Customer Service Resolution&#xa;- A policy retrieval&#xa;- B account checks&#xa;- C empathetic response" vertex="1">
+          <mxGeometry height="120" width="250" x="1610" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case3" parent="1" style="rounded=1;fillColor=#DCEDC8;strokeColor=#689F38;fontSize=11;fontColor=#33691E;" value="Case C: Engineering Incident&#xa;- A timeline reconstruction&#xa;- B root-cause hypotheses&#xa;- D ticket and rollback actions" vertex="1">
+          <mxGeometry height="120" width="230" x="1890" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case4" parent="1" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" value="Case D: Multi-turn Planning&#xa;turn 1: clarify goals&#xa;turn 2: parallel analysis&#xa;turn 3: decision + execution" vertex="1">
+          <mxGeometry height="100" width="790" x="1330" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case5" parent="1" style="rounded=1;fillColor=#FFE0B2;strokeColor=#FB8C00;fontSize=11;fontColor=#E65100;" value="Case E: Long document intake&#xa;ack now, chunk asynchronously, keep user informed, synthesize once complete" vertex="1">
+          <mxGeometry height="85" width="790" x="1330" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case6" parent="1" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="Case F: Human-in-the-loop&#xa;when NEEDS_INFO arrives, ask one targeted question and keep remaining workers active" vertex="1">
+          <mxGeometry height="85" width="790" x="1330" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case7" parent="1" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontStyle=1;fontSize=12;fontColor=#004D40;" value="Design outcome&#xa;Feels like one assistant, powered by many coordinated specialist loops" vertex="1">
+          <mxGeometry height="85" width="790" x="1330" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_case8" parent="1" style="rounded=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;" value="Guardrails&#xa;- capability-scoped tools per agent&#xa;- bounded retries and step limits&#xa;- explicit handoff contracts" vertex="1">
+          <mxGeometry height="110" width="790" x="1330" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e1" edge="1" parent="1" source="p3_user" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#673AB7;" target="p3_plan">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e2" edge="1" parent="1" source="p3_plan" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#558B2F;" target="p3_registry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e3" edge="1" parent="1" source="p3_plan" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" target="p3_a">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="200" y="210" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p3_e4" edge="1" parent="1" source="p3_plan" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" target="p3_b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e5" edge="1" parent="1" source="p3_plan" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" target="p3_c">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e6" edge="1" parent="1" source="p3_plan" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" target="p3_d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e7" edge="1" parent="1" source="p3_a" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" target="p3_sched">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e8" edge="1" parent="1" source="p3_b" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" target="p3_sched">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e9" edge="1" parent="1" source="p3_c" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" target="p3_sched">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e10" edge="1" parent="1" source="p3_d" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" target="p3_sched">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e11" edge="1" parent="1" source="p3_sched" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" target="p3_signal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e12" edge="1" parent="1" source="p3_signal" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#5E35B1;" target="p3_board">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e13" edge="1" parent="1" source="p3_board" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" target="p3_userask">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e14" edge="1" parent="1" source="p3_userask" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;" target="p3_merge">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="970" y="620" />
+              <mxPoint x="445" y="620" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p3_e15" edge="1" parent="1" source="p3_merge" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#004D40;" target="p3_reply">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p3_e16" edge="1" parent="1" source="p3_reply" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FF8F00;" target="p3_toolux">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="945" y="750" />
+              <mxPoint x="445" y="750" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p3_e17" edge="1" parent="1" source="p3_reply" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#C62828;" target="p3_stability">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page04" name="04 Multi-Turn Case Studies">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p4_title" value="MULTI-TURN CASE STUDIES (Conversation Mode)" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_case1_bg" value="CASE 1: RESEARCH + FOLLOW-UP" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="680" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_case2_bg" value="CASE 2: CUSTOMER SERVICE FLOW" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="80" width="680" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_case3_bg" value="CASE 3: TECHNICAL EMERGENCY ASSIST" style="rounded=1;fillColor=#FFF3E0;strokeColor=#EF6C00;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1480" y="80" width="680" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_case4_bg" value="CASE 4: LONG-INPUT + MAIN-COORDINATED EXECUTION" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="40" y="700" width="2120" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c1_t1" value="Turn 1 user&#xa;Ask broad research question" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="70" y="140" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c1_t2" value="Turn 1 assistant&#xa;Acknowledges + starts tasks" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="270" y="140" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c1_t3" value="Turn 2 assistant&#xa;Delivers initial findings" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="470" y="140" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c1_t4" value="Turn 3 user&#xa;Asks a precise follow-up" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="70" y="250" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c1_t5" value="Turn 3 assistant&#xa;Uses cached task context&#xa;answers without restarting work" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="270" y="250" width="380" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c2_t1" value="Turn 1 user&#xa;Describes issue + identity info" style="rounded=1;fillColor=#BBDEFB;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="140" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c2_t2" value="Turn 1 assistant&#xa;Empathy + verification steps" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="140" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c2_t3" value="Turn 2 assistant&#xa;Queries policy + account tools" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="140" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c2_t4" value="Turn 3 assistant&#xa;Resolution + next actions" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="250" width="410" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c3_t1" value="Turn 1 user&#xa;Urgent technical scenario" style="rounded=1;fillColor=#FFE0B2;strokeColor=#FB8C00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1510" y="140" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c3_t2" value="Turn 1 assistant&#xa;Calm framing + immediate triage" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1720" y="140" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c3_t3" value="Turn 2 assistant&#xa;Parallel checks + risk ranking" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1930" y="140" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c3_t4" value="Turn 3 user interrupt" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="1510" y="250" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c3_t5" value="Turn 3 assistant&#xa;adapts instantly, keeps background tasks running" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1720" y="250" width="410" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_flow1" value="Turn 1 user sends very long message" style="rounded=1;fillColor=#D1C4E9;strokeColor=#673AB7;fontSize=11;fontColor=#311B92;" vertex="1" parent="1">
+          <mxGeometry x="80" y="770" width="250" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_flow2" value="Assistant replies quickly&#xa;&#39;Received, processing this in chunks&#39;" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="360" y="770" width="280" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_flow3" value="Main LLM chunk planner&#xa;(budget + pass order)" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="680" y="770" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_flow4" value="Delegated sub-agent pass&#xa;for tool-heavy chunks" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="930" y="770" width="220" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_flow5" value="STEP/DONE back to Main&#xa;Main condenses relevant findings" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="770" width="240" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_flow6" value="Main (same control loop) merges outputs&#xa;and starts streamed final answer&#xa;(no separate coordinator node)" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontStyle=1;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="770" width="320" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_flow7" value="After answer: background compression if needed" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="1800" y="770" width="330" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_c4_rules" value="Behavior rules across all cases&#xa;1) Fast acknowledgement before heavy work&#xa;2) Tool intent preview before execution&#xa;3) Compression and summarization happen after response&#xa;4) Interruptions stop speech, not background task graph&#xa;5) Multi-task completions are condensed to relevant context before next turn" style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="80" y="890" width="2050" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p4_c1_t1" target="p4_c1_t2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p4_c1_t2" target="p4_c1_t3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p4_c1_t3" target="p4_c1_t4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p4_c1_t4" target="p4_c1_t5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p4_c2_t1" target="p4_c2_t2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e6" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p4_c2_t2" target="p4_c2_t3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e7" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p4_c2_t3" target="p4_c2_t4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e8" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p4_c3_t1" target="p4_c3_t2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e9" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p4_c3_t2" target="p4_c3_t3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e10" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p4_c3_t3" target="p4_c3_t4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p4_c3_t4" target="p4_c3_t5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p4_c4_flow1" target="p4_c4_flow2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e13" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" edge="1" parent="1" source="p4_c4_flow2" target="p4_c4_flow3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e14" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" edge="1" parent="1" source="p4_c4_flow3" target="p4_c4_flow4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e15" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" edge="1" parent="1" source="p4_c4_flow4" target="p4_c4_flow5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e16" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;" edge="1" parent="1" source="p4_c4_flow5" target="p4_c4_flow6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p4_e17" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p4_c4_flow6" target="p4_c4_flow7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page05" name="05 Memory and Context Strategy">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p5_title" value="MEMORY AND CONTEXT STRATEGY (Latency-Aware)" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="940" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_bg_layers" value="THREE-LAYER MEMORY MODEL" style="rounded=1;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="980" height="940" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_bg_turn" value="PER-TURN CONTEXT PACK" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="80" width="500" height="940" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_bg_write" value="WRITE PATHS + VERSIONING" style="rounded=1;fillColor=#FFF3E0;strokeColor=#EF6C00;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="80" width="560" height="940" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_l1" value="Layer 1: Warm Profile (always in context)&#xa;- identity and preferences&#xa;- communication style&#xa;- rebuilt only when warm_profile_dirty is set" style="rounded=1;fillColor=#9FA8DA;strokeColor=#3949AB;fontStyle=1;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="80" y="140" width="880" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_l2" value="Layer 2: On-demand retrieval&#xa;- used only for specific historical lookups&#xa;- not fetched on every turn" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="80" y="270" width="880" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_l3" value="Layer 3: Versioned fact store&#xa;- active facts for current behavior&#xa;- superseded chain for historical questions" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="80" y="390" width="880" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_chain" value="Example version chain&#xa;name: Alex (inactive) -&gt; Alexei (active)&#xa;history remains queryable" style="rounded=1;fillColor=#E8EAF6;strokeColor=#5C6BC0;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="80" y="510" width="880" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_comp" value="Compression policy&#xa;- soft threshold at history &gt; 20k tokens&#xa;- enqueue after assistant response&#xa;- run in idle windows" style="rounded=1;fillColor=#D1C4E9;strokeColor=#7B1FA2;fontStyle=1;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="80" y="620" width="880" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_long" value="Long message guard&#xa;- preflight token estimate before inference&#xa;- chunk + summarize if needed&#xa;- continue with bounded context" style="rounded=1;fillColor=#FFE082;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="80" y="750" width="880" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_budget" value="Context budget guidance (example for 32k window)&#xa;developer prompt + turn context + history + user input + output headroom" style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="80" y="880" width="880" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn1" value="Turn Context Block" style="rounded=1;fillColor=#A5D6A7;strokeColor=#2E7D32;fontStyle=1;fontSize=12;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="140" width="440" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn2" value="1) Warm profile" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="220" width="400" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn3" value="2) Active tasks and latest status" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="295" width="400" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn4" value="3) Pending task results" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="370" width="400" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn5" value="4) Session state" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="445" width="400" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn6" value="5) Retrieval results (only if requested)" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="520" width="400" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn7" value="No heavy compression on this path" style="rounded=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="610" width="400" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_turn8" value="Compression + extraction run asynchronously after response" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="695" width="400" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_w1" value="Write source A&#xa;Main memory_save for profile-affecting facts" style="rounded=1;fillColor=#FFE0B2;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="150" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_w2" value="Write source B&#xa;Summarizer after task completion" style="rounded=1;fillColor=#FFE0B2;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1890" y="150" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_w3" value="Write source C&#xa;Compression fact extraction" style="rounded=1;fillColor=#FFE0B2;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="250" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_w4" value="Write source D&#xa;Explicit user &#39;remember this&#39; intent" style="rounded=1;fillColor=#FFE0B2;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1890" y="250" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_store" value="Versioned memory store&#xa;active flag + superseded links + timestamps" style="rounded=1;fillColor=#FFCC80;strokeColor=#EF6C00;fontStyle=1;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="380" width="500" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_rebuild" value="Set warm_profile_dirty=true&#xa;when active profile facts are updated" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="500" width="500" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_rebuild_next" value="Next turn start (including synthetic proactive turns): if warm_profile_dirty&#xa;run warm_block.rebuild() once, then clear dirty flag" style="rounded=1;fillColor=#E8EAF6;strokeColor=#3949AB;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="600" width="500" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_history_query" value="Historical query path (on-demand only)&#xa;&#39;what was true before?&#39; uses superseded chain lookup" style="rounded=1;fillColor=#E8EAF6;strokeColor=#5C6BC0;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="690" width="500" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_guardrail" value="Guardrails&#xa;- no silent overwrite of prior facts&#xa;- preserve provenance for trust and debugging&#xa;- bounded token footprint per turn" style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="1630" y="790" width="500" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p5_l1" target="p5_turn1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p5_l2" target="p5_turn6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p5_l3" target="p5_turn1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p5_comp" target="p5_turn8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p5_long" target="p5_turn7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e6" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p5_w1" target="p5_store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e7" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p5_w2" target="p5_store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e8" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p5_w3" target="p5_store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e9" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;" edge="1" parent="1" source="p5_w4" target="p5_store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e10" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p5_store" target="p5_rebuild">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;" edge="1" parent="1" source="p5_rebuild" target="p5_rebuild_next">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e13" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p5_rebuild_next" target="p5_turn2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e14" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#5C6BC0;" edge="1" parent="1" source="p5_rebuild_next" target="p5_history_query">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p5_e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9E9E9E;" edge="1" parent="1" source="p5_history_query" target="p5_guardrail">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page06" name="06 PersonaPlex-Inspired Design">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p6_title" value="PERSONAPLEX-INSPIRED HYBRID PROMPTING + VAYUMI INTEGRATION" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_bg_core" value="FUTURE DIRECTION: HYBRID FULL-DUPLEX CONCEPT" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="1280" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_bg_integration" value="PRACTICAL INTEGRATION IN CURRENT CLIENT/SERVER STACK" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="80" width="800" height="820" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_voice" value="Voice prompt&#xa;speaker sample embedding" style="rounded=1;fillColor=#B3E5FC;strokeColor=#0288D1;fontSize=11;fontColor=#01579B;" vertex="1" parent="1">
+          <mxGeometry x="80" y="140" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_text" value="Text prompt&#xa;role + behavior + context" style="rounded=1;fillColor=#FFF9C4;strokeColor=#FBC02D;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="330" y="140" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_user_audio" value="User audio stream" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="600" y="140" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_agent_audio" value="Agent audio feedback stream" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="830" y="140" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_codec" value="Neural audio codec layer&#xa;discrete audio tokens" style="rounded=1;fillColor=#E1F5FE;strokeColor=#039BE5;fontSize=11;fontColor=#01579B;" vertex="1" parent="1">
+          <mxGeometry x="80" y="250" width="970" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_temporal" value="Temporal transformer&#xa;listening + speaking overlap" style="rounded=1;fillColor=#BBDEFB;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="970" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_depth" value="Depth transformer&#xa;semantic intent + dialogue planning" style="rounded=1;fillColor=#BBDEFB;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="430" width="970" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_gen" value="Generation head&#xa;text + prosody + turn timing" style="rounded=1;fillColor=#90CAF9;strokeColor=#1565C0;fontStyle=1;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="520" width="970" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_behaviors" value="Emergent conversational behaviors&#xa;- natural pauses&#xa;- interruption handling&#xa;- contextual backchannels&#xa;- persona consistency over long turns" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="630" width="970" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_today" value="Today (modular pipeline)" style="rounded=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontStyle=1;fontSize=12;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="140" width="350" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_today_steps" value="Mic + text input -&gt; orchestration -&gt; model workers -&gt; TTS&#xa;Strengths: flexible tools, multi-agent control, clear client/server separation" style="rounded=1;fillColor=#DCEDC8;strokeColor=#689F38;fontSize=11;fontColor=#33691E;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="210" width="730" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_upgrade" value="Upgrade direction (PersonaPlex-inspired)" style="rounded=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontStyle=1;fontSize=12;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="330" width="350" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_upgrade_steps" value="1) Keep role prompt + voice prompt as first-class inputs&#xa;2) Tighten duplex timing policies for overlap and backchanneling&#xa;3) Preserve multi-agent orchestration around the conversation core&#xa;4) Continue tool-intent previews for user trust" style="rounded=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="400" width="730" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_eval" value="Quality dimensions to track&#xa;- turn-taking smoothness&#xa;- interruption recovery latency&#xa;- task adherence&#xa;- persona consistency&#xa;- user perceived naturalness" style="rounded=1;fillColor=#FFF8E1;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="550" width="730" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_policy" value="Operational policy&#xa;Keep fast UX behavior from prior architecture: early acknowledgement, streaming updates, and transparent tool progress." style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="700" width="730" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_note" value="This page is concept mapping: PersonaPlex ideas adapted to your current multi-agent, client/server architecture." style="rounded=1;fillColor=#ECEFF1;strokeColor=#90A4AE;fontSize=11;fontColor=#37474F;" vertex="1" parent="1">
+          <mxGeometry x="40" y="930" width="2120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0288D1;" edge="1" parent="1" source="p6_voice" target="p6_codec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FBC02D;" edge="1" parent="1" source="p6_text" target="p6_temporal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p6_user_audio" target="p6_codec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00796B;" edge="1" parent="1" source="p6_agent_audio" target="p6_codec">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p6_codec" target="p6_temporal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e6" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p6_temporal" target="p6_depth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e7" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1565C0;" edge="1" parent="1" source="p6_depth" target="p6_gen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e8" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p6_gen" target="p6_behaviors">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e9" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p6_today" target="p6_today_steps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e10" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p6_upgrade" target="p6_upgrade_steps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p6_upgrade_steps" target="p6_eval">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6_e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9E9E9E;" edge="1" parent="1" source="p6_eval" target="p6_policy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page07" name="07 Real User Flow Library">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p7n_title" parent="1" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" value="REAL USER FLOW LIBRARY (Architecture-Faithful)" vertex="1">
+          <mxGeometry x="40" y="20" width="980" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_subtitle" parent="1" style="text;html=1;fontSize=12;fillColor=none;strokeColor=none;fontColor=#374151;" value="Each flow includes user-visible responses, main control actions, sub-agent reports, and context in/out." vertex="1">
+          <mxGeometry x="40" y="52" width="1180" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p7n_bg_a" parent="1" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" value="CASE A: Wakeword + Simple Query (uses web_search, not a price tool)" vertex="1">
+          <mxGeometry x="40" y="90" width="2120" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_a_user" parent="1" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" value="User says: &#39;Hey Vayumi, what is Bitcoin price right now?&#39;" vertex="1">
+          <mxGeometry x="70" y="140" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_a_ack" parent="1" style="rounded=1;fillColor=#A5D6A7;strokeColor=#2E7D32;fontSize=11;fontColor=#1B5E20;" value="Main to user: &#39;Checking live Bitcoin price now.&#39;" vertex="1">
+          <mxGeometry x="420" y="140" width="350" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_a_tool" parent="1" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" value="Main direct tool call: web_search" vertex="1">
+          <mxGeometry x="800" y="140" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_a_final" parent="1" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" value="Main to user: &#39;I found BTC around $X from recent sources. Want 24h high/low too?&#39;" vertex="1">
+          <mxGeometry x="1090" y="140" width="650" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_a_ctx" parent="1" style="rounded=1;fillColor=#E8F5E9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" value="Context in/out: IN=USER_PROFILE + RECENT_HISTORY + SESSION_CONTROL_STATE. OUT=turn appended to history. Memory write only on explicit remember intent." vertex="1">
+          <mxGeometry x="70" y="230" width="1670" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_a_ctrl" parent="1" style="rounded=1;fillColor=#FFF8E1;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="Speech control note: voice interruptions usually replace; typed follow-ups usually queue; &#39;stop&#39; halts speaking, not background tasks by default." vertex="1">
+          <mxGeometry x="1760" y="140" width="370" height="175" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p7n_bg_b" parent="1" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#0D47A1;" value="CASE B: URL Summary (delegated because main prompt stays lean)" vertex="1">
+          <mxGeometry x="40" y="360" width="2120" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_user" parent="1" style="rounded=1;fillColor=#BBDEFB;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" value="User: &#39;Summarize this URL in 5 bullets: &lt;url&gt;&#39;" vertex="1">
+          <mxGeometry x="70" y="420" width="350" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_ack" parent="1" style="rounded=1;fillColor=#90CAF9;strokeColor=#1565C0;fontSize=11;fontColor=#0D47A1;" value="Main to user: &#39;Got it. I am delegating link reading and summary now.&#39;" vertex="1">
+          <mxGeometry x="450" y="420" width="430" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_delegate" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Main delegates task b1 to research sub-agent" vertex="1">
+          <mxGeometry x="910" y="420" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_step" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Sub-agent STEP: fetched page, parsed sections, extracted key points" vertex="1">
+          <mxGeometry x="1260" y="400" width="390" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_done" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Sub-agent DONE: returns structured 5-bullet draft" vertex="1">
+          <mxGeometry x="1260" y="510" width="390" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_final" parent="1" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" value="Main to user: final concise bullets + optional deep-dive follow-up" vertex="1">
+          <mxGeometry x="1680" y="420" width="450" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_ctx" parent="1" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" value="Context update: ACTIVE_TASKS[b1], TASK_SIGNALS[STEP/DONE], condensed output added for next-turn continuity." vertex="1">
+          <mxGeometry x="70" y="520" width="1160" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_b_fail" parent="1" style="rounded=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;" value="If URL blocked or timeout: Main asks for pasted text or alternate link, with partial progress shown." vertex="1">
+          <mxGeometry x="1680" y="530" width="450" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p7n_bg_c" parent="1" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#4A148C;" value="CASE C: Deep Research + Parallel New Task (Main control loop remains explicit)" vertex="1">
+          <mxGeometry x="40" y="680" width="2120" height="410" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_user1" parent="1" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" value="User turn 1: deep research request" vertex="1">
+          <mxGeometry x="70" y="740" width="340" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_main1" parent="1" style="rounded=1;fillColor=#B39DDB;strokeColor=#5E35B1;fontSize=11;fontColor=#311B92;" value="Main to user: &#39;Starting research now. I will share progress and recommendations.&#39;" vertex="1">
+          <mxGeometry x="440" y="740" width="500" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_delegate" parent="1" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" value="Main creates task r1 and delegates to research sub-agents" vertex="1">
+          <mxGeometry x="970" y="740" width="350" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_steps" parent="1" style="rounded=1;fillColor=#E1BEE7;strokeColor=#8E24AA;fontSize=11;fontColor=#4A148C;" value="Sub-agent STEP reports: source coverage, contradictions, confidence updates" vertex="1">
+          <mxGeometry x="1350" y="730" width="750" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_user2" parent="1" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="User turn 2 while r1 runs: &#39;Also draft a leadership update.&#39;" vertex="1">
+          <mxGeometry x="70" y="850" width="430" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_main2" parent="1" style="rounded=1;fillColor=#B39DDB;strokeColor=#5E35B1;fontSize=11;fontColor=#311B92;" value="Main keeps control, creates task c2, keeps r1 running" vertex="1">
+          <mxGeometry x="530" y="850" width="470" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_needs" parent="1" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="If c2 sends NEEDS_INFO, Main asks only the missing targeted question" vertex="1">
+          <mxGeometry x="1030" y="840" width="440" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_merge" parent="1" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" value="Main merges DONE outputs and delivers coherent final responses" vertex="1">
+          <mxGeometry x="1500" y="850" width="600" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_ctx" parent="1" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" value="Context in/out: ACTIVE_TASKS={r1,c2}, TASK_SIGNALS keep latest STEP/NEEDS_INFO/DONE, pending summaries reused across follow-up turns." vertex="1">
+          <mxGeometry x="70" y="950" width="2030" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_c_control" parent="1" style="rounded=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=11;fontColor=#B71C1C;" value="Control rule: speaking controls (queue/replace/stop/resume) stay in Main/Supervisor; sub-agents never speak directly." vertex="1">
+          <mxGeometry x="70" y="1055" width="2030" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p7n_bg_g" parent="1" style="rounded=1;fillColor=#FFF8E1;strokeColor=#F9A825;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#5D4037;" value="SPEECH CONTROL EXAMPLES (Main/Supervisor only)" vertex="1">
+          <mxGeometry x="40" y="1110" width="2120" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_g_stop" parent="1" style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="User: &#39;Stop.&#39; -> stop current speech immediately." vertex="1">
+          <mxGeometry x="70" y="1170" width="500" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_g_queue" parent="1" style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="Typed follow-up during speech -> usually queue behind current response." vertex="1">
+          <mxGeometry x="600" y="1170" width="500" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_g_replace" parent="1" style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="Urgent new voice command -> replace current speech and handle now." vertex="1">
+          <mxGeometry x="1130" y="1170" width="500" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_g_resume" parent="1" style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" value="User: &#39;Continue.&#39; -> resume policy controls where to continue." vertex="1">
+          <mxGeometry x="1660" y="1170" width="470" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_g_note" parent="1" style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" value="Background task graph is independent. Interrupting speech does not cancel delegated tasks unless explicit stop-task intent is given." vertex="1">
+          <mxGeometry x="70" y="1250" width="2060" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p7n_ea1" edge="1" parent="1" source="p7n_a_user" target="p7n_a_ack" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ea2" edge="1" parent="1" source="p7n_a_ack" target="p7n_a_tool" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FF8F00;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ea3" edge="1" parent="1" source="p7n_a_tool" target="p7n_a_final" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_eb1" edge="1" parent="1" source="p7n_b_user" target="p7n_b_ack" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_eb2" edge="1" parent="1" source="p7n_b_ack" target="p7n_b_delegate" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1565C0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_eb3" edge="1" parent="1" source="p7n_b_delegate" target="p7n_b_step" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_eb4" edge="1" parent="1" source="p7n_b_step" target="p7n_b_done" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_eb5" edge="1" parent="1" source="p7n_b_done" target="p7n_b_final" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ec1" edge="1" parent="1" source="p7n_c_user1" target="p7n_c_main1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ec2" edge="1" parent="1" source="p7n_c_main1" target="p7n_c_delegate" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#5E35B1;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ec3" edge="1" parent="1" source="p7n_c_delegate" target="p7n_c_steps" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ec4" edge="1" parent="1" source="p7n_c_user2" target="p7n_c_main2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ec5" edge="1" parent="1" source="p7n_c_main2" target="p7n_c_needs" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#5E35B1;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7n_ec6" edge="1" parent="1" source="p7n_c_needs" target="p7n_c_merge" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page08" name="08 Context and Control Deep Dive">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p8n_title" value="CONTEXT, MEETING MODE, MEMORY, AND CONTROL CONTRACTS" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1320" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_subtitle" value="No gaps page: this page is an implementation-level behavior map." style="text;html=1;fontSize=12;fillColor=none;strokeColor=none;fontColor=#374151;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="900" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p8n_bg_d" value="CASE D: Memory Update + Historical Query" style="rounded=1;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1020" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_d1" value="User: &#39;My name is Alexei now.&#39;" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="70" y="150" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_d2" value="Main: memory update writes new active fact; old value becomes superseded" style="rounded=1;fillColor=#9FA8DA;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="380" y="150" width="370" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_d3" value="Warm profile rebuild triggered" style="rounded=1;fillColor=#9FA8DA;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="780" y="150" width="250" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_d4" value="User asks current + previous name" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#1A237E;" vertex="1" parent="1">
+          <mxGeometry x="70" y="250" width="300" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_d5" value="Main to user: current active value + historical chain from versioned memory" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="400" y="250" width="630" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_d6" value="Context rule: fetch only what is needed. No full history injected every turn." style="rounded=1;fillColor=#E8EAF6;strokeColor=#5C6BC0;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="70" y="340" width="960" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p8n_bg_e" value="CASE E: Meeting Mode (record-first workflow)" style="rounded=1;fillColor=#FFF3E0;strokeColor=#EF6C00;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="90" width="1060" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_e1" value="User: &#39;Start meeting mode.&#39;" style="rounded=1;fillColor=#FFE0B2;strokeColor=#FB8C00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="150" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_e2" value="Main: &#39;Meeting mode is on. I will record and organize key points.&#39;" style="rounded=1;fillColor=#FFCC80;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="150" width="420" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_e3" value="During meeting: diarization + transcript capture (minimal assistant chatter)" style="rounded=1;fillColor=#FFE0B2;strokeColor=#FB8C00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="250" width="690" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_e4" value="User: &#39;End meeting mode.&#39;" style="rounded=1;fillColor=#FFE0B2;strokeColor=#FB8C00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1850" y="150" width="280" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_e5" value="Post-meeting pipeline: summarize -> extract actions -> create reminders -> memory write" style="rounded=1;fillColor=#FFCC80;strokeColor=#EF6C00;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1850" y="250" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_e6" value="Later query: &#39;What did we decide last Tuesday?&#39;" style="rounded=1;fillColor=#FFE0B2;strokeColor=#FB8C00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="340" width="360" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_e7" value="Main recalls meeting summary + action decisions from memory" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="1520" y="340" width="610" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p8n_bg_f" value="CASE F: Multi-Tool Chain with Correct Ownership" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="480" width="2120" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_f1" value="User: &#39;Read latest client email, set reminder, and remember the final decision.&#39;" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="70" y="540" width="450" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_f2" value="Main to user: &#39;I will run this in three steps and report completion.&#39;" style="rounded=1;fillColor=#A5D6A7;strokeColor=#2E7D32;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="550" y="540" width="460" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_f3" value="Main delegates communication sub-agent for email/reminder actions" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="540" width="420" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_f4" value="Sub-agent STEP/DONE reports decision details back to Main" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="540" width="350" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_f5" value="Main direct memory_save for final decision" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1870" y="540" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_f6" value="Main to user: unified completion response + explicit fallback if one step failed" style="rounded=1;fillColor=#80CBC4;strokeColor=#00695C;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="70" y="640" width="2060" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_f7" value="Ownership contract: Main controls speaking and turn policy. Sub-agents can run broad tools but cannot control speaking/transport." style="rounded=1;fillColor=#F1F8E9;strokeColor=#689F38;fontSize=11;fontColor=#33691E;" vertex="1" parent="1">
+          <mxGeometry x="70" y="730" width="2060" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p8n_bg_c" value="CONTEXT PACK + COMPACTION TIMING" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="40" y="870" width="2120" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_c1" value="Turn context assembly: USER_PROFILE + ACTIVE_TASKS + TASK_SIGNALS + SESSION_CONTROL_STATE + RECENT_HISTORY (+ retrieval if needed)" style="rounded=1;fillColor=#D1C4E9;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="70" y="930" width="2060" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_c2" value="Pre-response: fast token budget check only" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="70" y="1020" width="480" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_c3" value="User-visible response path must stay fast" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="580" y="1020" width="480" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_c4" value="Post-response: enqueue compaction worker" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="1020" width="480" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_c5" value="Summarizer compresses old turns and keeps recent turns verbatim" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="1020" width="530" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_c6" value="Extracted stable facts are versioned in memory and become available for later retrieval" style="rounded=1;fillColor=#C5CAE9;strokeColor=#3949AB;fontSize=11;fontColor=#283593;" vertex="1" parent="1">
+          <mxGeometry x="70" y="1110" width="2060" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p8n_bg_ctrl" value="SHARED CONTROL CONTRACT" style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1190" width="2120" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ctrl_main" value="Main Agent owns: user messaging, queue/replace policy, stop/resume speaking, task delegation, final answer synthesis." style="rounded=1;fillColor=#E0F2F1;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="70" y="1245" width="1010" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ctrl_sub" value="Sub-agents own: execution with broad non-speaking tools, structured reports (STEP/NEEDS_INFO/DONE/ERROR), and bounded retries." style="rounded=1;fillColor=#FBE9E7;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="1245" width="1020" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p8n_ed1" edge="1" parent="1" source="p8n_d1" target="p8n_d2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ed2" edge="1" parent="1" source="p8n_d2" target="p8n_d3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#3949AB;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ed3" edge="1" parent="1" source="p8n_d4" target="p8n_d5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ee1" edge="1" parent="1" source="p8n_e1" target="p8n_e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ee2" edge="1" parent="1" source="p8n_e2" target="p8n_e3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ee3" edge="1" parent="1" source="p8n_e4" target="p8n_e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#EF6C00;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ee4" edge="1" parent="1" source="p8n_e6" target="p8n_e7" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ef1" edge="1" parent="1" source="p8n_f1" target="p8n_f2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ef2" edge="1" parent="1" source="p8n_f2" target="p8n_f3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ef3" edge="1" parent="1" source="p8n_f3" target="p8n_f4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ef4" edge="1" parent="1" source="p8n_f4" target="p8n_f5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#FF8F00;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ef5" edge="1" parent="1" source="p8n_f5" target="p8n_f6" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00695C;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ec1" edge="1" parent="1" source="p8n_c2" target="p8n_c3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00796B;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ec2" edge="1" parent="1" source="p8n_c3" target="p8n_c4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p8n_ec3" edge="1" parent="1" source="p8n_c4" target="p8n_c5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page09" name="09 Shared Engine Pool">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p9_title" value="SINGLE LITERT ENGINE POOL (STRUCTURAL VIEW)" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="980" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_bg_src" value="REQUEST SOURCES" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="620" height="1260" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_bg_queue" value="PRIORITY QUEUE" style="rounded=1;fillColor=#FFF8E1;strokeColor=#F9A825;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="700" y="90" width="520" height="1260" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_bg_engine" value="SHARED INFERENCE CORE" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="90" width="880" height="1260" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p9_src_main" value="Main conversation turns&#xa;Permanent conversation slot owner&#xa;Enqueue priority: P0 (highest)" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="80" y="180" width="540" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_src_sub" value="Sub-agent task conversations&#xa;Ephemeral per task / per capability&#xa;Enqueue priority: P1 (normal)" style="rounded=1;fillColor=#FFCCBC;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="80" y="370" width="540" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_src_sum" value="Summarizer conversations&#xa;Ephemeral compression/extraction calls&#xa;Enqueue priority: P2 (low, deferrable)" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="80" y="560" width="540" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p9_q_head" value="Priority dispatcher queue&#xa;All inference requests pass through this queue" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontStyle=1;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="740" y="180" width="440" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_q_p0" value="P0 HIGH&#xa;Main user turns, interrupts, urgent control" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="760" y="310" width="400" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_q_p1" value="P1 NORMAL&#xa;Sub-agent tool-step reasoning" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="760" y="430" width="400" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_q_p2" value="P2 LOW&#xa;Summarizer and compaction jobs" style="rounded=1;fillColor=#FFE082;strokeColor=#FF8F00;fontSize=11;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="760" y="550" width="400" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_dispatch" value="Dispatcher pops highest available priority" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="760" y="690" width="400" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_serial" value="Serialized access guarantee&#xa;exactly one active inference enters engine at a time" style="rounded=1;fillColor=#FFF59D;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="760" y="820" width="400" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_busy_note" value="Busy-engine behavior (CPU LiteRT): no mid-step preemption.&#xa;If a higher-priority request arrives while a sub-agent step is running, that step completes, then dispatcher schedules the next highest-priority item." style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="760" y="940" width="400" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p9_engine" value="LiteRT Engine (single shared instance)&#xa;One process-level runtime serving all lanes" style="rounded=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontStyle=1;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="180" width="800" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_slot_main" value="Conversation slot A (permanent)&#xa;Main control-loop context" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="390" width="720" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_slot_sub" value="Conversation slot B (ephemeral)&#xa;Sub-agent task context" style="rounded=1;fillColor=#FBE9E7;strokeColor=#D84315;fontSize=11;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="550" width="720" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_slot_sum" value="Conversation slot C (ephemeral)&#xa;Summarizer context" style="rounded=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="710" width="720" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_out" value="Responses route back to caller lane&#xa;Main/sub-agent/summarizer update their own state stores" style="rounded=1;fillColor=#E1F5FE;strokeColor=#0288D1;fontSize=11;fontColor=#01579B;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="890" width="720" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_note" value="Build rule: do not model separate always-on engines per role.&#xa;Main permanent conversation + sub-agent ephemeral conversations + summarizer ephemeral conversations all share one engine through the priority queue." style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="80" y="1080" width="2040" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p9_e1" value="enqueue P0" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p9_src_main" target="p9_q_p0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e2" value="enqueue P1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#D84315;" edge="1" parent="1" source="p9_src_sub" target="p9_q_p1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e3" value="enqueue P2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p9_src_sum" target="p9_q_p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p9_q_p0" target="p9_dispatch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p9_q_p1" target="p9_dispatch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e6" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p9_q_p2" target="p9_dispatch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e7" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p9_dispatch" target="p9_serial">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e7b" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p9_serial" target="p9_busy_note">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e8" value="one inference at a time" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1565C0;" edge="1" parent="1" source="p9_serial" target="p9_engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e9" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1565C0;" edge="1" parent="1" source="p9_engine" target="p9_slot_main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e10" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1565C0;" edge="1" parent="1" source="p9_engine" target="p9_slot_sub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1565C0;" edge="1" parent="1" source="p9_engine" target="p9_slot_sum">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0288D1;" edge="1" parent="1" source="p9_slot_main" target="p9_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e13" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0288D1;" edge="1" parent="1" source="p9_slot_sub" target="p9_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p9_e14" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0288D1;" edge="1" parent="1" source="p9_slot_sum" target="p9_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page10" name="10 Proactive Notifier Flow">
+    <mxGraphModel dx="2000" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="p10_title" value="PROACTIVE NOTIFIER LOOP (DONE/NEEDS_INFO WITHOUT USER PROMPT)" style="text;html=1;fontSize=20;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1320" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_lane1" value="LANE 1: BACKGROUND LOOP" style="rounded=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="650" height="1220" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_lane2" value="LANE 2: GATES (SPEAKING + DEBOUNCE)" style="rounded=1;fillColor=#FFF8E1;strokeColor=#F9A825;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="730" y="120" width="650" height="1220" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_lane3" value="LANE 3: MAIN SYNTHESIS + USER DELIVERY" style="rounded=1;fillColor=#E3F2FD;strokeColor=#1E88E5;strokeWidth=2;verticalAlign=top;spacingTop=6;fontStyle=1;fontSize=13;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="120" width="740" height="1220" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p10_n1" value="Background tick / wakeup event&#xa;proactive notifier runs without waiting for user speech" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="90" y="200" width="540" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_n2" value="Peek signal bus&#xa;collect STEP / DONE / NEEDS_INFO / ERROR updates" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="90" y="340" width="540" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_n3" value="Select user-facing updates first&#xa;DONE + NEEDS_INFO (+ actionable ERROR)" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="90" y="480" width="540" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_n4" value="Batch by task and condense summaries&#xa;keep only relevant outcomes for context" style="rounded=1;fillColor=#C8E6C9;strokeColor=#388E3C;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="90" y="620" width="540" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p10_g1" value="Gate A: is_ai_speaking?" style="rhombus;fillColor=#FFF176;strokeColor=#F9A825;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="830" y="250" width="440" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_g1_wait" value="If YES: hold notification&#xa;wait for safe non-speaking window" style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="790" y="390" width="530" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_g2" value="Gate B: debounce/cooldown elapsed?" style="rhombus;fillColor=#FFF176;strokeColor=#F9A825;fontSize=11;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="830" y="540" width="440" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_g2_wait" value="If NO: keep queued signal snapshot&#xa;retry on next notifier tick" style="rounded=1;fillColor=#FFECB3;strokeColor=#F9A825;fontSize=11;fontColor=#5D4037;" vertex="1" parent="1">
+          <mxGeometry x="790" y="680" width="530" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p10_m1" value="Build synthetic chat turn payload&#xa;task_id + concise DONE summary or NEEDS_INFO question" style="rounded=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="220" width="640" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_m2" value="Invoke Main turn handling&#xa;input_mode=chat, respond_via=chat_only, interrupt_policy=queue" style="rounded=1;fillColor=#B3E5FC;strokeColor=#0288D1;fontSize=11;fontColor=#01579B;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="370" width="640" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_m3" value="Main writes proactive user message&#xa;&#39;Task complete ...&#39; or &#39;Need one detail ...&#39;" style="rounded=1;fillColor=#B2DFDB;strokeColor=#00796B;fontSize=11;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="520" width="640" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_m4" value="Emit proactive UX events to client&#xa;task_complete / task_waiting + chatbot_response" style="rounded=1;fillColor=#90CAF9;strokeColor=#1E88E5;fontSize=11;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="670" width="640" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_m5" value="Update context state&#xa;pending_results + TASK_SIGNALS keep condensed relevant outcomes" style="rounded=1;fillColor=#CE93D8;strokeColor=#7B1FA2;fontSize=11;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="820" width="640" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_m6" value="User receives completion/waiting update&#xa;without asking &#39;is it done yet?&#39;" style="rounded=1;fillColor=#A5D6A7;strokeColor=#2E7D32;fontStyle=1;fontSize=11;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="970" width="640" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_note" value="Contract: sub-agents never speak directly. They report statuses to signal bus; Main synthesizes user-facing proactive updates using chat-mode queue policy." style="rounded=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;fontSize=11;fontColor=#424242;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1120" width="2020" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p10_e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p10_n1" target="p10_n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p10_n2" target="p10_n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#388E3C;" edge="1" parent="1" source="p10_n3" target="p10_n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p10_n4" target="p10_g1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e5" value="YES" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p10_g1" target="p10_g1_wait">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e6" value="NO" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p10_g1" target="p10_g2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e7" value="window opens" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p10_g1_wait" target="p10_g2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e8" value="NO" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p10_g2" target="p10_g2_wait">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e9" value="YES" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1565C0;" edge="1" parent="1" source="p10_g2" target="p10_m1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e10" value="retry" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#F9A825;" edge="1" parent="1" source="p10_g2_wait" target="p10_g2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p10_m1" target="p10_m2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#00796B;" edge="1" parent="1" source="p10_m2" target="p10_m3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e13" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1E88E5;" edge="1" parent="1" source="p10_m3" target="p10_m4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e14" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7B1FA2;" edge="1" parent="1" source="p10_m4" target="p10_m5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p10_e15" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2E7D32;" edge="1" parent="1" source="p10_m5" target="p10_m6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

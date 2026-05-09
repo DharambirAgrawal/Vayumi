@@ -1,0 +1,49 @@
+{
+  "name": "server1",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "prestart": "npm run build",
+    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "overrides": {
+    "esbuild": "^0.25.4"
+  },
+  "dependencies": {
+    "bcryptjs": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "drizzle-orm": "latest",
+    "express": "latest",
+    "express-rate-limit": "latest",
+    "google-auth-library": "latest",
+    "helmet": "latest",
+    "jsonwebtoken": "latest",
+    "mailchecker": "latest",
+    "node-cron": "latest",
+    "nodemailer": "latest",
+    "pino": "latest",
+    "pino-http": "latest",
+    "postgres": "latest",
+    "rate-limit-redis": "latest",
+    "redis": "^5.12.1",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/jsonwebtoken": "latest",
+    "@types/node": "latest",
+    "@types/node-cron": "latest",
+    "@types/nodemailer": "latest",
+    "drizzle-kit": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
