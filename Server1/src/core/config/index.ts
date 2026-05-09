@@ -1,0 +1,64 @@
+import "dotenv/config";
+import { z } from "zod";
+
+const envSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    PORT: z.coerce.number().int().positive().default(3001),
+    APP_URL: z.string().url(),
+    DATABASE_URL: z.string().min(1),
+    DATABASE_SSL_ENABLED: z.enum(["true", "false"]).optional(),
+    DATABASE_AUTO_MIGRATE: z.enum(["true", "false"]).optional(),
+    REDIS_URL: z.string().min(1).optional(),
+    REDIS_HOST: z.string().min(1).optional(),
+    REDIS_PORT: z.coerce.number().int().positive().optional(),
+    REDIS_USERNAME: z.string().min(1).optional(),
+    REDIS_PASSWORD: z.string().min(1).optional(),
+    REDIS_TLS_ENABLED: z.enum(["true", "false"]).optional(),
+    JWT_PRIVATE_KEY: z.string().min(1),
+    JWT_PUBLIC_KEY: z.string().min(1),
+    JWT_ACCESS_EXPIRY: z.string().default("15m"),
+    JWT_REFRESH_EXPIRY: z.string().default("90d"),
+    PASSWORD_RESET_URL: z.string().min(1).optional(),
+    SMTP_HOST: z.string().min(1),
+    SMTP_PORT: z.coerce.number().int().positive(),
+    SMTP_USER: z.string().min(1),
+    SMTP_PASS: z.string().min(1),
+    FROM_EMAIL: z.string().email(),
+    ALLOWED_ORIGINS: z.string().min(1),
+    GOOGLE_CLIENT_ID: z.string().min(1),
+    ENCRYPTION_KEY: z.string().min(1),
+    APNS_KEY_ID: z.string().min(1),
+    APNS_TEAM_ID: z.string().min(1),
+    APNS_KEY_PATH: z.string().min(1),
+    APNS_BUNDLE_ID: z.string().min(1),
+    FCM_SERVICE_ACCOUNT_PATH: z.string().min(1),
+    GOOGLE_CLIENT_SECRET: z.string().min(1),
+    GOOGLE_REDIRECT_URI: z.string().min(1),
+    MICROSOFT_CLIENT_ID: z.string().min(1),
+    MICROSOFT_CLIENT_SECRET: z.string().min(1),
+    MICROSOFT_REDIRECT_URI: z.string().min(1),
+    MICROSOFT_TENANT_ID: z.string().min(1),
+  })
+  .superRefine((env, ctx) => {
+    const hasRedisUrl = Boolean(env.REDIS_URL);
+    const hasRedisObjectConfig = Boolean(env.REDIS_HOST && env.REDIS_PORT && env.REDIS_PASSWORD);
+
+    if (!hasRedisUrl && !hasRedisObjectConfig) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["REDIS_URL"],
+        message: "Provide REDIS_URL or REDIS_HOST/REDIS_PORT/REDIS_PASSWORD",
+      });
+    }
+  });
+
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+  const details = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+  throw new Error(`Invalid environment configuration: ${details}`);
+}
+
+export const env = parsed.data;
+export type Env = typeof env;
