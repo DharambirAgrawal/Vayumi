@@ -1,13 +1,13 @@
 # Vayumi Server 2 — Master Plan
 
-**Version:** 1.2  
+**Version:** 1.4  
 **Status:** Architecture locked, Step 1 ready to start  
-**Last updated:** 2026-05-09  
+**Last updated:** 2026-05-10  
 **Companion files:** `doc/step-01.md` (current), `doc/step-NN.md` (next)  
-**Reference diagram:** `orchestrator_diagram_v3.drawio` (15 pages — visual companion to this plan)  
+**Reference diagram:** `orchestrator_diagram_v3.drawio` (17 pages — visual companion to this plan)  
 **Sister service:** `Server1/` (TypeScript) — owns auth, identity, sessions, push tokens. Already implemented and verified.
 
-> **How to use this document:** This plan + the v3 diagram are the *complete* spec. If you (or any future agent) read these two end-to-end you have everything you need to build, debug, or extend Vayumi. If a question is not answered here, the answer is "open a step file or extend §13 / §7.6"; do not improvise.
+> **How to use this document:** This plan + the v3 diagram are the *complete* spec. If you (or any future agent) read these two end-to-end you have everything you need to build, debug, or extend Vayumi. If a question is not answered here, the answer is "open a step file or extend §7.9 / §7.10 / §7.11 / §13"; do not improvise.
 
 ---
 
@@ -28,7 +28,7 @@ If a decision feels uncertain, that means we did the research wrong — escalate
 
 ## 1. What Vayumi is (one paragraph)
 
-Voice-first multi-agent assistant. User talks (or types). A **Main Agent** running a local Gemma 3n model holds the conversation, owns speech, and delegates tool-heavy work to **Sub-Agents** that share the same model engine through a priority queue. Memory is layered (warm profile, on-demand retrieval, versioned facts). Sub-agents only speak through the Main Agent. Background tasks run in parallel; results surface as proactive notifications when the user is silent. Clients are interchangeable (web, mobile app, ESP32 hardware) because the only contract is one WebSocket protocol.
+Voice-first multi-agent assistant. User talks (or types). A **Main Agent** running a local Gemma 3n model holds the conversation, owns speech, and delegates tool-heavy work to **Sub-Agents** that share the same model engine through a priority queue. Memory is layered (warm profile, on-demand retrieval, versioned facts). Sub-agents only speak through the Main Agent. Background tasks run in parallel; results surface as proactive notifications when the user is silent. Clients are interchangeable (web, mobile app, ESP32 hardware) because the stable contract is one WebSocket session protocol plus a small upload endpoint for files/images.
 
 ### 1.1 Two-server topology
 
@@ -68,10 +68,10 @@ Vayumi is **two cooperating services**, on purpose:
 | **TTS** | **Kokoro via `pykokoro` (ONNX, streaming)** | RTF 0.03 on GPU, still real-time on CPU for the small model. Streams sentence-level PCM. Already chosen — we keep it. |
 | **VAD** | **Silero VAD (ONNX, ~2 MB)** | More accurate than WebRTC VAD, still tiny. Used both for end-of-utterance and for client-local interrupt cues. |
 | **Wake word** | **openWakeWord** with the existing custom "Vayumi" ONNX model | You already trained it; no reason to re-do. Runs client-side on web/app/ESP32. The server never does wake detection — that's the client's job to save bandwidth. |
-| **Transport** | **WebSocket only**, with a clean `Transport` interface so a future WebRTC swap is a single class | Plain WS works on browser, mobile, and ESP32. Echo cancellation is the *client's* responsibility (the device hardware on ESP32, the browser's `echoCancellation: true` constraint on web, the OS audio session on mobile). The server assumes echo-canceled mono 16 kHz PCM in. |
+| **Transport** | **WebSocket for session/audio/control + signed HTTPS upload endpoint for large files** | Plain WS works on browser, mobile, and ESP32. Binary WS frames remain audio-only so the server can stream low-latency PCM without ambiguity. Files/images use an upload endpoint that returns `file_id`; the chat message references that id. Echo cancellation is the *client's* responsibility. |
 | **Memory** | **Hybrid: Postgres (versioned facts + sessions) + LanceDB (embedded, semantic retrieval)** | Postgres gives ACID, versioned chains, and superseded history exactly as your diagram needs. LanceDB is a single Python import, disk-backed, scales to millions of vectors, and its versioning maps cleanly to your "superseded fact" model. **No external memory framework** (Mem0/Letta/Zep/MemoryOS) — we own the schema, we own the API, we never get blocked by an upstream library decision. mem0's *fact extraction prompt* is good prior art and we will borrow that pattern. |
 | **Embeddings** | **`bge-small-en-v1.5` via `sentence-transformers` ONNX** | 33M params, runs on CPU in milliseconds, MIT-licensed, top of the small-model leaderboard. |
-| **Tools** | **Native Python tool registry first, MCP adapter second** | A tool is just a typed Python function plus a JSON schema, registered in `tools/__init__.py`. We add an **MCP client adapter** (using the official `modelcontextprotocol` Python SDK) so any MCP server (filesystem, GitHub, Notion, etc.) shows up as tools without touching agent code. This gives you "easy to add anything" with zero lock-in. |
+| **Tools** | **Native Python tool registry first, MCP adapter second** | A tool is a typed async Python function with JSON args and a normalized `ToolResult`, registered through `tools/registry.py`. We add an **MCP client adapter** (using the official `modelcontextprotocol` Python SDK) so any MCP server (filesystem, GitHub, Notion, etc.) shows up as tools without touching agent code. This gives you "easy to add anything" with zero lock-in. |
 | **Web search tool** | **Tavily** (free tier 1k/mo) with **DuckDuckGo HTML scrape** as a no-key fallback | Tavily already returns clean snippets; DDG fallback means dev never blocks on API keys. |
 | **HTML scraping** | **trafilatura** (best-in-class for article extraction in 2026) | Used by the `summarize_url` sub-agent tool. |
 | **Auth** | **Trust Server 1's JWT, nothing else.** Verify RS256 signature offline + check shared Redis blocklist | Server 1 already owns login, register, password reset, OAuth, sessions, push tokens. Server 2's auth is **30 lines of code** (`server/auth.py`): decode token → validate exp/iat/claims → `GET blocklist:<jti>` in shared Redis → return `TokenPayload(user_id, session_id, scopes)`. After that, every WebSocket connection has a verified `user_id` and Server 2 *never thinks about auth again*. We wire this in Step 1 once and forget. There is no user table on Server 2. There is no login endpoint on Server 2. There is no password code on Server 2. If a token expires mid-session, server emits `event{kind:'token_expiring'}` 5 minutes before exp; client refreshes against Server 1 and reconnects with the same `session_id`. |
@@ -101,6 +101,7 @@ These are the same as the diagram, restated in code-level terms.
 
 ### 3.1 Transport plane (`server/transport/`)
 - One WebSocket endpoint: `/ws/v1/session`.
+- One upload endpoint: `POST /upload/v1/file` for user files/images. It returns a `file_id` used in WebSocket `chat.attachments`.
 - One message envelope (binary frames for audio, JSON frames for everything else — see Section 5).
 - Owns: connection lifecycle, auth handshake, ingress audio framing, egress audio frame schedule, heartbeat.
 - Does **not** know about LLMs, tools, memory.
@@ -118,7 +119,7 @@ These are the same as the diagram, restated in code-level terms.
 
 ### 3.4 Orchestrator plane (`server/orchestrator/`)
 - `supervisor.py`: the per-session brain. One instance per WS connection.
-- `directives.py`: parses `[DELEGATE]`, `[STOP]`, `[ANSWER_TO]`, `[REMEMBER]` blocks from Main's stream. **Discarded if interrupt fires mid-block** (page 9 of the diagram, "interrupt safety guarantee").
+- `directives.py`: parses `[DELEGATE]`, `[STOP_TASK]`, `[ANSWER_TO]`, `[RESPOND_VIA]`, `[REMEMBER]`, and `[RECALL]` blocks from Main's stream. **Discarded if interrupt fires mid-block** (page 9 of the diagram, "interrupt safety guarantee").
 - `signal_bus.py`: in-process asyncio queue for sub-agent → main signals (`STEP`, `NEEDS_INFO`, `DONE`, `ERROR`).
 - `notifier.py`: background loop that drains the signal bus and fires synthetic turns when the user is silent.
 - `task_board.py`: the canonical structure that goes into context for Main on every turn — running tasks, latest signals, blocked tasks.
@@ -128,8 +129,8 @@ These are the same as the diagram, restated in code-level terms.
 - `capabilities/`: one folder per capability bundle (`research/`, `productivity/`, `comms/`, `data/`). Each declares which tools it owns and a sub-agent prompt.
 
 ### 3.6 Tool plane (`server/tools/`)
-- `registry.py`: one place where every tool is registered: `(fn, json_schema, capability, requires_auth)`.
-- `tools/web_search.py`, `tools/memory_*.py`, `tools/summarize_url.py`, etc. — each is a typed function returning a string. They do not know they live inside an LLM.
+- `registry.py`: one place where every tool is registered as a `ToolEntry` (`fn`, args schema, result schema, capability, auth, risk, confirmation policy).
+- `tools/web_search.py`, `tools/memory_*.py`, `tools/summarize_url.py`, etc. — each is a typed async function returning `ToolResult`. They do not know they live inside an LLM.
 - `mcp_adapter.py`: connects to configured MCP servers, mirrors their tools into the registry on startup, refreshes on `tools_changed` notifications.
 
 ### 3.7 Memory plane (`server/memory/`)
@@ -174,7 +175,9 @@ Server2/
 │   ├── logger.py                    structlog setup
 │   ├── transport/
 │   │   ├── ws.py                    WebSocket endpoint + envelope codec
-│   │   └── protocol.py              JSON message types (typed)
+│   │   ├── protocol.py              JSON message types (typed)
+│   │   ├── uploads.py               upload endpoint, validation, file_id creation
+│   │   └── client_control.py        server -> client playback / capture commands
 │   ├── voice/
 │   │   ├── stt/
 │   │   │   ├── base.py              STTBackend protocol
@@ -197,6 +200,7 @@ Server2/
 │   │   └── task_board.py
 │   ├── subagents/
 │   │   ├── worker.py
+│   │   ├── report.py                 report() schema + Pydantic validation
 │   │   └── capabilities/
 │   │       ├── research/
 │   │       ├── productivity/
@@ -204,6 +208,8 @@ Server2/
 │   │       └── data/
 │   ├── tools/
 │   │   ├── registry.py
+│   │   ├── runner.py                 execute tool calls + normalize ToolResult
+│   │   ├── tool_search.py            compact capability-aware discovery
 │   │   ├── web_search.py
 │   │   ├── summarize_url.py
 │   │   ├── memory_save.py
@@ -247,11 +253,12 @@ One endpoint: `wss://server2.example.com/ws/v1/session?token=<jwt>`.
 | `type` | `payload` | Meaning |
 |---|---|---|
 | `hello` | `{ client: "web"\|"ios"\|"android"\|"esp32", capabilities: { aec: bool, vad: bool, wake: bool }, session_id?: str }` | Sent first. Server replies with `welcome`. |
-| `chat` | `{ text: string, attachments?: [{kind, url\|data}] }` | Typed message. |
+| `chat` | `{ text: string, attachments?: [{file_id, kind, mime, name, size_bytes}] }` | Typed message, optionally referring to uploaded files/images. |
 | `audio_start` | `{ sample_rate: 16000, format: "pcm_s16le" }` | Mic stream starting; binary frames follow. |
 | `audio_end` | `{}` | End of utterance (client-side VAD decided so). |
 | `interrupt` | `{ source: "wake"\|"button"\|"voice" }` | Stop current speech. Background tasks keep running. |
 | `mode` | `{ mode: "conversation"\|"meeting" }` | Switch mode. |
+| `client_state` | `{ playback: "idle"\|"playing"\|"paused", capture: "idle"\|"recording", visible: bool, route?: "speaker"\|"earpiece"\|"bluetooth" }` | Client tells server what the UI/audio layer is doing. |
 | `ping` | `{ t: int }` | Heartbeat. |
 
 ### 5.3 Server → client JSON types
@@ -262,12 +269,31 @@ One endpoint: `wss://server2.example.com/ws/v1/session?token=<jwt>`.
 | `caption` | `{ text, partial: bool }` | Live caption of what TTS will speak. |
 | `audio_start` | `{ sample_rate, format, turn_id }` | TTS stream starting; binary frames follow. |
 | `audio_end` | `{ turn_id }` | TTS done. |
+| `client_control` | `{ command: "play"\|"pause"\|"stop"\|"duck"\|"unduck"\|"clear_queue"\|"start_capture"\|"stop_capture", reason, turn_id? }` | Server asks the client to control local playback/capture. Client confirms by sending `client_state`. |
 | `event` | `{ kind: "tool_started"\|"tool_done"\|"task_step"\|"task_done"\|"task_error", task_id, summary }` | UX event for the activity feed. |
 | `notification` | `{ task_id, text }` | Proactive surface (sub-agent finished while user was idle). |
 | `error` | `{ code, message }` | Server-side error the user should know about. |
 | `pong` | `{ t }` | Heartbeat reply. |
 
-This protocol is **the only contract between client and server**. It is small, self-describing, and works equally on a browser `WebSocket`, a mobile native socket, or an ESP32 `esp_websocket_client`. Adding an app or hardware client later means *implementing the same protocol*, not redesigning anything server-side.
+This WebSocket protocol is **the only realtime session contract between client and server**. It is small, self-describing, and works equally on a browser `WebSocket`, a mobile native socket, or an ESP32 `esp_websocket_client`. File/image bytes use the upload endpoint in §5.4 and then re-enter the session as `chat.attachments[]`. Adding an app or hardware client later means implementing these two contracts, not redesigning anything server-side.
+
+### 5.4 File and image upload contract
+
+Binary WebSocket frames are audio-only. User files/images go through an upload endpoint, then get referenced from a `chat` message.
+
+| Endpoint / message | Payload | Meaning |
+|---|---|---|
+| `POST /upload/v1/file` | multipart file + JWT | Stores the bytes, validates size/MIME, returns `{file_id, kind, mime, name, size_bytes, sha256}`. |
+| `chat.attachments[]` | `{file_id, kind, mime, name, size_bytes}` | Tells the Supervisor to include the uploaded asset in the turn. |
+| `event{kind:"file_processing"}` | `{file_id, status, summary}` | Lets the client show OCR/transcription/chunking progress. |
+
+Upload rules:
+
+- Images: `image/png`, `image/jpeg`, `image/webp`, max 20 MB.
+- Documents: PDF, TXT, MD, CSV, DOCX later, max 100 MB.
+- Audio/video files are accepted later for meeting/import mode, not Step 1.
+- Uploaded files are not automatically memory. A file enters memory only if Main emits `[REMEMBER]` or a sub-agent returns `facts_to_persist`.
+- Image understanding is a tool/capability issue. The transport layer only stores and references bytes.
 
 ---
 
@@ -346,10 +372,13 @@ This is the table the rest of the plan keeps referring to. It is locked. Wheneve
 [RECALL    key=<dotted.key>]
 [RECALL    chain key=<dotted.key>]
 [RECALL    doc:<doc_id>]
-[ANSWER_TO chat|voice|both]
+[ANSWER_TO task_id=<uuid> answer=<json|string> mode="reply|amendment"]
+[RESPOND_VIA chat|voice|both]
 ```
 
-These are the **only** directives Main can emit. Anything else is plain text → goes to TTS / chat. The orchestrator's parser is small (≈ 80 lines of regex + Pydantic validation) and lives in `server/orchestrator/directives.py`.
+These are the **only** directives Main can emit. Anything else is plain text → goes to TTS / chat. The orchestrator's parser is small (≈ 120 lines of regex + Pydantic validation) and lives in `server/orchestrator/directives.py`.
+
+`ANSWER_TO` is only for task coordination. It resumes a paused sub-agent or appends extra context to a running sub-agent. `RESPOND_VIA` is only for user delivery. Do not overload one directive for both meanings.
 
 ---
 
@@ -419,6 +448,327 @@ One user goal can require many tools **inside a single** `[DELEGATE …]` (answe
 
 ---
 
+## 7.9 Unified task coordination contract (`NEEDS_INFO`, amendments, notes)
+
+Yes: the architecture already supports the five cases where a sub-agent asks a question, receives extra context mid-task, asks for confirmation, or suggests follow-up work. The reusable pattern is:
+
+```
+SubAgentWorker -> report(...) -> SignalBus -> Supervisor -> task_board -> Main -> user
+user reply -> Main -> [ANSWER_TO task_id=...] -> Supervisor -> SubAgentWorker.resume_with(...)
+```
+
+This plan uses `llama-server`, not LiteRT. While the worker is alive, the engine slot may keep KV cache warm. The correctness guarantee does **not** depend on KV staying alive: `SubAgentWorker` also keeps an append-only message transcript in memory and checkpoints it to Postgres. If the slot is evicted or the process restarts, the worker resumes by replaying the task prompt + transcript to the same logical pause point.
+
+### Canonical function names
+
+These names are the target API. Step files may implement them incrementally, but do not invent parallel names.
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/orchestrator/supervisor.py` | `Supervisor.handle_turn(input: TurnInput) -> None` | One entry point for voice, chat, proactive synthetic turns, and reconnect-visible pending tasks. |
+| `server/orchestrator/supervisor.py` | `spawn_subagent(capability, goal, payload) -> task_id` | Creates the task row, creates worker state, assigns dependency/blocking state, emits `tool_started`. |
+| `server/orchestrator/supervisor.py` | `apply_answer_to_task(task_id, answer, mode)` | Handles `[ANSWER_TO ...]`; resumes a paused task or appends context to a running task. |
+| `server/orchestrator/task_board.py` | `TaskBoard.upsert_from_signal(signal)` | Canonical task status update: running, paused, blocked, waiting_user, done, error, cancelled. |
+| `server/orchestrator/task_board.py` | `TaskBoard.render_for_main()` | Structured active-tasks block injected into every Main prompt. |
+| `server/orchestrator/signal_bus.py` | `SignalBus.publish(signal)` / `drain(session_id)` | The only sub-agent -> supervisor channel. Persists every signal to PG for audit. |
+| `server/subagents/worker.py` | `SubAgentWorker.run()` | Owns one task conversation. Calls tools through `ToolRunner`, emits `report()`, never touches transport. |
+| `server/subagents/worker.py` | `SubAgentWorker.resume_with(message)` | Injects user/Main-provided answer or amendment as the next user message in the sub-agent transcript. |
+| `server/subagents/worker.py` | `SubAgentWorker.pause(question, payload)` | Sets task state to paused/waiting_user after `report(NEEDS_INFO, ...)`. |
+| `server/subagents/report.py` | `report(kind, summary, payload=None)` | The only output function visible to sub-agent prompts. Pydantic-validated before it reaches the bus. |
+| `server/tools/registry.py` | `ToolRegistry.register(entry)` | Adds native or MCP-mirrored tools. Enforces unique names and schemas. |
+| `server/tools/registry.py` | `ToolRegistry.resolve_for_capability(capability, user_id)` | Returns the exact tool slice injected into a sub-agent prompt. |
+| `server/tools/registry.py` | `ToolRegistry.search(query, capability, user_id)` | Lets agents discover whether a tool exists without loading the full registry into the prompt. |
+| `server/tools/runner.py` | `ToolRunner.execute(task_id, tool_call)` | Validates args, checks capability access, runs the function, normalizes result, injects it back to the worker. |
+
+### `report()` signal schema
+
+```python
+class ReportSignal(BaseModel):
+    task_id: str
+    kind: Literal["STEP", "NEEDS_INFO", "DONE", "ERROR"]
+    summary: str                         # user-safe, <= 80 tokens
+    payload: dict[str, Any] = {}
+    importance: float = 0.5               # NEEDS_INFO defaults to 1.0
+    created_at: datetime
+```
+
+Rules:
+
+- `STEP` updates UI/activity feed only by default. No Main call unless the user asks or digest policy fires.
+- `NEEDS_INFO` pauses the task. `payload.question` is stored on `task_board[task_id].waiting_for`.
+- `DONE` finalizes the task. Optional `payload.artifacts`, `payload.facts_to_persist`, `payload.note_for_agent`, and `payload.suggestion` are visible to Main as structured fields.
+- `ERROR` is a failed task. If `payload.user_actionable=true`, Main surfaces it like `NEEDS_INFO`; otherwise Supervisor may auto-retry within the worker retry budget.
+
+### Active tasks block shape
+
+Main gets this structured block on every turn. It does not get raw sub-agent transcripts.
+
+```json
+{
+  "active_tasks": [
+    {
+      "task_id": "x1",
+      "capability": "research",
+      "goal": "Research AI chips",
+      "status": "paused",
+      "latest_step": "collected sources",
+      "waiting_for": "Should I focus on 2024-2025 chips or all-time history?",
+      "result_summary": null,
+      "allowed_actions": ["answer", "cancel"]
+    }
+  ],
+  "recent_completed": [
+    {
+      "task_id": "r1",
+      "status": "done",
+      "result_summary": "Found 3 relevant emails about invoice #4421",
+      "note_for_agent": "John also mentioned invoice #4422 is still unpaid",
+      "suggestion": null
+    }
+  ]
+}
+```
+
+### The five reusable cases
+
+| Case | Sub-agent output | Supervisor state | Main action | Resume behavior |
+|---|---|---|---|---|
+| Needs more info | `report(NEEDS_INFO, summary, payload={"question": "..."})` | `task.status="paused"`, `waiting_for=question` | Asks user naturally | `[ANSWER_TO task_id=x1 answer="..." mode="reply"]` calls `resume_with(...)`. |
+| User adds context while running | No sub-agent signal required | Task remains `running`; task_board shows it | Main sees active task + new user text | `[ANSWER_TO task_id=x1 answer="Additional context: ..." mode="amendment"]` appends next message to worker queue. |
+| Tool confirmation | Tool returns `ToolResult(status="confirmation_required", ...)`; worker converts to `NEEDS_INFO` | Task paused | Main asks for yes/no with details | User yes -> `[ANSWER_TO ... answer={"confirmed": true}]`; worker calls same tool with `confirmed=True`. |
+| Note from finished task | `report(DONE, payload={"note_for_agent": "..."})` | Task done; note stored | Main decides whether to surface | If user wants it, Main delegates a new task. |
+| Proactive suggestion | `report(DONE, payload={"suggestion": "..."})` | Task done; suggestion stored | Main may ask user if useful | If user says yes, Main delegates a new task. |
+
+Sub-agent prompts should use clear prefixes only as a prompt convention (`NOTE_FOR_AGENT:`, `SUGGESTION:`), but code should store them in `payload.note_for_agent` and `payload.suggestion` when possible. Main is allowed to ignore suggestions when the user is busy, interrupted, or the suggestion is low value.
+
+---
+
+## 7.10 Tool access, discovery, return values, and confirmation
+
+Tool access is intentionally asymmetric.
+
+| Actor | What it sees | What it can call | Why |
+|---|---|---|---|
+| Main Agent | Directives, active task board, cheap direct tools (`web_search`, `memory_recall`, `tool_search`) and capability labels | Fast, stateless tools only; delegates everything heavy | Keeps voice latency low and avoids stuffing all schemas into Main context. |
+| Sub-agent | Its capability prompt, its task goal/payload, `report()`, and only its allowed tool cards | Tools mapped to its capability by `ToolRegistry.resolve_for_capability(...)` | Keeps prompts small and prevents cross-domain tool misuse. |
+| Tool runner code | Full registry, auth broker, schemas, confirmation policy, audit logger | Can execute any registered tool after capability + auth validation | Code enforces safety; LLM only requests. |
+
+### `ToolEntry` schema
+
+```python
+class ToolEntry(BaseModel):
+    name: str                              # "gmail.draft_create"
+    capability: Literal["main", "research", "productivity", "comms", "data"]
+    description: str                       # <= 80 tokens, prompt-visible
+    args_schema: dict                      # JSON Schema
+    result_schema: dict | None = None
+    fn: Callable[..., Awaitable[ToolResult]]
+    requires_auth: bool = False
+    requires_confirmation: bool = False
+    risk: Literal["read", "write", "send", "delete", "purchase"] = "read"
+    cost_hint: Literal["cheap", "net", "heavy"] = "cheap"
+    timeout_s: int = 30
+```
+
+### `ToolResult` schema
+
+Every tool returns one normalized result. The LLM sees a compact text rendering of this model; code stores the full JSON.
+
+```python
+class ToolResult(BaseModel):
+    status: Literal[
+        "ok",
+        "confirmation_required",
+        "user_action_required",
+        "not_capable",
+        "error",
+    ]
+    summary: str
+    data: dict[str, Any] = {}
+    confirmation: dict[str, Any] | None = None
+    safe_to_show_user: bool = True
+    retryable: bool = False
+```
+
+Return-value rules:
+
+- `ok`: inject into the worker as tool output.
+- `confirmation_required`: worker must call `report(NEEDS_INFO, ...)` before the action is run. The follow-up tool call must include `confirmed=True` and the confirmation id/hash.
+- `user_action_required`: worker must call `report(NEEDS_INFO, ...)`; examples: OAuth reconnect, missing file permission, payment login.
+- `not_capable`: worker reports `DONE` or `ERROR` with a clear limitation. Main tells the user what is unsupported.
+- `error`: runner retries if retryable and budget remains; otherwise worker emits `report(ERROR, ...)`.
+
+### Tool discovery without huge prompts
+
+Agents do not need the full registry in the system prompt. They get a small `tool_search` utility:
+
+```python
+tool_search(query: str, capability: str | None = None) -> list[ToolCard]
+```
+
+`ToolCard` contains only `name`, `capability`, `description`, `risk`, and required auth labels. Main can use `tool_search` to decide whether Vayumi is capable, then either call a cheap direct tool or delegate. A sub-agent can use `tool_search` inside its own capability if the capability has many MCP-imported tools. The runner still validates every final tool call against `ToolRegistry`.
+
+Example behavior:
+
+- User: "Can you update my Notion project page?"
+- Main calls `tool_search("notion project page update")`.
+- If a `productivity` Notion tool exists, Main delegates to productivity.
+- If no tool exists, Main says it cannot do that yet and may offer to connect/configure an MCP server later.
+
+### Confirmation example: email send
+
+The comms tool never sends just because the LLM asked. It returns a confirmation result first:
+
+```json
+{
+  "status": "confirmation_required",
+  "summary": "Send email to sarah@co.com?",
+  "confirmation": {
+    "id": "confirm_abc",
+    "action": "gmail.send",
+    "preview": {
+      "to": "sarah@co.com",
+      "subject": "Meeting confirmation",
+      "body": "Hi Sarah, confirming our meeting on Thursday at 2pm."
+    }
+  }
+}
+```
+
+The sub-agent prompt rule is fixed: if any tool result has `status="confirmation_required"`, call `report(NEEDS_INFO, summary="...", payload={confirmation})`. After the user says yes, Main emits:
+
+```
+[ANSWER_TO task_id=x1 answer={"confirmed":true,"confirmation_id":"confirm_abc"} mode="reply"]
+```
+
+The worker resumes and calls:
+
+```python
+gmail.send(..., confirmed=True, confirmation_id="confirm_abc")
+```
+
+`ToolRunner` verifies the confirmation id still matches the original action preview before executing. This prevents prompt injection from turning "yes" into a different send/delete/purchase action.
+
+---
+
+## 7.11 Full implementation API map by plane
+
+This is the broad function catalog. It is not saying every function ships in Step 1. It is the naming map so future steps do not invent duplicate concepts. Step files can mark a function as stubbed until its phase.
+
+### Auth and session
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/auth.py` | `verify_token(token) -> TokenPayload` | Decode RS256 JWT, validate claims, check Server 1 Redis blocklist. |
+| `server/auth.py` | `get_server1_oauth_token(user_id, provider, scopes) -> OAuthToken or AuthActionRequired` | Tool-runner helper for Gmail/Calendar/Drive/Notion credentials owned by Server 1. |
+| `server/memory/session.py` | `load_or_create_session(user_id, session_id, client_meta) -> SessionState` | Rehydrate server-side session on connect/reconnect. |
+| `server/memory/session.py` | `persist_session_snapshot(session_state)` | Save state needed for reconnect/device handoff. |
+| `server/orchestrator/supervisor.py` | `Supervisor.attach_transport(transport)` / `detach_transport(reason)` | Rebind a live or reconnected client to the same logical session. |
+
+### Transport, protocol, upload, and client control
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/transport/ws.py` | `ws_endpoint(websocket)` | FastAPI WebSocket entry point. Authenticates, accepts, creates/attaches Supervisor. |
+| `server/transport/ws.py` | `inbound_loop()` / `outbound_loop()` | Split receive/send loops inside one TaskGroup. |
+| `server/transport/protocol.py` | `parse_client_message(raw) -> ClientMessage` | Pydantic discriminated-union parse for JSON frames. |
+| `server/transport/protocol.py` | `serialize_server_message(message) -> str` | Typed server JSON frame serialization. |
+| `server/transport/ws.py` | `send_json(message)` / `send_audio_frame(pcm)` | The only low-level WebSocket send functions. |
+| `server/transport/ws.py` | `receive_audio_frame(bytes)` | Routes binary PCM to Supervisor/voice pipeline. |
+| `server/transport/uploads.py` | `upload_file(request, token) -> UploadedFile` | Validates JWT, MIME, size, checksum; stores bytes; returns `file_id`. |
+| `server/transport/uploads.py` | `get_uploaded_file(file_id, user_id) -> FileRef` | Retrieves metadata/path for tools and sub-agents. |
+| `server/transport/uploads.py` | `delete_uploaded_file(file_id, user_id)` | User-initiated cleanup / retention policy hook. |
+| `server/transport/client_control.py` | `send_client_control(command, reason, turn_id=None)` | Server asks client to play/pause/stop/duck/unduck/start/stop capture. |
+| `server/transport/client_control.py` | `handle_client_state(state)` | Client confirms local playback/capture/visibility/audio route. |
+
+Client-control rule: the server may request local audio behavior, but the client is the device owner. The server sends `client_control`; the client replies with `client_state`. If the client cannot comply, it reports state honestly and the Supervisor adapts.
+
+### Voice, audio, and interrupt
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/voice/stt/base.py` | `STTBackend.transcribe_stream(chunks) -> AsyncIterator[TranscriptEvent]` | Common STT interface for Groq/local. |
+| `server/voice/stt/groq.py` | `GroqWhisper.transcribe_stream(...)` | Primary low-latency network STT. |
+| `server/voice/stt/local.py` | `LocalFasterWhisper.transcribe(...)` | Offline fallback for completed utterances. |
+| `server/voice/tts/kokoro.py` | `KokoroTTS.synthesize_stream(text, voice) -> AsyncIterator[PcmFrame]` | Sentence-level streaming TTS. |
+| `server/voice/vad/silero.py` | `SileroVAD.accept_frame(frame) -> VadEvent` | Server-side end-of-utterance fallback and tests. |
+| `server/voice/interrupt.py` | `InterruptController.handle_interrupt(source)` | Single interrupt entry point. Cancels speech scope, clears directive buffer, returns to LISTENING. |
+| `server/voice/interrupt.py` | `cancel_tts(turn_id)` / `cancel_main_decode(turn_id)` | Stop user-facing speech/Main only. Sub-agents continue unless `[STOP_TASK]`. |
+| `server/voice/interrupt.py` | `drop_partial_utterance(reason)` | Discards incomplete STT text after wake/button interrupt. |
+| `server/orchestrator/supervisor.py` | `on_audio_start(payload)` / `on_audio_chunk(bytes)` / `on_audio_end()` | Bridges transport audio events into STT/turn handling. |
+
+### Orchestrator, turns, directives, and tasks
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/orchestrator/supervisor.py` | `handle_turn(input: TurnInput)` | One entry point for chat, voice transcript, proactive signal, and file/image turns. |
+| `server/orchestrator/supervisor.py` | `assemble_main_context(input) -> MainContext` | Warm profile, history, active tasks, retrieval snippets, attachment summaries. |
+| `server/orchestrator/supervisor.py` | `stream_main_response(context)` | Submits Main to P0, streams text, parses directives, drives TTS/chat. |
+| `server/orchestrator/directives.py` | `parse_directive_blocks(stream) -> AsyncIterator[Directive | TextChunk]` | Splits plain text from directive blocks safely while streaming. |
+| `server/orchestrator/directives.py` | `validate_directive(directive) -> TypedDirective` | Pydantic validation for DELEGATE/STOP_TASK/ANSWER_TO/etc. |
+| `server/orchestrator/supervisor.py` | `execute_directive(directive)` | Applies parsed directives to memory, tasks, retrieval, response channel, or tool dispatch. |
+| `server/orchestrator/task_board.py` | `create_task(...)`, `pause_task(...)`, `resume_task(...)`, `cancel_task(...)`, `complete_task(...)` | Canonical task lifecycle mutations. |
+| `server/orchestrator/task_board.py` | `render_for_main()` / `render_for_client()` | Separate compact Main context from richer client activity feed. |
+| `server/orchestrator/notifier.py` | `maybe_surface_signal(signal)` | Gates DONE/NEEDS_INFO/ERROR by user silence, importance, debounce, and client visibility. |
+| `server/orchestrator/notifier.py` | `build_synthetic_turn(signals)` | Runs Main through normal `handle_turn` for proactive text. |
+
+### Sub-agents and capability bundles
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/subagents/worker.py` | `SubAgentWorker.run()` | Main task loop: model step -> tool call/report -> inject result -> continue. |
+| `server/subagents/worker.py` | `resume_with(message)` | Injects answer/amendment from `[ANSWER_TO]`. |
+| `server/subagents/worker.py` | `checkpoint()` / `restore(task_id)` | Saves/restores transcript and tool state for reconnect/restart. |
+| `server/subagents/report.py` | `parse_report(text) -> ReportSignal` | Validates `report(...)` output from the sub-agent. |
+| `server/subagents/capabilities/*/manifest.py` | `load_capability(name) -> CapabilityBundle` | Prompt path, allowed tools, budgets, confirmation instructions. |
+| `server/subagents/capabilities/*/manifest.py` | `render_tool_cards(tools) -> str` | Compact per-capability tool descriptions injected into worker prompt. |
+
+### Engine and prompt
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/engine/runner.py` | `start_llama_server()` / `stop_llama_server()` / `health_check()` | Owns the single llama-server subprocess. |
+| `server/engine/pool.py` | `submit(request, priority, slot_hint=None) -> CompletionHandle` | Queue model work by P0/P1/P2. |
+| `server/engine/pool.py` | `cancel(handle)` | Cancel Main decode on interrupt; task cancellation uses worker-level cancel. |
+| `server/engine/pool.py` | `reserve_slot(role, task_id)` / `release_slot(slot_id)` | Slot accounting for Main/sub-agent/summarizer. |
+| `server/engine/prompt.py` | `build_main_prompt(context)` / `build_subagent_prompt(bundle, task)` / `build_summarizer_prompt(...)` | Prompt assembly with role-specific context. |
+
+### Memory, retrieval, files, and summarization
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/memory/facts.py` | `set_fact(key, value, source, confidence)` | Versioned write; old active row is superseded, never deleted. |
+| `server/memory/facts.py` | `get_fact(key)` / `get_chain(key)` | Active fact and historical chain retrieval. |
+| `server/memory/warm.py` | `build_warm_profile(user_id)` / `mark_dirty(user_id)` | Always-in-context profile cache. |
+| `server/memory/retrieval.py` | `retrieve(query, filters, k) -> list[Snippet]` | LanceDB semantic retrieval with citations. |
+| `server/memory/session.py` | `append_turn(turn)` / `recent_turns(limit)` / `compressed_history()` | Raw and summarized conversation history. |
+| `server/memory/summarizer.py` | `summarize_session(session_id)` | Compresses old turns after response. |
+| `server/memory/summarizer.py` | `extract_facts_from_task(task_id)` | Converts `facts_to_persist` / stable discoveries into versioned facts. |
+| `server/memory/files.py` | `summarize_attachment(file_id)` | OCR/image caption/doc preview used in Main context. Heavy work delegates to sub-agent. |
+
+### Tool system and MCP
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `server/tools/registry.py` | `register(entry)` / `get(name)` / `resolve_for_capability(...)` / `search(...)` | Central tool catalog. |
+| `server/tools/runner.py` | `execute(task_id, tool_call) -> ToolResult` | Args validation, capability gate, auth gate, timeout, audit, normalized result. |
+| `server/tools/runner.py` | `require_confirmation(tool_call, preview) -> ToolResult` | Returns `confirmation_required` with stable confirmation id/hash. |
+| `server/tools/runner.py` | `verify_confirmation(confirmation_id, tool_call)` | Prevents "yes" from approving a changed action. |
+| `server/tools/mcp_adapter.py` | `load_mcp_servers(config)` / `mirror_tools()` / `handle_tools_changed()` | Converts MCP tools into `ToolEntry` rows. |
+| `server/tools/tool_search.py` | `tool_search(query, capability=None) -> list[ToolCard]` | Compact discovery tool for Main/sub-agent prompts. |
+
+### Client reference app
+
+| File | Function / class | Responsibility |
+|---|---|---|
+| `web-client/client.js` | `connect(token)` / `sendJson(type, payload)` / `sendPcmFrame(frame)` | Basic WebSocket contract implementation. |
+| `web-client/client.js` | `startMic()` / `stopMic()` / `recordOneSecond()` | AudioWorklet capture and PCM conversion. |
+| `web-client/client.js` | `handleServerAudio(frame)` / `handleClientControl(command)` | Playback queue and server-requested local controls. |
+| `web-client/client.js` | `uploadFile(file) -> UploadedFile` / `sendChat(text, attachments)` | User file/image upload, then chat reference. |
+| `web-client/client.js` | `renderEvent(event)` / `renderTaskBoard(events)` | Activity feed pills/timeline. |
+
+---
+
 ## 8. Phase plan (the order in which we build)
 
 Each phase is one or more `doc/step-NN.md` files. Status here is the source of truth.
@@ -432,16 +782,16 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 | 1 | Project scaffold + config + db/redis/lancedb wiring + Server 1 JWT auth + WebSocket echo | `doc/step-01.md` | ⬜ next |
 | 2 | Engine plane: `llama-server` runner + slot pool + main-only completion | `doc/step-02.md` | ⬜ |
 | 3 | Voice plane: Groq STT + Kokoro TTS + interrupt | `doc/step-03.md` | ⬜ |
-| 4 | Web client v1 (single HTML file): mic, WS, captions, playback, interrupt button | `doc/step-04.md` | ⬜ |
+| 4 | Web client v1 (single HTML file): mic, WS, captions, playback, interrupt button, client_state/client_control handling | `doc/step-04.md` | ⬜ |
 | 5 | Memory v1: warm profile + session history + Postgres versioned facts | `doc/step-05.md` | ⬜ |
-| 6 | Tool plane: registry + `web_search` (Tavily/DDG) + Main can call it | `doc/step-06.md` | ⬜ |
+| 6 | Tool plane: registry + runner + `tool_search` + `web_search` (Tavily/DDG) + Main can call cheap tools | `doc/step-06.md` | ⬜ |
 
 ### Phase 2 — Multi-agent
 
 | # | Step | Status |
 |---|---|---|
-| 7 | Sub-agent worker + signal bus + `report()` schema | ⬜ |
-| 8 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) | ⬜ |
+| 7 | Sub-agent worker + signal bus + `report()` schema + task pause/resume via `[ANSWER_TO task_id=...]` | ⬜ |
+| 8 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) + tool access gates | ⬜ |
 | 9 | Proactive notifier + synthetic turn pipeline | ⬜ |
 | 10 | LanceDB retrieval tool + memory_recall on-demand | ⬜ |
 | 11 | Summarizer (P2) + automatic compression at 20k tokens | ⬜ |
@@ -453,7 +803,7 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 | 12 | Meeting mode (diarization-friendly transcript accumulation, post-meeting summary) | ⬜ |
 | 13 | Local STT fallback (faster-whisper) + offline mode flag | ⬜ |
 | 14 | Server-side wake-word echo trap (anti-self-trigger when TTS is playing) | ⬜ |
-| 15 | Long-input ack + chunked async doc analysis | ⬜ |
+| 15 | File/image upload + attachment summaries + long-input ack + chunked async doc analysis | ⬜ |
 | 16 | MCP adapter — connect arbitrary MCP servers, mirror their tools | ⬜ |
 
 ### Phase 4 — Clients & deploy
@@ -502,6 +852,11 @@ LANCEDB_DIR=./data/lancedb
 
 # Redis (own + shared signal bus)
 REDIS_URL=
+
+# Uploads
+UPLOAD_DIR=./data/uploads
+UPLOAD_MAX_IMAGE_MB=20
+UPLOAD_MAX_DOC_MB=100
 
 # LLM
 LLAMA_SERVER_BIN=./bin/llama-server
@@ -649,7 +1004,7 @@ What happens, in order, with timestamps relative to when the user finished speak
 | 1110 | Supervisor | `spawn_subagent(research, …)` → creates `task_id=r1`, allocates slot 1, status `running`. Writes to PG: `tasks(id=r1, user_id=u_42, capability='research', status='running', goal='…')`. |
 | 1115 | Supervisor | Creates `task_id=p2`, status `blocked` (waiting on r1). Adds to task_board. |
 | 1120 | Transport | Emits `event{kind:'tool_started', task_id:'r1', summary:'Researching calendar-sharing apps'}` and same for p2 (with note "queued, depends on r1"). |
-| 1200 | Main (slot 0) | Continues with one closing sentence: *"I'll let you know when the comparison is ready."* Emits `[ANSWER_TO voice]`. Then stops. State `SPEAKING → IDLE`. |
+| 1200 | Main (slot 0) | Continues with one closing sentence: *"I'll let you know when the comparison is ready."* Emits `[RESPOND_VIA voice]`. Then stops. State `SPEAKING → IDLE`. |
 
 **What the user sees / hears:** voice reply ≈ 1.0 s in, two activity-feed pills appear ("Researching calendar-sharing apps" with a spinner; "Drafting team email" with "queued").
 
@@ -705,7 +1060,7 @@ While r2 is starting up, the user (still on web) **types** in the chat box: *"oh
 | t | Component | Action |
 |---|---|---|
 | t+460 | Supervisor | Sees `task_ref:"p2"` — instead of spawning a new task, it appends an *amendment* to p2's input queue. p2 is already running on slot 1 and will pick this up at its next reasoning step. |
-| t+500 | Main | Closes with: *"Will do."* Emits `[ANSWER_TO voice]`. State → IDLE. |
+| t+500 | Main | Closes with: *"Will do."* Emits `[RESPOND_VIA voice]`. State → IDLE. |
 
 **Key thing:** Main never opened the email draft itself. It does not know what r2 has written so far. It just knew the *user's intent* (add a CC) and forwarded it via an amendment to p2.
 
@@ -878,3 +1233,5 @@ If this example feels coherent, the architecture is doing its job. If any step f
 | 1.0 | 2026-05-09 | Initial frozen plan. Stack chosen. Step 1 ready. |
 | 1.1 | 2026-05-09 | Added §1.1 two-server topology, expanded auth row in §2 (Server 1 owns identity; Server 2 only verifies), added §7.5 Agent vs Sub-agent capability split with directive grammar, added §13 worked example (multi-step + parallel sub-agents + interjection + interrupt + memory versioning + recall + cancellation). Diagram reference bumped to v3 (15 pages). |
 | 1.2 | 2026-05-09 | Added §7.6 multi-task coordination (no mix-ups), §7.7 STEP → user paths (UI / status question / optional verbal digest) with example phrases, §7.8 PDF-homework multi-tool chain inside one delegate. Fixed stale §14 cross-refs. Diagram page 15 expanded + addendum boxes for §7.6–§7.8. |
+| 1.3 | 2026-05-10 | Added §7.9 unified `NEEDS_INFO` / mid-task amendment / confirmation / suggestion contract and §7.10 tool access, discovery, `ToolEntry`, `ToolResult`, confirmation, and `tool_search` rules. Split task `[ANSWER_TO ...]` from user-delivery `[RESPOND_VIA ...]`. Diagram reference bumped to v3 (16 pages). |
+| 1.4 | 2026-05-10 | Added file/image upload contract, client audio control messages, upload env vars, and §7.11 full implementation API map across auth/session, transport/upload, voice/interrupt, orchestrator, sub-agents, engine, memory/files, tools/MCP, and web client. Diagram reference bumped to v3 (17 pages). |

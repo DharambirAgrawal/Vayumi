@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net" agent="Vayumi-Plan-v1.1" compressed="false" pages="15">
+<mxfile host="app.diagrams.net" agent="Vayumi-Plan-v1.4" compressed="false" pages="17">
   <diagram id="p01" name="01 System Overview">
     <mxGraphModel dx="2400" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1500" math="0" shadow="0">
       <root>
@@ -7,7 +7,7 @@
         <mxCell id="title" value="VAYUMI — END-TO-END SYSTEM OVERVIEW (locked plan v1.1)" style="text;html=1;fontSize=22;fontStyle=1;fillColor=none;strokeColor=none;fontColor=#111827;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1400" height="36" as="geometry" />
         </mxCell>
-        <mxCell id="sub" value="One WebSocket protocol, three client types, one llama-server engine with 4 slots, hand-rolled supervisor. Solid lines = sync data path. Dashed = async / on-demand." style="text;html=1;fontSize=12;fillColor=none;strokeColor=none;fontColor=#111827;" vertex="1" parent="1">
+        <mxCell id="sub" value="One WS session protocol + upload endpoint, three client types, one llama-server engine with 4 slots, hand-rolled supervisor. Solid lines = sync data path. Dashed = async / on-demand." style="text;html=1;fontSize=12;fillColor=none;strokeColor=none;fontColor=#111827;" vertex="1" parent="1">
           <mxGeometry x="40" y="58" width="1900" height="22" as="geometry" />
         </mxCell>
         <mxCell id="bg_clients" value="CLIENTS (interchangeable, same WS protocol)" style="rounded=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=2;verticalAlign=top;spacingTop=8;fontStyle=1;fontSize=13;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -25,7 +25,7 @@
         <mxCell id="cl_responsibility" value="Client owns:&#10;• mic capture (16 kHz mono PCM)&#10;• echo cancellation (browser flag / OS / hw chip)&#10;• wake-word detection (openWakeWord ONNX)&#10;• playback + captions UI&#10;• tap-to-interrupt button" style="rounded=1;fillColor=#E0F2FE;strokeColor=#0369A1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="70" y="410" width="460" height="160" as="geometry" />
         </mxCell>
-        <mxCell id="cl_protocol" value="WebSocket protocol = the only contract&#10;Binary frames = PCM 16k mono | Text frames = JSON {type, payload}" style="rounded=1;fillColor=#FEF08A;strokeColor=#CA8A04;fontStyle=1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="cl_protocol" value="WS session protocol + upload endpoint&#10;Binary WS = PCM audio only | JSON = session/control | Upload = files/images" style="rounded=1;fillColor=#FEF08A;strokeColor=#CA8A04;fontStyle=1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="70" y="600" width="460" height="120" as="geometry" />
         </mxCell>
         <mxCell id="bg_s1" value="SERVER 1 (auth, identity)" style="rounded=1;fillColor=#FFE4E6;strokeColor=#BE123C;strokeWidth=2;verticalAlign=top;spacingTop=8;fontStyle=1;fontSize=13;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -861,8 +861,8 @@
         <mxCell id="reg" value="REGISTRY (server/tools/registry.py)" style="rounded=1;fillColor=#FEF3C7;strokeColor=#CA8A04;strokeWidth=2;verticalAlign=top;spacingTop=8;fontStyle=1;fontSize=13;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="40" y="100" width="700" height="600" as="geometry" />
         </mxCell>
-        <mxCell id="reg_struct" value="ToolEntry (typed, immutable)&#10;• name: str (unique)&#10;• fn: Callable[..., str]    (async, returns str only)&#10;• schema: JSONSchema       (args validation)&#10;• capability: Capability   (research|productivity|comms|data|main)&#10;• requires_auth: bool     (uses user-scoped credentials)&#10;• cost_hint: 'cheap' | 'net' | 'heavy'&#10;• description: str        (≤ 80 tokens, used in prompt)" style="rounded=1;fillColor=#FDE68A;strokeColor=#CA8A04;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="60" y="160" width="660" height="200" as="geometry" />
+        <mxCell id="reg_struct" value="ToolEntry (typed, immutable)&#10;• name: str (unique)&#10;• fn: async Callable[..., ToolResult]&#10;• args_schema: JSONSchema&#10;• result_schema?: JSONSchema&#10;• capability: main|research|productivity|comms|data&#10;• requires_auth: bool&#10;• requires_confirmation: bool&#10;• risk: read|write|send|delete|purchase&#10;• cost_hint: cheap|net|heavy" style="rounded=1;fillColor=#FDE68A;strokeColor=#CA8A04;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="160" width="660" height="230" as="geometry" />
         </mxCell>
         <mxCell id="reg_native" value="NATIVE TOOLS (Phase 1+)&#10;• web_search (Tavily/DDG)&#10;• summarize_url (trafilatura + sub-agent)&#10;• fetch_html (raw)&#10;• memory_save / memory_recall&#10;• calculator&#10;• datetime helpers" style="rounded=1;fillColor=#FED7AA;strokeColor=#EA580C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="380" width="320" height="180" as="geometry" />
@@ -1649,7 +1649,7 @@
         <mxCell id="c3" parent="1" style="rounded=1;fillColor=#E0F2FE;strokeColor=#0369A1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" value="receives event{tool_started r1} and event{tool_started p2 queued}&#10;activity feed shows pills" vertex="1">
           <mxGeometry height="100" width="260" x="380" y="640" as="geometry" />
         </mxCell>
-        <mxCell id="m3" parent="1" style="rounded=1;fillColor=#99F6E4;strokeColor=#0F766E;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" value="t=1200 closes:&#10;'will let you know when ready'&#10;[ANSWER_TO voice]&#10;state SPEAKING -&gt; IDLE" vertex="1">
+        <mxCell id="m3" parent="1" style="rounded=1;fillColor=#99F6E4;strokeColor=#0F766E;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" value="t=1200 closes:&#10;'will let you know when ready'&#10;[RESPOND_VIA voice]&#10;state SPEAKING -&gt; IDLE" vertex="1">
           <mxGeometry height="100" width="360" x="1060" y="640" as="geometry" />
         </mxCell>
         <mxCell id="ph1" parent="1" style="rounded=1;fillColor=#F1F5F9;strokeColor=#64748B;fontSize=11;fontStyle=1;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" value="§13.2 — r1 RUNS while Main is idle (parallel decode on llama-server)" vertex="1">
@@ -1778,7 +1778,7 @@
         <mxCell id="box76" parent="1" style="rounded=1;fillColor=#F1F5F9;strokeColor=#64748B;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;align=left;spacingLeft=10;spacingTop=6;arcSize=4;" value="§7.6 MAIN COORDINATES ALL SUB-AGENTS — NO MIX-UPS&#10;&#10;• Every task = stable task_id (UUID). Supervisor owns task_board[task_id].&#10;• Each worker is constructed with exactly ONE task_id; its engine slot KV never merges with another task.&#10;• report(…) envelope MUST include task_id → bus row + PG audit line always match.&#10;• Main never ingests raw sub-agent transcripts — only structured fields: status, latest_step, result_summary, artifacts.&#10;• Sub-agents never message each other; all cross-task truth = task_board + Main.&#10;&#10;→ Parallel tasks (e.g. user adds work while r1 runs) = separate task_ids, separate slots; Main merges the board each turn." vertex="1">
           <mxGeometry height="300" width="2200" x="40" y="2755" as="geometry" />
         </mxCell>
-        <mxCell id="box77" parent="1" style="rounded=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;align=left;spacingLeft=10;spacingTop=6;arcSize=4;" value="§7.7 INTERMEDIATE STEP → USER (sub-agent never speaks)&#10;&#10;Sub-agent only: report(STEP, summary=&quot;user-safe one-liner&quot;)&#10;&#10;PATH A — UI only (default): STEP → bus → Supervisor updates task_board → Transport event{task_step} → client pills / feed. Main silent.&#10;&#10;PATH B — User asks (&quot;status?&quot;): task_board snapshot in Main prompt → Main paraphrases in ONE voice, e.g. &#10;   • &quot;Research is done — I&apos;m still building the PDF.&quot;&#10;   • &quot;That part&apos;s finished; still working on the next.&quot;&#10;&#10;PATH C — Optional verbal digest: Notifier + policy (importance + min interval) → synthetic turn → Main says one short line (still from board fields, not raw tools).&#10;&#10;DONE / NEEDS_INFO: same chain — always Main (or notifier→Main) for TTS/chat text." vertex="1">
+        <mxCell id="box77" parent="1" style="rounded=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;align=left;spacingLeft=10;spacingTop=6;arcSize=4;" value="§7.7 INTERMEDIATE STEP → USER (sub-agent never speaks)&#10;&#10;Sub-agent only: report(STEP, summary=&quot;user-safe one-liner&quot;)&#10;&#10;PATH A — UI only (default): STEP → bus → Supervisor updates task_board → Transport event{task_step} → client pills / feed. Main silent.&#10;&#10;PATH B — User asks (&quot;status?&quot;): task_board snapshot in Main prompt → Main paraphrases in ONE voice, e.g. &#10;   • &quot;Research is done — I'm still building the PDF.&quot;&#10;   • &quot;That part's finished; still working on the next.&quot;&#10;&#10;PATH C — Optional verbal digest: Notifier + policy (importance + min interval) → synthetic turn → Main says one short line (still from board fields, not raw tools).&#10;&#10;DONE / NEEDS_INFO: same chain — always Main (or notifier→Main) for TTS/chat text." vertex="1">
           <mxGeometry height="360" width="2280" x="2280" y="2755" as="geometry" />
         </mxCell>
         <mxCell id="box78" parent="1" style="rounded=1;fillColor=#ECFDF5;strokeColor=#059669;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;align=left;spacingLeft=10;spacingTop=6;arcSize=4;" value="§7.8 PDF / HOMEWORK CHAIN (many tools, ONE delegate)&#10;&#10;User: &quot;Make a PDF of these homework Q&amp;A.&quot;&#10;Main: single [DELEGATE capability=productivity goal=…]&#10;Sub-agent internal chain: answer items → assemble doc → render_pdf → upload / attach.&#10;STEP reports: &quot;Draft ready&quot; → &quot;Rendering PDF&quot; (Paths A/B/C above).&#10;DONE: payload artifacts[{kind:pdf, …}] + short summary.&#10;Main (or notifier): &quot;Your PDF is ready&quot; + deliver_file / signed URL tool.&#10;Production: one fat tool homework_to_pdf() — same architecture, fewer internal steps." vertex="1">
@@ -1936,6 +1936,178 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e_m8mem3" edge="1" parent="1" source="m8" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4338CA;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;strokeWidth=2;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" target="mem3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p16" name="16 Coordination + Tool Access">
+    <mxGraphModel dx="2400" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="COORDINATION + TOOL ACCESS CONTRACT (PLAN.md §7.9–§7.10)" style="text;html=1;fillColor=none;strokeColor=none;fontColor=#111827;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1600" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="One pattern handles NEEDS_INFO, mid-task amendments, confirmations, notes, suggestions, and tool discovery. Main is the only user-facing voice." style="text;html=1;fillColor=none;strokeColor=none;fontColor=#111827;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="58" width="2200" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="main_lane" value="MAIN AGENT (slot 0, speaks)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=12;fontColor=#111827;strokeWidth=2;fillColor=#CCFBF1;strokeColor=#0F766E;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="520" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="main_ctx" value="Every turn receives:&#10;active_tasks block&#10;recent_completed block&#10;user message / proactive signal&#10;&#10;Main decides:&#10;ask user, answer user, delegate, cancel, or amend task" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#99F6E4;strokeColor=#0F766E;" vertex="1" parent="1">
+          <mxGeometry x="70" y="170" width="460" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="directives" value="Main directives&#10;[DELEGATE capability=... goal=... payload=...]&#10;[STOP_TASK task_id=...]&#10;[ANSWER_TO task_id=... answer=... mode=reply|amendment]&#10;[RESPOND_VIA chat|voice|both]&#10;[REMEMBER ...] / [RECALL ...]" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#ECFDF5;strokeColor=#0F766E;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="380" width="460" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="speak_rule" value="Hard rule&#10;Main is the only component allowed to write chat text or TTS audio. Sub-agents never touch transport." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FEE2E2;strokeColor=#DC2626;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="620" width="460" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="sup_lane" value="SUPERVISOR + TASK BOARD" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=12;fontColor=#111827;strokeWidth=2;fillColor=#FFF7ED;strokeColor=#C2410C;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="610" y="110" width="560" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="functions" value="Core functions&#10;Supervisor.handle_turn(input)&#10;spawn_subagent(capability, goal, payload)&#10;apply_answer_to_task(task_id, answer, mode)&#10;TaskBoard.upsert_from_signal(signal)&#10;TaskBoard.render_for_main()" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FED7AA;strokeColor=#C2410C;" vertex="1" parent="1">
+          <mxGeometry x="640" y="170" width="500" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="states" value="Task statuses&#10;running · blocked · paused · waiting_user · done · error · cancelled&#10;&#10;All keyed by task_id. Supervisor is the only writer of task_board." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FFEDD5;strokeColor=#C2410C;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="640" y="410" width="500" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="bus" value="SignalBus&#10;report(STEP|NEEDS_INFO|DONE|ERROR)&#10;→ PG audit row&#10;→ task_board update&#10;→ optional notifier synthetic turn" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#F3E8FF;strokeColor=#7C3AED;" vertex="1" parent="1">
+          <mxGeometry x="640" y="580" width="500" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="worker_lane" value="SUB-AGENT WORKER (one task_id)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=12;fontColor=#111827;strokeWidth=2;fillColor=#FFE4E6;strokeColor=#C2410C;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="110" width="560" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="worker_api" value="Worker API&#10;SubAgentWorker.run()&#10;resume_with(message)&#10;pause(question, payload)&#10;cancel(reason)&#10;&#10;Worker owns one transcript and checkpoints it. If KV is lost, replay transcript to resume logical state." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FED7AA;strokeColor=#C2410C;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="170" width="500" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="reports" value="report() meanings&#10;STEP: progress only&#10;NEEDS_INFO: pause + ask user&#10;DONE: summary + artifacts + facts + optional note/suggestion&#10;ERROR: retry or surface if user-actionable" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FEE2E2;strokeColor=#DC2626;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="410" width="500" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="cases" value="Five cases collapse here&#10;1 needs more info&#10;2 user adds context while running&#10;3 tool confirmation&#10;4 note_for_agent after DONE&#10;5 suggestion after DONE" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FFF7ED;strokeColor=#C2410C;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="600" width="500" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_lane" value="TOOL ACCESS + DISCOVERY" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=12;fontColor=#111827;strokeWidth=2;fillColor=#FEF3C7;strokeColor=#CA8A04;fontStyle=1;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1830" y="110" width="700" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="toolentry" value="ToolEntry&#10;name · capability · description · args_schema · result_schema&#10;requires_auth · requires_confirmation · risk · cost_hint · timeout_s&#10;&#10;Registry enforces capability access before any function runs." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FDE68A;strokeColor=#CA8A04;" vertex="1" parent="1">
+          <mxGeometry x="1860" y="170" width="640" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="toolresult" value="ToolResult.status&#10;ok&#10;confirmation_required&#10;user_action_required&#10;not_capable&#10;error&#10;&#10;ToolRunner normalizes every native/MCP result to this shape." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FFFBEB;strokeColor=#CA8A04;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1860" y="370" width="300" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="toolsearch" value="tool_search(query, capability?)&#10;Returns compact ToolCards, not full schemas.&#10;Main uses it to decide capability/delegation.&#10;Sub-agents use it only inside their allowed capability slice." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#DBEAFE;strokeColor=#2563EB;" vertex="1" parent="1">
+          <mxGeometry x="2190" y="370" width="310" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="confirm" value="Confirmation loop&#10;Tool returns confirmation_required&#10;→ worker report(NEEDS_INFO, payload.confirmation)&#10;→ Main asks user&#10;→ [ANSWER_TO task_id=... confirmed=true]&#10;→ ToolRunner verifies confirmation id/hash&#10;→ action executes" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FEE2E2;strokeColor=#DC2626;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1860" y="630" width="640" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="flow_needs" value="NEEDS_INFO FLOW&#10;Sub-agent: report(NEEDS_INFO, question) → task paused → Main asks → user answers → [ANSWER_TO task_id=x answer=...] → resume_with(answer)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#F8FAFC;strokeColor=#64748B;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="820" width="780" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="flow_amend" value="MID-TASK AMENDMENT FLOW&#10;User adds context while task is running → Main sees active_tasks → [ANSWER_TO task_id=x mode=amendment] → worker receives next message and adjusts." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#F8FAFC;strokeColor=#64748B;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="820" width="780" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="flow_done" value="DONE NOTE / SUGGESTION FLOW&#10;Sub-agent: report(DONE, payload.note_for_agent / suggestion) → Main decides whether to surface → if user says yes, Main delegates a new task." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#F8FAFC;strokeColor=#64748B;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1700" y="820" width="780" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e_main_sup" value="validated directives" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0F766E;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="directives" target="functions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sup_worker" value="spawn / resume / cancel" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#C2410C;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="functions" target="worker_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_bus" value="report(...)" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7C3AED;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="reports" target="bus">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bus_main" value="task_board block" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#7C3AED;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="bus" target="main_ctx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_tool" value="tool call request" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#CA8A04;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="worker_api" target="toolentry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tool_worker" value="normalized result" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#CA8A04;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="toolresult" target="worker_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_search" value="capability discovery" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2563EB;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;dashed=1;dashPattern=8 4;" edge="1" parent="1" source="toolsearch" target="directives">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_confirm" value="confirmation -&gt; NEEDS_INFO" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#DC2626;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="confirm" target="reports">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="p17" name="17 Full API Map">
+    <mxGraphModel dx="2400" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3000" pageHeight="1900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="FULL IMPLEMENTATION API MAP (PLAN.md §7.11)" style="text;html=1;fillColor=none;strokeColor=none;fontColor=#111827;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1400" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="This page is a function-name index across the whole system: transport, uploads, audio, interrupt, orchestrator, sub-agents, engine, memory, tools, and web client." style="text;html=1;fillColor=none;strokeColor=none;fontColor=#111827;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="58" width="2500" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="transport" value="TRANSPORT / PROTOCOL / UPLOAD&#10;ws_endpoint(websocket)&#10;inbound_loop() / outbound_loop()&#10;parse_client_message(raw)&#10;serialize_server_message(msg)&#10;send_json(msg) / send_audio_frame(pcm)&#10;receive_audio_frame(bytes)&#10;upload_file(request, token)&#10;get_uploaded_file(file_id, user_id)&#10;send_client_control(command, reason)&#10;handle_client_state(state)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#DBEAFE;strokeColor=#2563EB;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="voice" value="VOICE / AUDIO / INTERRUPT&#10;STTBackend.transcribe_stream(chunks)&#10;GroqWhisper.transcribe_stream(...)&#10;LocalFasterWhisper.transcribe(...)&#10;KokoroTTS.synthesize_stream(text, voice)&#10;SileroVAD.accept_frame(frame)&#10;InterruptController.handle_interrupt(source)&#10;cancel_tts(turn_id)&#10;cancel_main_decode(turn_id)&#10;drop_partial_utterance(reason)&#10;on_audio_start/chunk/end()" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#CCFBF1;strokeColor=#0F766E;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="120" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="orch" value="ORCHESTRATOR / TASKS&#10;Supervisor.handle_turn(input)&#10;assemble_main_context(input)&#10;stream_main_response(context)&#10;parse_directive_blocks(stream)&#10;validate_directive(directive)&#10;execute_directive(directive)&#10;create_task/pause_task/resume_task&#10;cancel_task/complete_task&#10;TaskBoard.render_for_main()&#10;Notifier.maybe_surface_signal(signal)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FFF7ED;strokeColor=#C2410C;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="120" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="subagents" value="SUB-AGENTS&#10;SubAgentWorker.run()&#10;resume_with(message)&#10;checkpoint() / restore(task_id)&#10;parse_report(text) -&gt; ReportSignal&#10;load_capability(name)&#10;render_tool_cards(tools)&#10;report(STEP|NEEDS_INFO|DONE|ERROR)&#10;&#10;Rule: one worker = one task_id; no transport access." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FFE4E6;strokeColor=#C2410C;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="120" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="engine" value="ENGINE / PROMPT&#10;start_llama_server()&#10;stop_llama_server()&#10;health_check()&#10;pool.submit(request, priority, slot_hint)&#10;pool.cancel(handle)&#10;reserve_slot(role, task_id)&#10;release_slot(slot_id)&#10;build_main_prompt(context)&#10;build_subagent_prompt(bundle, task)&#10;build_summarizer_prompt(...)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FDBA74;strokeColor=#9A3412;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="2360" y="120" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="auth" value="AUTH / SESSION&#10;verify_token(token)&#10;get_server1_oauth_token(user_id, provider, scopes)&#10;load_or_create_session(user_id, session_id, client_meta)&#10;persist_session_snapshot(session_state)&#10;Supervisor.attach_transport(transport)&#10;Supervisor.detach_transport(reason)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FEE2E2;strokeColor=#DC2626;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="540" width="500" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="memory" value="MEMORY / FILES / SUMMARIZER&#10;set_fact(key, value, source, confidence)&#10;get_fact(key) / get_chain(key)&#10;build_warm_profile(user_id) / mark_dirty(user_id)&#10;retrieve(query, filters, k)&#10;append_turn(turn) / recent_turns(limit)&#10;compressed_history()&#10;summarize_session(session_id)&#10;extract_facts_from_task(task_id)&#10;summarize_attachment(file_id)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#E0E7FF;strokeColor=#4338CA;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="540" width="500" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="tools" value="TOOLS / MCP&#10;ToolRegistry.register(entry)&#10;get(name)&#10;resolve_for_capability(capability, user_id)&#10;search(query, capability, user_id)&#10;ToolRunner.execute(task_id, tool_call)&#10;require_confirmation(tool_call, preview)&#10;verify_confirmation(confirmation_id, tool_call)&#10;load_mcp_servers(config)&#10;mirror_tools()&#10;handle_tools_changed()&#10;tool_search(query, capability?)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FEF3C7;strokeColor=#CA8A04;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="540" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="client" value="WEB CLIENT REFERENCE&#10;connect(token)&#10;sendJson(type, payload)&#10;sendPcmFrame(frame)&#10;startMic() / stopMic() / recordOneSecond()&#10;handleServerAudio(frame)&#10;handleClientControl(command)&#10;uploadFile(file) -&gt; UploadedFile&#10;sendChat(text, attachments)&#10;renderEvent(event)&#10;renderTaskBoard(events)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#E0F2FE;strokeColor=#0369A1;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1780" y="540" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="rules" value="CROSS-CUTTING RULES&#10;• Binary WS frames = audio only. Files/images use upload_file -&gt; file_id -&gt; chat.attachments.&#10;• Server may request client audio behavior with client_control, but client owns the hardware and confirms with client_state.&#10;• Interrupt cancels Main/TTS/directive buffer only; background sub-agents keep running unless STOP_TASK.&#10;• Main speaks; sub-agents report.&#10;• ToolRunner enforces auth, capability, confirmation, timeout, and audit." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#F8FAFC;strokeColor=#64748B;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="2360" y="540" width="500" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="flow1" value="UPLOAD FLOW&#10;user selects image/file -&gt; POST /upload/v1/file -&gt; file_id -&gt; chat.attachments[] -&gt; Supervisor summarizes attachment -&gt; Main decides answer/delegate" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#EFF6FF;strokeColor=#2563EB;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="160" y="980" width="760" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="flow2" value="AUDIO CONTROL FLOW&#10;Main/TTS starts -&gt; Transport sends audio_start + PCM -&gt; client plays -&gt; interrupt/client_control stop/duck -&gt; client_state confirms -&gt; Supervisor adapts" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#ECFDF5;strokeColor=#0F766E;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="980" width="760" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="flow3" value="TASK COORDINATION FLOW&#10;SubAgentWorker report(...) -&gt; SignalBus -&gt; TaskBoard -&gt; Main active_tasks block -&gt; ANSWER_TO / STOP_TASK / new DELEGATE" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FFF7ED;strokeColor=#C2410C;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="2080" y="980" width="760" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e_upload" value="file_id" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2563EB;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="transport" target="flow1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_audio" value="PCM + interrupt" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0F766E;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="voice" target="flow2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_task" value="report()" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#C2410C;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="subagents" target="flow3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tool_task" value="ToolResult" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#CA8A04;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="tools" target="subagents">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_memory_orch" value="context" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4338CA;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="memory" target="orch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_engine_orch" value="P0/P1/P2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9A3412;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="orch" target="engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_client_transport" value="WS + upload" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0369A1;strokeWidth=3;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="client" target="transport">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
