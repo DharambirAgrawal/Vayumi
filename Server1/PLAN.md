@@ -1,7 +1,7 @@
 # Server 1 — Architecture Plan
-**Version:** 1.4
-**Status:** Phase 2 in progress
-**Last updated:** 2026-04-29
+**Version:** 1.5
+**Status:** Phase 2 complete
+**Last updated:** 2026-05-10
 
 ---
 
@@ -9,6 +9,7 @@
 
 | Version | Change |
 |---|---|
+| 1.5 | Completed Phase 2 (users + settings). Added user_settings migration and cache key. Switched avatar storage to Supabase Storage. Mounted users/settings routes. |
 | 1.4 | Phase 1 marked complete. Fixed `notifications.types.ts` status to ✅. Added `GET /api/v1/health` to routes table. Moved `PASSWORD_RESET_URL` env var to App section. Expanded Phase 2 checklist to full file-level granularity. Defined avatar storage (S3-compatible). Defined `user_settings` row creation timing (on registration). |
 | 1.3 | Implemented Phase 1. Added startup auto-migration, multi-audience Google token verification, unverified-email login blocking, public verification resend-by-email route, safer query validation. Verified with `npm run typecheck` and `npm run build`. |
 | 1.2 | Added `RedisTTL` constants. Expanded cache layer with `cache.remember()`. Removed incorrect `googleOAuthState` from Phase 1 Redis keys. Added DB indexes. Added `node-cron` and `mailchecker`. Added `APP_URL` env var. Replaced `validateBody` with generic `validate` factory. Added `NotFoundError`. Clarified `DELETE /push-token` body. Added caching design rule. |
@@ -90,7 +91,7 @@ server1/
 │   │   │   │   ├── push-tokens.ts         # ✅
 │   │   │   │   ├── email-verifications.ts # ✅
 │   │   │   │   ├── password-reset-tokens.ts # ✅
-│   │   │   │   ├── settings.ts            # ⬜ Phase 2
+│   │   │   │   ├── settings.ts            # ✅
 │   │   │   │   ├── oauth-integrations.ts  # ⬜ Phase 3
 │   │   │   │   └── index.ts               # ✅ re-exports all schemas
 │   │   │   └── migrations/                # ✅ Plain SQL files
@@ -147,19 +148,19 @@ server1/
 │   │   │   ├── sessions.service.ts        # ✅
 │   │   │   └── sessions.types.ts          # ✅
 │   │   │
-│   │   ├── users/                         # ⬜ Phase 2
-│   │   │   ├── users.router.ts            # ⬜
-│   │   │   ├── users.controller.ts        # ⬜
-│   │   │   ├── users.service.ts           # ⬜
-│   │   │   ├── users.validators.ts        # ⬜
-│   │   │   └── users.types.ts             # ⬜
+│   │   ├── users/                         # ✅ Phase 2
+│   │   │   ├── users.router.ts            # ✅
+│   │   │   ├── users.controller.ts        # ✅
+│   │   │   ├── users.service.ts           # ✅
+│   │   │   ├── users.validators.ts        # ✅
+│   │   │   └── users.types.ts             # ✅
 │   │   │
-│   │   ├── settings/                      # ⬜ Phase 2
-│   │   │   ├── settings.router.ts         # ⬜
-│   │   │   ├── settings.controller.ts     # ⬜
-│   │   │   ├── settings.service.ts        # ⬜
-│   │   │   ├── settings.validators.ts     # ⬜
-│   │   │   └── settings.types.ts          # ⬜
+│   │   ├── settings/                      # ✅ Phase 2
+│   │   │   ├── settings.router.ts         # ✅
+│   │   │   ├── settings.controller.ts     # ✅
+│   │   │   ├── settings.service.ts        # ✅
+│   │   │   ├── settings.validators.ts     # ✅
+│   │   │   └── settings.types.ts          # ✅
 │   │   │
 │   │   ├── integrations/                  # ⬜ Phase 3
 │   │   │   └── [sub-modules added per provider in Phase 3]
@@ -239,19 +240,19 @@ server1/
 
 | Method | Route | Protected | Notes | Status |
 |---|---|---|---|---|
-| GET | `/profile` | Yes | Returns user profile | ⬜ |
-| PATCH | `/profile` | Yes | Body: `{ name?, avatarUrl? }` | ⬜ |
-| POST | `/avatar` | Yes | Multipart upload → S3 → returns `avatarUrl` | ⬜ |
-| DELETE | `/account` | Yes | Soft delete — revokes all sessions + tokens | ⬜ |
+| GET | `/profile` | Yes | Returns user profile | ✅ |
+| PATCH | `/profile` | Yes | Body: `{ name?, avatar_url? }` | ✅ |
+| POST | `/avatar` | Yes | Multipart upload → Supabase Storage → returns `avatar_url` | ✅ |
+| DELETE | `/account` | Yes | Soft delete — revokes all sessions + tokens | ✅ |
 
 ### Phase 2 — Settings · `/api/v1/settings`
 
 | Method | Route | Protected | Notes | Status |
 |---|---|---|---|---|
-| GET | `/` | Yes | Returns full settings object | ⬜ |
-| PATCH | `/notifications` | Yes | Partial update of notifications prefs | ⬜ |
-| PATCH | `/privacy` | Yes | Partial update of privacy prefs | ⬜ |
-| PATCH | `/appearance` | Yes | Partial update of appearance prefs (theme, language) | ⬜ |
+| GET | `/` | Yes | Returns full settings object | ✅ |
+| PATCH | `/notifications` | Yes | Partial update of notifications prefs | ✅ |
+| PATCH | `/privacy` | Yes | Partial update of privacy prefs | ✅ |
+| PATCH | `/appearance` | Yes | Partial update of appearance prefs (theme, language) | ✅ |
 
 ### Phase 3+ — Integrations · `/api/v1/integrations`
 > Routes defined when Phase 3 begins.
@@ -500,22 +501,20 @@ Server → extracts email + Google user ID
 
 ## Avatar Storage (Phase 2)
 
-Avatars are uploaded to an S3-compatible bucket (AWS S3 or Cloudflare R2). The server receives the file via multipart, uploads to S3, stores only the resulting public URL in `users.avatarUrl`. The server never serves avatar files directly.
+Avatars are uploaded to Supabase Storage (public bucket). The server receives the file via multipart, uploads to the bucket, stores only the resulting public URL in `users.avatarUrl`. The server never serves avatar files directly.
 
 **New env vars needed for Phase 2:**
 ```bash
-S3_BUCKET=
-S3_REGION=
-S3_ACCESS_KEY_ID=
-S3_SECRET_ACCESS_KEY=
-S3_ENDPOINT=           # leave blank for AWS; set for R2 or other S3-compatible
-S3_PUBLIC_URL=         # CDN or bucket public base URL
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=avatars
+SUPABASE_STORAGE_PUBLIC_URL=   # optional override for public bucket base URL
 ```
 
 **New package needed for Phase 2:**
 ```bash
-npm i @aws-sdk/client-s3 @aws-sdk/lib-storage
-npm i multer && npm i -D @types/multer   # multipart parsing
+npm i @supabase/supabase-js multer
+npm i -D @types/multer   # multipart parsing
 ```
 
 ---
@@ -564,12 +563,10 @@ ALLOWED_ORIGINS=
 GOOGLE_CLIENT_ID=
 
 # Avatar storage — Phase 2
-S3_BUCKET=
-S3_REGION=
-S3_ACCESS_KEY_ID=
-S3_SECRET_ACCESS_KEY=
-S3_ENDPOINT=
-S3_PUBLIC_URL=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=avatars
+SUPABASE_STORAGE_PUBLIC_URL=
 
 # Encryption for external tokens at rest — Phase 3
 ENCRYPTION_KEY=
@@ -625,7 +622,7 @@ npm i -D @types/nodemailer
 npm i pino pino-http pino-pretty
 
 # Avatar upload — Phase 2
-npm i @aws-sdk/client-s3 @aws-sdk/lib-storage multer
+npm i @supabase/supabase-js multer
 npm i -D @types/multer
 
 # Dev
@@ -650,7 +647,7 @@ npm i -D @types/node @types/express @types/cors @types/jsonwebtoken
 11. **`user_settings` row is created inside the registration transaction.** Never upsert — always plain update.
 12. **OAuth provider tokens (Phase 3) stored AES-256 encrypted.** Never plain text in DB.
 13. **Disposable emails rejected at registration** using `mailchecker` before any DB write.
-14. **Avatars stored in S3 only.** Server stores the public URL string, never serves files directly.
+14. **Avatars stored in Supabase Storage only.** Server stores the public URL string, never serves files directly.
 
 ---
 
@@ -689,25 +686,25 @@ npm i -D @types/node @types/express @types/cors @types/jsonwebtoken
 - [x] `cron/jobs/cleanExpiredTokens`
 - [x] `app.ts` + `server.ts` + `routes/index.ts`
 
-### Phase 2 — User profile & settings ← current
+### Phase 2 — User profile & settings ✅ complete
 
-- [ ] `core/db/schema/settings.ts` + SQL migration
-- [ ] Update `core/db/schema/index.ts` to re-export settings schema
-- [ ] `core/redis/keys.ts` — add `userSettings` key + TTL (already shown in plan above)
-- [ ] `modules/users/users.types.ts`
-- [ ] `modules/users/users.validators.ts` — profile update schema, avatar schema
-- [ ] `modules/users/users.service.ts` — getProfile, updateProfile, uploadAvatar, deleteAccount
-- [ ] `modules/users/users.controller.ts`
-- [ ] `modules/users/users.router.ts`
-- [ ] `modules/settings/settings.types.ts`
-- [ ] `modules/settings/settings.validators.ts` — partial update schemas per section
-- [ ] `modules/settings/settings.service.ts` — getSettings, updateNotifications, updatePrivacy, updateAppearance
-- [ ] `modules/settings/settings.controller.ts`
-- [ ] `modules/settings/settings.router.ts`
-- [ ] Update `routes/index.ts` to mount users + settings routers
-- [ ] Update registration flow to create `user_settings` row in same transaction
-- [ ] Update `GET /auth/me` to include linked providers list (already in Phase 1, verify it returns provider list)
-- [ ] S3 upload utility in `core/utils/storage.ts`
+- [x] `core/db/schema/settings.ts` + SQL migration
+- [x] Update `core/db/schema/index.ts` to re-export settings schema
+- [x] `core/redis/keys.ts` — add `userSettings` key + TTL (already shown in plan above)
+- [x] `modules/users/users.types.ts`
+- [x] `modules/users/users.validators.ts` — profile update schema, avatar schema
+- [x] `modules/users/users.service.ts` — getProfile, updateProfile, uploadAvatar, deleteAccount
+- [x] `modules/users/users.controller.ts`
+- [x] `modules/users/users.router.ts`
+- [x] `modules/settings/settings.types.ts`
+- [x] `modules/settings/settings.validators.ts` — partial update schemas per section
+- [x] `modules/settings/settings.service.ts` — getSettings, updateNotifications, updatePrivacy, updateAppearance
+- [x] `modules/settings/settings.controller.ts`
+- [x] `modules/settings/settings.router.ts`
+- [x] Update `routes/index.ts` to mount users + settings routers
+- [x] Update registration flow to create `user_settings` row in same transaction
+- [x] Update `GET /auth/me` to include linked providers list (already in Phase 1, verify it returns provider list)
+- [x] Supabase Storage upload utility in `core/utils/storage.ts`
 
 ### Phase 3 — External integrations
 

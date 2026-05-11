@@ -7,6 +7,7 @@ export const RedisKeys = {
   emailVerification: (token: string) => `verify:${token}`,
   userProfile: (userId: string) => `user:${userId}:profile`,
   userSessions: (userId: string) => `user:${userId}:sessions`,
+  userSettings: (userId: string) => `user:${userId}:settings`,
   integrationOAuthState: (state: string) => `integration:state:${state}`,
 };
 
@@ -18,4 +19,5 @@ export const RedisTTL = {
   oauthState: 10 * 60,
   userProfile: 5 * 60,
   userSessions: 2 * 60,
+  userSettings: 5 * 60,
 };

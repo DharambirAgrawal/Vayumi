@@ -9,6 +9,7 @@ import {
   emailVerifications,
   passwordResetTokens,
   sessions,
+  userSettings,
   userIdentities,
   users,
 } from "../../core/db/schema/index.js";
@@ -205,6 +206,8 @@ export const authService = {
         passwordHash,
       });
 
+      await tx.insert(userSettings).values({ userId: createdUser.id });
+
       return [createdUser];
     });
 
@@ -323,6 +326,8 @@ export const authService = {
             provider: "google",
             providerAccountId: payload.sub,
           });
+
+          await tx.insert(userSettings).values({ userId: createdUser.id });
 
           return [createdUser];
         });
