@@ -10,7 +10,7 @@
 | Version | Change |
 |---|---|
 | 1.5 | Completed Phase 2 (users + settings). Added user_settings migration and cache key. Switched avatar storage to Supabase Storage. Mounted users/settings routes. |
-| 1.4 | Phase 1 marked complete. Fixed `notifications.types.ts` status to ✅. Added `GET /api/v1/health` to routes table. Moved `PASSWORD_RESET_URL` env var to App section. Expanded Phase 2 checklist to full file-level granularity. Defined avatar storage (S3-compatible). Defined `user_settings` row creation timing (on registration). |
+| 1.4 | Phase 1 marked complete. Fixed `notifications.types.ts` status to ✅. Added `GET /api/v1/health` to routes table. Moved `PASSWORD_RESET_URL` env var to App section. Expanded Phase 2 checklist to full file-level granularity. Defined avatar storage (Supabase-compatible). Defined `user_settings` row creation timing (on registration). |
 | 1.3 | Implemented Phase 1. Added startup auto-migration, multi-audience Google token verification, unverified-email login blocking, public verification resend-by-email route, safer query validation. Verified with `npm run typecheck` and `npm run build`. |
 | 1.2 | Added `RedisTTL` constants. Expanded cache layer with `cache.remember()`. Removed incorrect `googleOAuthState` from Phase 1 Redis keys. Added DB indexes. Added `node-cron` and `mailchecker`. Added `APP_URL` env var. Replaced `validateBody` with generic `validate` factory. Added `NotFoundError`. Clarified `DELETE /push-token` body. Added caching design rule. |
 | 1.1 | Added Google Sign-In. Added `user_identities` table. Added email verification flow. Fixed `push_tokens` session cascade. Added `updated_at` to sessions. |
