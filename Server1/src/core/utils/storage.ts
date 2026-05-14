@@ -16,12 +16,10 @@ export const uploadPublicFile = async (input: {
   body: Buffer;
   contentType?: string | undefined;
 }) => {
-  const { error } = await supabase.storage
-    .from(env.SUPABASE_STORAGE_BUCKET)
-    .upload(input.key, input.body, {
-      contentType: input.contentType,
-      upsert: true,
-    });
+  const { error } = await supabase.storage.from(env.SUPABASE_STORAGE_BUCKET).upload(input.key, input.body, {
+    upsert: true,
+    ...(input.contentType ? { contentType: input.contentType } : {}),
+  });
 
   if (error) {
     throw new Error(`Avatar upload failed: ${error.message}`);
