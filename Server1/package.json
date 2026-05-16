@@ -16,6 +16,7 @@
     "esbuild": "^0.25.4"
   },
   "dependencies": {
+    "@supabase/supabase-js": "latest",
     "bcryptjs": "latest",
     "cors": "latest",
     "dotenv": "latest",
@@ -26,6 +27,7 @@
     "helmet": "latest",
     "jsonwebtoken": "latest",
     "mailchecker": "latest",
+    "multer": "latest",
     "node-cron": "latest",
     "nodemailer": "latest",
     "pino": "latest",
@@ -39,6 +41,7 @@
     "@types/cors": "latest",
     "@types/express": "latest",
     "@types/jsonwebtoken": "latest",
+    "@types/multer": "latest",
     "@types/node": "latest",
     "@types/node-cron": "latest",
     "@types/nodemailer": "latest",

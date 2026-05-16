@@ -43,3 +43,9 @@ export const verifyAccessToken = (token: string): AccessTokenPayload => {
 };
 
 export const decodeAccessToken = (token: string) => jwt.decode(token) as AccessTokenPayload | null;
+
+/** Server 2 internal routes — RS256, no expiry, distinct scope from user tokens. */
+export const signInternalServiceJwt = () =>
+  jwt.sign({ scope: "internal", iss: "server1" }, jwtConfig.privateKey, {
+    algorithm: jwtConfig.algorithm,
+  });

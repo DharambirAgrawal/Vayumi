@@ -75,6 +75,15 @@ class RedisClientAdapter {
     return "OK";
   }
 
+  /** SET key value NX EX ttl — returns true if the lock/value was acquired. */
+  async setIfNotExists(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    const result = await this.client.set(key, value, {
+      NX: true,
+      expiration: { type: "EX", value: ttlSeconds },
+    });
+    return result !== null;
+  }
+
   async del(...keys: string[]) {
     return keys.length === 0 ? 0 : this.client.del(keys);
   }
