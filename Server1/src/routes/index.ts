@@ -4,6 +4,7 @@ import { notificationsRouter } from "../modules/notifications/notifications.rout
 import { sessionsRouter } from "../modules/sessions/sessions.router.js";
 import { settingsRouter } from "../modules/settings/settings.router.js";
 import { usersRouter } from "../modules/users/users.router.js";
+import { integrationsRouter } from "../modules/integrations/integrations.router.js";
 
 export const apiRouter = Router();
 
@@ -16,3 +17,4 @@ apiRouter.use("/sessions", sessionsRouter);
 apiRouter.use("/notifications", notificationsRouter);
 apiRouter.use("/users", usersRouter);
 apiRouter.use("/settings", settingsRouter);
+apiRouter.use("/integrations", integrationsRouter);

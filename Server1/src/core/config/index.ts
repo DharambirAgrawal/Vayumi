@@ -43,8 +43,25 @@ const envSchema = z
     MICROSOFT_CLIENT_SECRET: z.string().min(1),
     MICROSOFT_REDIRECT_URI: z.string().min(1),
     MICROSOFT_TENANT_ID: z.string().min(1),
+    SERVER2_INTERNAL_URL: z.string().optional().default(""),
+    EMAIL_SYNC_WINDOW_DAYS: z.coerce.number().int().positive().default(90),
+    EMAIL_AI_CLASSIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
+    EMAIL_NOTIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
+    EMAIL_POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(3),
+    EMAIL_CLASSIFY_MAX_BODY_CHARS: z.coerce.number().int().positive().default(2000),
   })
   .superRefine((env, ctx) => {
+    if (env.SERVER2_INTERNAL_URL && env.SERVER2_INTERNAL_URL.trim() !== "") {
+      const parsed = z.string().url().safeParse(env.SERVER2_INTERNAL_URL.trim());
+      if (!parsed.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["SERVER2_INTERNAL_URL"],
+          message: "Must be a valid URL when set",
+        });
+      }
+    }
+
     const hasRedisUrl = Boolean(env.REDIS_URL);
     const hasRedisObjectConfig = Boolean(env.REDIS_HOST && env.REDIS_PORT && env.REDIS_PASSWORD);
 

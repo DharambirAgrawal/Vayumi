@@ -1,7 +1,7 @@
 # Server 1 — Architecture Plan
-**Version:** 1.7
+**Version:** 1.8
 **Status:** Phase 3 in progress
-**Last updated:** 2026-05-10
+**Last updated:** 2026-05-13
 
 ---
 
@@ -9,6 +9,7 @@
 
 | Version | Change |
 |---|---|
+| 1.8 | **Phase 3 (partial implementation).** DB: `oauth_integrations` + `synced_emails` Drizzle schemas, migration `0003_phase3_oauth_and_synced_emails.sql` (incl. GIN on `keywords`). Redis: `emailSyncLock` key + TTL, `RedisClientAdapter.setIfNotExists` (NX+EX). Config: `core/config/integrations.ts`; env vars `SERVER2_INTERNAL_URL` (optional), `EMAIL_*`, `EMAIL_CLASSIFY_MAX_BODY_CHARS` in `env` + `.env.example`. Utils: `fetchRetry.ts`, `postgres.ts` (`isUniqueViolation`); `signInternalServiceJwt()` in `jwt.ts`. Integrations module: `shared/` (`email.types`, `email.constants`, `provider.interface`, `email.normalizer`, `email.masker`, `email.pipeline`, `server2.emailClient`, `emailSyncLock`, `tokenVault`, barrel `index.ts`); `integrations.service/controller/router`; Gmail/Outlook routers mount with **501 stub** on `GET …/connect` only. Routes: `/api/v1/integrations` mounted (emails router **not** yet). `storage.ts` optional `contentType` upload fix (`exactOptionalPropertyTypes`). |
 | 1.7 | Audit fixes: removed `SERVER2_SERVICE_TOKEN` env var (service JWT signed with existing `JWT_PRIVATE_KEY`). Removed contradictory `pipelineMaskingMap` Redis key (memory-only, never persisted). Fixed `cron.bootstrap.ts` and `routes/index.ts` status to ⚠️. Documented OAuth callback user-ID resolution via state→Redis. Added `updatedAt` to `synced_emails`. Added subject index + keywords GIN index to `synced_emails`. Replaced `@azure/identity` with `@azure/msal-node`. Removed `axios` (native fetch). Fixed design rule 21 (initial sync on first connect). Added retry cron re-fetch note. Added starred-email exemption to `cleanOldEmails`. Fixed sync lock TTL description. Documented `POST /sync` 202 when lock active. Documented `23505` catch for dedup. Documented provider failure handling on `PATCH /read` and `PATCH /star`. Added `EMAIL_POLL_INTERVAL_MINUTES` cron expression note. |
 | 1.6 | Full Phase 3 design. Added `synced_emails` + `oauth_integrations` schemas. Added email pipeline, masking layer, AI classify call, retry logic, Server 2 notify contract. Added smart search, on-demand body fetch, mark read/star. Added `emails` module. Added 4 new cron jobs. Added webhook stubs. |
 | 1.5 | Phase 2 complete. Avatar storage switched to Supabase Storage. |
@@ -107,7 +108,7 @@ Response: { handled: true } | { handled: false }
 - `handled: false` → Phase 4 sends push notification; mark `notification_fallback=true` in DB
 - On all failures → same as `handled: false`
 
-Both calls use native `fetch` with `AbortController` for timeout. No extra HTTP library needed.
+Both calls use native `fetch` with `AbortController` for timeout. No extra HTTP library needed. **Implementation:** `core/utils/fetchRetry.ts` + `modules/integrations/shared/server2.emailClient.ts`.
 
 ---
 
@@ -172,20 +173,21 @@ server1/
 │   │   │   │   ├── email-verifications.ts      # ✅
 │   │   │   │   ├── password-reset-tokens.ts    # ✅
 │   │   │   │   ├── settings.ts                 # ✅
-│   │   │   │   ├── oauth-integrations.ts       # ⬜ Phase 3
-│   │   │   │   ├── synced-emails.ts            # ⬜ Phase 3
+│   │   │   │   ├── oauth-integrations.ts       # ✅ Phase 3
+│   │   │   │   ├── synced-emails.ts            # ✅ Phase 3
 │   │   │   │   └── index.ts                    # ✅ re-exports all schemas
-│   │   │   └── migrations/                     # ✅
+│   │   │   └── migrations/                     # ✅ (+ `0003_phase3_oauth_and_synced_emails.sql`)
 │   │   │
 │   │   ├── redis/
-│   │   │   ├── index.ts                        # ✅
-│   │   │   ├── keys.ts                         # ✅ — Phase 3 adds emailSyncLock + integrationOAuthState
+│   │   │   ├── index.ts                        # ✅ (+ `setIfNotExists` for sync lock NX+EX)
+│   │   │   ├── keys.ts                         # ✅ (incl. `emailSyncLock`, `integrationOAuthState`, TTLs)
 │   │   │   └── helpers.ts                      # ✅
 │   │   │
 │   │   ├── config/
-│   │   │   ├── index.ts                        # ✅
+│   │   │   ├── index.ts                        # ✅ (+ Phase 3 env: Server 2, email pipeline)
 │   │   │   ├── jwt.ts                          # ✅
-│   │   │   └── app.ts                          # ✅
+│   │   │   ├── app.ts                          # ✅
+│   │   │   └── integrations.ts                 # ✅ Phase 3 — typed config from env
 │   │   │
 │   │   ├── middleware/
 │   │   │   ├── authenticate.ts                 # ✅
@@ -204,11 +206,13 @@ server1/
 │   │   │
 │   │   ├── utils/
 │   │   │   ├── crypto.ts                       # ✅
-│   │   │   ├── jwt.ts                          # ✅
+│   │   │   ├── jwt.ts                          # ✅ (+ `signInternalServiceJwt` for Server 2)
 │   │   │   ├── pagination.ts                   # ✅
 │   │   │   ├── date.ts                         # ✅
 │   │   │   ├── logger.ts                       # ✅
-│   │   │   └── storage.ts                      # ✅ Supabase Storage
+│   │   │   ├── storage.ts                      # ✅ Supabase Storage
+│   │   │   ├── fetchRetry.ts                   # ✅ Phase 3 — fetch + timeout + retries
+│   │   │   └── postgres.ts                     # ✅ Phase 3 — `isUniqueViolation` / PG error code
 │   │   │
 │   │   └── types/
 │   │       ├── express.d.ts                    # ✅
@@ -244,21 +248,26 @@ server1/
 │   │   │   ├── settings.validators.ts          # ✅
 │   │   │   └── settings.types.ts               # ✅
 │   │   │
-│   │   ├── integrations/                       # ⬜ Phase 3
-│   │   │   ├── integrations.router.ts          # ⬜ mounts gmail + outlook sub-routers
-│   │   │   ├── integrations.controller.ts      # ⬜ list connected integrations
-│   │   │   ├── integrations.service.ts         # ⬜
-│   │   │   ├── integrations.types.ts           # ⬜
+│   │   ├── integrations/                       # 🔄 Phase 3 partial
+│   │   │   ├── integrations.router.ts          # ✅ mounts gmail + outlook; `GET /` list
+│   │   │   ├── integrations.controller.ts      # ✅
+│   │   │   ├── integrations.service.ts         # ✅
+│   │   │   ├── integrations.types.ts           # ✅
 │   │   │   │
 │   │   │   ├── shared/
-│   │   │   │   ├── email.types.ts              # ⬜ unified EmailMessage type
-│   │   │   │   ├── provider.interface.ts       # ⬜ IEmailProvider interface
-│   │   │   │   ├── email.normalizer.ts         # ⬜ raw → EmailMessage
-│   │   │   │   ├── email.masker.ts             # ⬜ mask/unmask PII (in-memory only)
-│   │   │   │   └── email.pipeline.ts           # ⬜ processIncomingEmail()
+│   │   │   │   ├── index.ts                    # ✅ barrel re-exports
+│   │   │   │   ├── email.types.ts              # ✅
+│   │   │   │   ├── email.constants.ts          # ✅ Server 2 retry backoff constants
+│   │   │   │   ├── provider.interface.ts       # ✅ IEmailProvider
+│   │   │   │   ├── email.normalizer.ts         # ✅
+│   │   │   │   ├── email.masker.ts             # ✅ in-memory MaskingSession
+│   │   │   │   ├── email.pipeline.ts           # ✅ processIncomingEmail()
+│   │   │   │   ├── server2.emailClient.ts      # ✅ classify + notify (fetch retries)
+│   │   │   │   ├── emailSyncLock.ts            # ✅ Redis sync lock helper
+│   │   │   │   └── tokenVault.ts               # ✅ encrypt/decrypt alias for OAuth tokens
 │   │   │   │
 │   │   │   ├── gmail/
-│   │   │   │   ├── gmail.router.ts             # ⬜
+│   │   │   │   ├── gmail.router.ts             # ⚠️ `GET /connect` → 501 stub only
 │   │   │   │   ├── gmail.controller.ts         # ⬜
 │   │   │   │   ├── gmail.service.ts            # ⬜ OAuth, token storage, watch stub
 │   │   │   │   ├── gmail.provider.ts           # ⬜ IEmailProvider, historyId delta
@@ -266,7 +275,7 @@ server1/
 │   │   │   │   └── gmail.types.ts              # ⬜
 │   │   │   │
 │   │   │   └── outlook/
-│   │   │       ├── outlook.router.ts           # ⬜
+│   │   │       ├── outlook.router.ts           # ⚠️ `GET /connect` → 501 stub only
 │   │   │       ├── outlook.controller.ts       # ⬜
 │   │   │       ├── outlook.service.ts          # ⬜ OAuth, token storage, subscription stub
 │   │   │       ├── outlook.provider.ts         # ⬜ IEmailProvider, deltaToken
@@ -300,7 +309,7 @@ server1/
 │   │       └── cron.types.ts                   # ✅
 │   │
 │   ├── routes/
-│   │   └── index.ts                            # ⚠️ Phase 3 mounts integrations + emails routers
+│   │   └── index.ts                            # ⚠️ Phase 3 mounts **integrations**; **emails** router not yet
 │   │
 │   └── app.ts                                  # ✅
 │
@@ -311,7 +320,7 @@ server1/
 └── package.json                                # ✅
 ```
 
-**Status key:** ✅ done · 🔄 in progress · ⚠️ partial (needs Phase 3 updates) · ⬜ not started
+**Status key:** ✅ done · 🔄 in progress (module partially implemented) · ⚠️ partial / stub · ⬜ not started
 
 ---
 
@@ -377,12 +386,12 @@ server1/
 
 | Method | Route | Protected | Notes | Status |
 |---|---|---|---|---|
-| GET | `/` | Yes | List connected integrations with status | ⬜ |
-| GET | `/gmail/connect` | Yes | Generates state (encodes userId), stores in Redis, redirects to Google OAuth | ⬜ |
+| GET | `/` | Yes | List connected integrations (no secrets in response) | ✅ |
+| GET | `/gmail/connect` | Yes | **Current:** returns `501` stub. **Target:** state→Redis, redirect OAuth | ⚠️ |
 | GET | `/gmail/callback` | No | Reads state from Redis to get userId, exchanges code for tokens, stores encrypted | ⬜ |
 | DELETE | `/gmail` | Yes | Disconnect — revoke tokens, remove integration, delete synced emails for this provider | ⬜ |
 | POST | `/gmail/webhook` | No | Pub/Sub push — HMAC verified — stub now, wired in future | ⬜ |
-| GET | `/outlook/connect` | Yes | Generates state (encodes userId), stores in Redis, redirects to Microsoft OAuth | ⬜ |
+| GET | `/outlook/connect` | Yes | **Current:** returns `501` stub. **Target:** state→Redis, redirect Microsoft OAuth | ⚠️ |
 | GET | `/outlook/callback` | No | Reads state from Redis to get userId, exchanges code for tokens, stores encrypted | ⬜ |
 | DELETE | `/outlook` | Yes | Disconnect — revoke tokens, remove integration, delete synced emails for this provider | ⬜ |
 | POST | `/outlook/webhook` | No | Graph change notification — token verified — stub now, wired in future | ⬜ |
@@ -621,7 +630,7 @@ export const syncedEmails = pgTable("synced_emails", {
 
 ## Cache Layer
 
-All caching goes through `core/redis/helpers.ts`. No module imports Redis client directly.
+All caching goes through `core/redis/helpers.ts`. No module imports Redis client directly **except** where Redis semantics are required and not exposed on `cache` (e.g. **`SET … NX EX`** for email sync locks via `redis.setIfNotExists` in `core/redis/index.ts`).
 
 ### `core/redis/keys.ts`
 
@@ -786,6 +795,7 @@ EMAIL_SYNC_WINDOW_DAYS=90          # rolling window; emails older than this dele
 EMAIL_AI_CLASSIFY_TIMEOUT_MS=3000  # hard timeout per attempt for AI classify call
 EMAIL_NOTIFY_TIMEOUT_MS=2000       # hard timeout per attempt for Server 2 notify call
 EMAIL_POLL_INTERVAL_MINUTES=3      # integer; code converts to cron expression: */N * * * *
+EMAIL_CLASSIFY_MAX_BODY_CHARS=2000 # max plain-text chars sent to Server 2 classify (default in env schema: 2000)
 
 # Integration providers — Phase 3
 GOOGLE_CLIENT_SECRET=
@@ -845,6 +855,7 @@ npm i -D @types/multer
 npm i googleapis                    # Gmail API
 npm i @microsoft/microsoft-graph-client   # Outlook / Graph API reads
 npm i @azure/msal-node              # Microsoft user OAuth 2.0 authorization code flow
+# ↑ Not yet in repo `package.json` as of plan v1.8 — install when implementing Gmail/Outlook OAuth + providers.
 
 # Dev
 npm i -D typescript tsx
@@ -860,7 +871,7 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 1. **Controller → Service → DB.** Never skip a layer.
 2. **All env vars validated at startup.** Missing required var = server refuses to start.
 3. **All Redis keys from `RedisKeys.*` only.** All TTLs from `RedisTTL.*` only.
-4. **All caching through `cache.*`.** No module imports Redis client directly.
+4. **Caching through `cache.*` by default.** Import `redis` from `core/redis/index.ts` only when `cache` cannot express the operation (e.g. **`SET … NX EX`** for email sync locks via `setIfNotExists`).
 5. **Cache-aside on reads, invalidate on writes.**
 6. **All errors thrown as `AppError` subclasses.**
 7. **Refresh token rotation on every use.** Reuse = full session family revoked.
@@ -935,31 +946,44 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 
 ### Phase 3 — External integrations ← current
 
-- [ ] `core/db/schema/oauth-integrations.ts` + migration
-- [ ] `core/db/schema/synced-emails.ts` + migration (include GIN index SQL for keywords)
-- [ ] Update `core/db/schema/index.ts` re-exports
-- [ ] `core/redis/keys.ts` — add `emailSyncLock` + `integrationOAuthState` + TTLs
-- [ ] `modules/integrations/shared/email.types.ts`
-- [ ] `modules/integrations/shared/provider.interface.ts` — IEmailProvider interface
-- [ ] `modules/integrations/shared/email.normalizer.ts`
-- [ ] `modules/integrations/shared/email.masker.ts` — in-memory mask/unmask only
-- [ ] `modules/integrations/shared/email.pipeline.ts` — `processIncomingEmail()`
+**Repo status (sync with code):** DB schemas + migration `0003`, Redis lock + `setIfNotExists`, integrations **shared** pipeline + Server 2 client, `GET /api/v1/integrations`, Gmail/Outlook **`GET …/connect` = 501 stubs**. Still outstanding: Gmail/Outlook OAuth + providers + webhooks, `emails` module, cron jobs + bootstrap, `package.json` Phase 3 deps (`googleapis`, Graph, MSAL).
+
+- [x] `core/db/schema/oauth-integrations.ts` + migration (`0003_phase3_oauth_and_synced_emails.sql`)
+- [x] `core/db/schema/synced-emails.ts` + migration (GIN index on `keywords` in SQL)
+- [x] Update `core/db/schema/index.ts` re-exports
+- [x] `core/redis/keys.ts` — `emailSyncLock` + `integrationOAuthState` + TTLs (`RedisTTL.emailSyncLock`, `oauthState`)
+- [x] `core/redis/index.ts` — `setIfNotExists` (NX+EX) for sync locks
+- [x] `core/config/index.ts` — Phase 3 env (`SERVER2_INTERNAL_URL` optional, `EMAIL_*`, `EMAIL_CLASSIFY_MAX_BODY_CHARS`)
+- [x] `core/config/integrations.ts` — typed integration/email config
+- [x] `core/utils/fetchRetry.ts` — timeout + retries for Server 2 HTTP
+- [x] `core/utils/postgres.ts` — `isUniqueViolation` / PG `code` reader
+- [x] `core/utils/jwt.ts` — `signInternalServiceJwt()` for Server 2
+- [x] `modules/integrations/shared/email.types.ts`
+- [x] `modules/integrations/shared/email.constants.ts` — classify/notify retry backoff
+- [x] `modules/integrations/shared/provider.interface.ts` — `IEmailProvider`
+- [x] `modules/integrations/shared/email.normalizer.ts`
+- [x] `modules/integrations/shared/email.masker.ts` — in-memory mask/unmask only
+- [x] `modules/integrations/shared/email.pipeline.ts` — `processIncomingEmail()`
+- [x] `modules/integrations/shared/server2.emailClient.ts` — classify + notify
+- [x] `modules/integrations/shared/emailSyncLock.ts` — wraps Redis lock key + TTL
+- [x] `modules/integrations/shared/tokenVault.ts` — OAuth token encrypt alias
+- [x] `modules/integrations/shared/index.ts` — barrel exports
 - [ ] `modules/integrations/gmail/gmail.types.ts`
 - [ ] `modules/integrations/gmail/gmail.provider.ts` — historyId delta, initial sync on first connect
 - [ ] `modules/integrations/gmail/gmail.service.ts` — OAuth connect flow with state→Redis pattern
 - [ ] `modules/integrations/gmail/gmail.controller.ts`
-- [ ] `modules/integrations/gmail/gmail.router.ts`
+- [x] `modules/integrations/gmail/gmail.router.ts` — **partial:** `GET /connect` only (501 stub); add callback, disconnect, webhook routes
 - [ ] `modules/integrations/gmail/gmail.webhook.ts` — Pub/Sub stub
 - [ ] `modules/integrations/outlook/outlook.types.ts`
 - [ ] `modules/integrations/outlook/outlook.provider.ts` — deltaToken, initial sync on first connect
 - [ ] `modules/integrations/outlook/outlook.service.ts` — OAuth connect flow with state→Redis pattern
 - [ ] `modules/integrations/outlook/outlook.controller.ts`
-- [ ] `modules/integrations/outlook/outlook.router.ts`
+- [x] `modules/integrations/outlook/outlook.router.ts` — **partial:** `GET /connect` only (501 stub)
 - [ ] `modules/integrations/outlook/outlook.webhook.ts` — Graph change notification stub
-- [ ] `modules/integrations/integrations.types.ts`
-- [ ] `modules/integrations/integrations.service.ts`
-- [ ] `modules/integrations/integrations.controller.ts`
-- [ ] `modules/integrations/integrations.router.ts`
+- [x] `modules/integrations/integrations.types.ts`
+- [x] `modules/integrations/integrations.service.ts`
+- [x] `modules/integrations/integrations.controller.ts`
+- [x] `modules/integrations/integrations.router.ts`
 - [ ] `modules/emails/emails.types.ts`
 - [ ] `modules/emails/emails.validators.ts`
 - [ ] `modules/emails/emails.service.ts` — search, getById, getBody, syncNow (202 if locked), markRead, markStar
@@ -970,8 +994,9 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 - [ ] `cron/jobs/retryFailedAiProcessing.ts` — re-fetch raw email, re-mask, retry AI, `ai_retry_count < 3`
 - [ ] `cron/jobs/cleanOldEmails.ts` — delete `WHERE is_starred=false AND received_at < cutoff`
 - [ ] Update `cron/cron.bootstrap.ts` — register 4 new jobs, convert `EMAIL_POLL_INTERVAL_MINUTES` to cron expression `*/N * * * *`
-- [ ] Update `routes/index.ts` — mount integrations + emails routers
-- [ ] Update `.env.example` with all Phase 3 vars
+- [x] Update `routes/index.ts` — mount **integrations** router under `/api/v1/integrations`
+- [ ] Mount **emails** router under `/api/v1/emails`
+- [x] Update `.env.example` with Phase 3 vars (Server 2, email pipeline, `EMAIL_CLASSIFY_MAX_BODY_CHARS`, `DATABASE_AUTO_MIGRATE`); **not yet:** add `googleapis` / `@microsoft/microsoft-graph-client` / `@azure/msal-node` to `package.json` until OAuth wiring lands
 
 ### Phase 4 — Push notification dispatch
 
@@ -987,4 +1012,4 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 
 ---
 
-*When a phase completes: update status markers in folder structure, tick off items above, then start next phase.*
+*When a phase completes: update status markers in folder structure, tick off items above, then start next phase. After **any** implementation batch, bump plan version + changelog and keep API tables / checklists in sync with the repo.*
