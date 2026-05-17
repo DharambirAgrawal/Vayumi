@@ -1,9 +1,9 @@
 # Vayumi Server 2 — Master Plan
 
-**Version:** 1.5  
-**Status:** Architecture locked, Step 1 ready to start  
-**Last updated:** 2026-05-16  
-**Companion files:** `doc/step-01.md` (current), `doc/step-NN.md` (next), `doc/roadmap.md` (full step overview), `agent-prompt.md` (reusable build prompt)  
+**Version:** 1.6  
+**Status:** Architecture locked, Step 2 next (Step 1 complete)  
+**Last updated:** 2026-05-17  
+**Companion files:** `doc/step-02.md` (current), `doc/roadmap.md` (full step overview), `doc/tracker.md` (progress + flows), `agent-prompt.md` (reusable build prompt)  
 **Reference diagrams:** `orchestrator_diagram_v3.drawio` (17 pages — architecture), `doc/tracker.md` (build progress + architecture flows)  
 **Sister service:** `Server1/` (TypeScript) — owns auth, identity, sessions, push tokens. Already implemented and verified.
 
@@ -156,8 +156,8 @@ These are the same as the diagram, restated in code-level terms.
 Server2/
 ├── PLAN.md                          this file — frozen decisions
 ├── doc/
-│   ├── step-01.md                   current step (always exactly one)
-│   ├── step-02.md                   next step (planned, not started)
+│   ├── step-NN.md                   one file per step; current = first ⬜ in §8
+│   ├── step-02.md                   example: next step after step 1
 │   └── ...
 ├── README.md                        the user-facing pitch you wrote
 ├── pyproject.toml                   package + deps
@@ -892,7 +892,7 @@ MCP_SERVERS_JSON=./config/mcp.json  # optional; declares MCP servers to mirror
 
 ---
 
-## 11. Initial dependencies (Python 3.12)
+## 11. Initial dependencies (Python 3.11)
 
 ```toml
 # pyproject.toml — illustrative only, locked in step-01
@@ -934,8 +934,8 @@ dev-dependencies = [
 
 ## 12. How to read the rest of `doc/`
 
-- **`doc/step-01.md`** — the only step you should be working on right now.
-- The next step file (`step-02.md`) is allowed to exist *only as a stub* until step 1's acceptance tests pass.
+- Find the current step in **Section 8** (first row with status ⬜). Read `doc/step-NN.md` for that step.
+- Completed steps stay in `doc/step-NN.md` for reference; do not redo them (see `doc/history.md`).
 - Each step file follows this skeleton:
 
   ```
@@ -1244,3 +1244,4 @@ If this example feels coherent, the architecture is doing its job. If any step f
 | 1.3 | 2026-05-10 | Added §7.9 unified `NEEDS_INFO` / mid-task amendment / confirmation / suggestion contract and §7.10 tool access, discovery, `ToolEntry`, `ToolResult`, confirmation, and `tool_search` rules. Split task `[ANSWER_TO ...]` from user-delivery `[RESPOND_VIA ...]`. Diagram reference bumped to v3 (16 pages). |
 | 1.4 | 2026-05-10 | Added file/image upload contract, client audio control messages, upload env vars, and §7.11 full implementation API map across auth/session, transport/upload, voice/interrupt, orchestrator, sub-agents, engine, memory/files, tools/MCP, and web client. Diagram reference bumped to v3 (17 pages). |
 | 1.5 | 2026-05-16 | Added "Multimodal inputs — deferred" note in §2 clarifying text-only GGUF start, STT/TTS voice pipeline, and one-flag upgrade path. Added `doc/roadmap.md` (full step-by-step feature/change breakdown) and `implementation_tracker.drawio` (visual build progress). |
+| 1.6 | 2026-05-17 | Step 1 complete (scaffold + WS echo). Python locked to 3.11. Replaced `implementation_tracker.drawio` with `doc/tracker.md`. Dev setup: cloud Postgres/Redis via `.env` (shared with Server 1); Docker optional. |

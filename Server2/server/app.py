@@ -11,6 +11,8 @@ from server.config import get_settings
 from server.db.lancedb import close_lancedb, init_lancedb
 from server.db.postgres import close_postgres, init_postgres
 from server.db.redis import close_redis, init_redis, init_server1_redis
+from server.engine.pool import close_engine_pool, init_engine_pool
+from server.engine.runner import config_from_settings, start_llama_server, stop_llama_server
 from server.logger import get_logger, setup_logging
 from server.transport.ws import ws_endpoint
 
@@ -51,6 +53,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await init_lancedb(settings.lancedb_dir)
 
+    llama_config = config_from_settings(settings)
+    await start_llama_server(llama_config)
+    app.state.engine_pool = init_engine_pool(
+        base_url=llama_config.base_url,
+        parallel_slots=llama_config.parallel_slots,
+    )
+
     if settings.is_dev and not settings.jwt_public_key:
         log.info("app.dev_auth_bypass", msg="dev mode: auth bypass enabled")
 
@@ -59,6 +68,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     log.info("app.shutting_down")
+    await close_engine_pool()
+    await stop_llama_server()
     await close_lancedb()
     await close_redis()
     await close_postgres()

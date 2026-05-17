@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     jwt_public_key: str | None = None
     server1_redis_url: str | None = None
 
+    # ── Engine (code defaults; env only overrides per machine/deploy) ──
+    llama_server_bin: str = "./bin/llama-server"
+    llama_model_path: str = "./models/gemma-3n-E2B-it-Q4_K_M.gguf"
+    llama_port: int = 8081
+    llama_parallel_slots: int = 4
+    llama_ctx_per_slot: int = 8192
+
     @field_validator("app_env")
     @classmethod
     def _validate_app_env(cls, v: str) -> str:
@@ -40,6 +47,13 @@ class Settings(BaseSettings):
     def _validate_server1_redis_in_prod(cls, v: str | None, info: ValidationInfo) -> str | None:
         if info.data.get("app_env") == "prod" and not v:
             raise ValueError("SERVER1_REDIS_URL is required when APP_ENV=prod")
+        return v
+
+    @field_validator("llama_parallel_slots", "llama_ctx_per_slot")
+    @classmethod
+    def _validate_positive_int(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("value must be >= 1")
         return v
 
     @property

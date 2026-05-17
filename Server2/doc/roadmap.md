@@ -54,7 +54,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 | `pyproject.toml` | Dependencies + project metadata |
 | `.env.example` | All env vars with descriptions |
 | `.gitignore` | Standard Python + models/ + data/ |
-| `docker-compose.dev.yml` | Postgres + Redis for local dev |
+| `docker-compose.dev.yml` | Optional local Postgres + Redis (cloud `.env` is typical) |
 | `server/__init__.py` | Package marker |
 | `server/app.py` | FastAPI app + lifespan (boot sequence) |
 | `server/config.py` | Pydantic Settings, fail-fast validation |
@@ -79,7 +79,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 
 ### Step 2 — Engine plane ⬜
 
-**File:** `doc/step-02.md` (stub until step 1 is done)  
+**File:** [`doc/step-02.md`](step-02.md) (stub — fill in before implementation)  
 **Estimated effort:** 1–2 days  
 **Diagram pages:** 02, 06
 

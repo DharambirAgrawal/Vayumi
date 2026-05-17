@@ -6,8 +6,12 @@ from typing import TYPE_CHECKING
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 from server.auth import AuthError, verify_token
+from server.engine.pool import CompletionPriority, CompletionRequest
+from server.engine.prompt import MainPromptContext, build_main_prompt
 from server.logger import get_logger
 from server.transport.protocol import (
+    CaptionMessage,
+    CaptionPayload,
     ChatMessage,
     EchoMessage,
     EchoPayload,
@@ -24,6 +28,7 @@ from server.transport.protocol import (
 
 if TYPE_CHECKING:
     from server.config import Settings
+    from server.engine.pool import EnginePool
 
 log = get_logger("transport.ws")
 
@@ -94,10 +99,7 @@ async def _handle_text(websocket: WebSocket, raw: str, user_id: str) -> None:
         return
 
     if isinstance(msg, ChatMessage):
-        echo = EchoMessage(
-            payload=EchoPayload(kind="chat", payload=msg.payload.model_dump()),
-        )
-        await send_json(websocket, echo)
+        await _handle_chat(websocket, msg, user_id)
 
     elif isinstance(msg, PingMessage):
         pong = PongMessage(payload=PongPayload(t=msg.payload.t))
@@ -115,9 +117,35 @@ async def _handle_binary(websocket: WebSocket, data: bytes, user_id: str) -> Non
     await send_audio_frame(websocket, data)
 
 
+async def _handle_chat(websocket: WebSocket, msg: ChatMessage, user_id: str) -> None:
+    engine_pool: EnginePool = websocket.app.state.engine_pool
+    prompt = build_main_prompt(MainPromptContext(user_text=msg.payload.text))
+    request = CompletionRequest(prompt=prompt)
+    handle = await engine_pool.submit(request, CompletionPriority.P0_MAIN, slot_hint=0)
+
+    full_text = ""
+    try:
+        async for token in handle:
+            full_text += token
+            await send_json(
+                websocket,
+                CaptionMessage(payload=CaptionPayload(text=token, partial=True)),
+            )
+    except Exception as exc:
+        log.error("ws.chat_completion_failed", user_id=user_id, error=str(exc))
+        err = ErrorMessage(payload=ErrorPayload(code=4500, message="Completion failed"))
+        await send_json(websocket, err)
+        return
+
+    await send_json(
+        websocket,
+        CaptionMessage(payload=CaptionPayload(text=full_text, partial=False)),
+    )
+
+
 async def send_json(
     websocket: WebSocket,
-    message: WelcomeMessage | EchoMessage | PongMessage | ErrorMessage,
+    message: WelcomeMessage | EchoMessage | CaptionMessage | PongMessage | ErrorMessage,
 ) -> None:
     if websocket.client_state == WebSocketState.CONNECTED:
         await websocket.send_text(serialize_server_message(message))

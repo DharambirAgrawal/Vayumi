@@ -85,6 +85,16 @@ class EchoMessage(BaseModel):
     payload: EchoPayload
 
 
+class CaptionPayload(BaseModel):
+    text: str
+    partial: bool
+
+
+class CaptionMessage(BaseModel):
+    type: Literal["caption"] = "caption"
+    payload: CaptionPayload
+
+
 class PongPayload(BaseModel):
     t: int
 
@@ -104,7 +114,7 @@ class ErrorMessage(BaseModel):
     payload: ErrorPayload
 
 
-ServerMessage = WelcomeMessage | EchoMessage | PongMessage | ErrorMessage
+ServerMessage = WelcomeMessage | EchoMessage | CaptionMessage | PongMessage | ErrorMessage
 
 
 # ── Helpers ──────────────────────────────────────────────

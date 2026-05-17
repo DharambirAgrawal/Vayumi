@@ -7,6 +7,8 @@ import pytest
 from server.transport.protocol import (
     AudioEndMessage,
     AudioStartMessage,
+    CaptionMessage,
+    CaptionPayload,
     ChatMessage,
     EchoMessage,
     EchoPayload,
@@ -127,6 +129,14 @@ class TestSerializeServerMessage:
         assert data["type"] == "echo"
         assert data["payload"]["kind"] == "chat"
         assert data["payload"]["payload"]["text"] == "hello"
+
+    def test_caption(self) -> None:
+        msg = CaptionMessage(payload=CaptionPayload(text="hello", partial=True))
+        raw = serialize_server_message(msg)
+        data = json.loads(raw)
+        assert data["type"] == "caption"
+        assert data["payload"]["text"] == "hello"
+        assert data["payload"]["partial"] is True
 
     def test_pong(self) -> None:
         msg = PongMessage(payload=PongPayload(t=999))

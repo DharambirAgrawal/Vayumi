@@ -363,7 +363,7 @@ Server2/
 ├── .env.example                ✅ all env vars documented
 ├── .env                        ✅ your cloud Postgres + Redis URLs
 ├── .gitignore                  ✅ Python + models/ + data/
-├── docker-compose.dev.yml      ✅ local dev option (Postgres + Redis)
+├── docker-compose.dev.yml      ✅ optional local Postgres + Redis (cloud .env typical)
 ├── PLAN.md                     ✅ frozen architecture
 ├── doc/
 │   ├── step-01.md              ✅ this step

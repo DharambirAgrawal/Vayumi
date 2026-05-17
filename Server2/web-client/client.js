@@ -67,6 +67,7 @@
     ws.onmessage = function (ev) {
       if (typeof ev.data === "string") {
         appendLog("<<< " + ev.data, "recv");
+        renderServerMessage(ev.data);
       } else if (ev.data instanceof Blob) {
         ev.data.arrayBuffer().then(function (buf) {
           appendLog("<<< binary frame received: " + buf.byteLength + " bytes", "recv");
@@ -94,6 +95,19 @@
     if (!text) return;
     sendJson("chat", { text: text });
     chatInput.value = "";
+  }
+
+  function renderServerMessage(raw) {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch (_) {
+      return;
+    }
+    if (msg.type === "caption") {
+      const marker = msg.payload.partial ? "caption chunk" : "caption final";
+      appendLog(marker + ": " + msg.payload.text, "caption");
+    }
   }
 
   async function recordOneSecond() {

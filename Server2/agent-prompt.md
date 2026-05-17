@@ -33,7 +33,7 @@ RULES YOU MUST FOLLOW:
 
 8. After completing the step, run the acceptance test from the step file. List each acceptance test item and confirm pass/fail.
 
-9. Do not modify PLAN.md, roadmap.md, history.md, or implementation_tracker.drawio during implementation. Those are updated only in the completion phase (see below).
+9. Do not modify PLAN.md, doc/roadmap.md, doc/history.md, or doc/tracker.md during implementation. Update those only in the completion phase (see below).
 
 10. Do not commit to git unless I ask you to.
 
@@ -42,11 +42,14 @@ RULES YOU MUST FOLLOW:
 12. If something in the step file is ambiguous or seems wrong, ASK ME before implementing. Do not guess.
 
 ENVIRONMENT:
-- Python 3.11.15, managed via uv
-- APP_ENV=dev (Server 1 is not running; use dev auth bypass)
-- Postgres and Redis via docker-compose.dev.yml
-- LanceDB is a local directory (./data/lancedb)
-- Use venv which is in the root of this Server2
+- Python 3.11 (`pyproject.toml`: `requires-python = ">=3.11,<3.12"`). Not 3.12.
+- Activate the project venv at `Server2/venv` (`source venv/bin/activate`) and install with `pip install -e .` (or use `uv` if you prefer).
+- `APP_ENV=dev`. Server 1 may not be running — when `JWT_PUBLIC_KEY` is unset, WebSocket auth accepts token `"dev"` (dev bypass by design).
+- Postgres + Redis come from `.env` (`DATABASE_URL`, `REDIS_URL`). In this project they are often the **same cloud URLs as Server 1** (shared Supabase Postgres + shared Redis). Server 2 only creates/uses **its own tables** (e.g. `server_health` today); it must **never** write Server 1's user/session/OAuth tables.
+- `SERVER1_REDIS_URL`: optional in dev; used only for JWT blocklist keys `blocklist:<jti>`. When shared with Server 1, it can be the same URL as `REDIS_URL`.
+- LanceDB: local directory (`LANCEDB_DIR`, default `./data/lancedb`).
+- `docker-compose.dev.yml` is **optional** (local Postgres + Redis only). **Do not require Docker.** If `.env` already has working cloud URLs, skip Docker and run the server directly.
+- Boot: `python -m uvicorn server.app:app --port 8080` (from `Server2/` with venv active). Tests: `python -m pytest tests/unit -q`.
 
 AFTER all acceptance tests pass, do the COMPLETION PHASE — update all tracking files:
 

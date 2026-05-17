@@ -60,7 +60,7 @@ Server2/
 
 ### 1. `pyproject.toml`
 
-Use `uv` (or `pip-tools` if you prefer). Lock to Python 3.12. Pin the deps from `PLAN.md` Section 11 — but in this step you only need a subset:
+Use `uv` or `pip install -e .` in the project venv. Lock to **Python 3.11** (`requires-python = ">=3.11,<3.12"`). Pin the deps from `PLAN.md` Section 11 — but in this step you only need a subset:
 
 ```
 fastapi, uvicorn[standard], pydantic, pydantic-settings, structlog,
@@ -195,9 +195,9 @@ CI later will add an integration test that boots the app against test containers
 
 Run these in order. All must pass.
 
-1. `uv run pytest tests/unit -q` — green.
-2. `docker compose -f docker-compose.dev.yml up -d` — postgres + redis come up.
-3. `uv run uvicorn server.app:app --port 8080` — boots cleanly. Logs show "postgres ok / redis ok / lancedb ok". Logs show "dev mode: auth bypass enabled" (since `JWT_PUBLIC_KEY` is not set).
+1. `python -m pytest tests/unit -q` — green (venv active).
+2. Postgres + Redis reachable via `.env` (`DATABASE_URL`, `REDIS_URL`). **Either** cloud URLs (typical — often shared with Server 1) **or** `docker compose -f docker-compose.dev.yml up -d` for local containers. Docker is not required if `.env` already points at cloud.
+3. `python -m uvicorn server.app:app --port 8080` — boots cleanly. Logs show "postgres ok / redis ok / lancedb ok". Logs show "dev mode: auth bypass enabled" (since `JWT_PUBLIC_KEY` is not set).
 4. Open `http://localhost:8080` in Chrome. Web client loads.
 5. Type `dev` in the token field and click Connect. Status shows "connected" and the log shows `{ "type": "welcome", ... }`.
 6. Type "hello" and Send. The log shows an `Echo { kind: "chat", payload: { text: "hello" } }`.

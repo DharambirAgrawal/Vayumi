@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import inspect
+from collections.abc import Awaitable
+from typing import cast
+from urllib.parse import urlsplit
+
 import redis.asyncio as aioredis
 
 from server.logger import get_logger
@@ -12,9 +17,9 @@ _server1_client: aioredis.Redis | None = None
 
 async def init_redis(redis_url: str) -> aioredis.Redis:
     global _client
-    log.info("redis.connecting", url=redis_url)
+    log.info("redis.connecting", url=_safe_redis_url(redis_url))
     client = aioredis.from_url(redis_url, decode_responses=True)
-    await client.ping()
+    await _ping(client)
     log.info("redis.ok")
     _client = client
     return client
@@ -22,9 +27,9 @@ async def init_redis(redis_url: str) -> aioredis.Redis:
 
 async def init_server1_redis(server1_redis_url: str) -> aioredis.Redis:
     global _server1_client
-    log.info("redis.server1.connecting", url=server1_redis_url)
+    log.info("redis.server1.connecting", url=_safe_redis_url(server1_redis_url))
     client = aioredis.from_url(server1_redis_url, decode_responses=True)
-    await client.ping()
+    await _ping(client)
     log.info("redis.server1.ok")
     _server1_client = client
     return client
@@ -49,3 +54,17 @@ def get_redis() -> aioredis.Redis:
 
 def get_server1_redis() -> aioredis.Redis | None:
     return _server1_client
+
+
+def _safe_redis_url(redis_url: str) -> str:
+    parsed = urlsplit(redis_url)
+    host = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    db = parsed.path or ""
+    return f"{parsed.scheme}://{host}{port}{db}"
+
+
+async def _ping(client: aioredis.Redis) -> None:
+    result = client.ping()
+    if inspect.isawaitable(result):
+        await cast(Awaitable[object], result)
