@@ -1,6 +1,6 @@
 # Step 01 — Project scaffold + WebSocket echo
 
-**Status:** ⬜ pending  
+**Status:** ✅ done  
 **Depends on:** nothing  
 **Estimated effort:** 1 day  
 **Owner:** you
@@ -71,15 +71,23 @@ Plus dev: `pytest`, `pytest-asyncio`, `ruff`, `mypy`.
 
 ### 2. `server/config.py`
 
-A `Settings(BaseSettings)` class. Required fields (server refuses to start if missing):
+A `Settings(BaseSettings)` class.
+
+**Always required** (server refuses to start if missing):
 
 ```
 APP_ENV, PORT, LOG_LEVEL,
-JWT_PUBLIC_KEY, SERVER1_REDIS_URL,
 DATABASE_URL, REDIS_URL, LANCEDB_DIR
 ```
 
-Validation rules: `APP_ENV in {"dev","prod"}`, `JWT_PUBLIC_KEY` parses as a valid RSA PEM, all URLs parse.
+**Required in prod, optional in dev** (server logs a warning and uses defaults when missing):
+
+```
+JWT_PUBLIC_KEY          # in dev: auto-generates a throwaway RSA key pair
+SERVER1_REDIS_URL       # in dev: skips blocklist check entirely
+```
+
+Validation rules: `APP_ENV in {"dev","prod"}`. In prod, `JWT_PUBLIC_KEY` must parse as a valid RSA PEM and `SERVER1_REDIS_URL` must be a valid URL. In dev, both may be omitted.
 
 ### 3. `server/logger.py`
 
@@ -105,12 +113,18 @@ Validation rules: `APP_ENV in {"dev","prod"}`, `JWT_PUBLIC_KEY` parses as a vali
 
 One function: `verify_token(token: str) -> TokenPayload`.
 
+**Prod mode** (`APP_ENV=prod`):
 - Decode the JWT with `python-jose`, algorithm `RS256`, key = `JWT_PUBLIC_KEY`.
 - Validate `exp`, `iat`, required claims (`sub`, `sid`, `jti`).
 - Connect to **Server 1's** Redis (`SERVER1_REDIS_URL`) and check key `blocklist:<jti>`. If exists, raise.
 - Returns a typed `TokenPayload` (Pydantic model: `user_id`, `session_id`, `jti`, `device_type`, `scopes`, `exp`).
 
-This must work today against a token that Server 1 issues. No "we'll figure out auth later."
+**Dev mode** (`APP_ENV=dev`):
+- If `JWT_PUBLIC_KEY` is set, use it (you can test with real Server 1 tokens).
+- If `JWT_PUBLIC_KEY` is not set, accept a special dev token: the string `"dev"`. When `verify_token("dev")` is called, return a fixed `TokenPayload(user_id="dev_user", session_id="dev_session", jti="dev_jti", device_type="web", scopes=["*"], exp=far_future)`.
+- If `SERVER1_REDIS_URL` is not set, skip the blocklist check and log a warning.
+
+**Design rule:** The dev bypass is controlled entirely by `APP_ENV` and the presence/absence of env vars. There is no `DEV_MODE=true` flag, no `SKIP_AUTH=true` flag, no second code path that grows. The `verify_token` function signature and return type are identical in both modes. When Server 1 is ready, set the env vars and the real path activates with zero code changes.
 
 ### 6. `server/transport/protocol.py`
 
@@ -183,12 +197,14 @@ Run these in order. All must pass.
 
 1. `uv run pytest tests/unit -q` — green.
 2. `docker compose -f docker-compose.dev.yml up -d` — postgres + redis come up.
-3. `uv run uvicorn server.app:app --port 8080` — boots cleanly. Logs show "postgres ok / redis ok / lancedb ok".
+3. `uv run uvicorn server.app:app --port 8080` — boots cleanly. Logs show "postgres ok / redis ok / lancedb ok". Logs show "dev mode: auth bypass enabled" (since `JWT_PUBLIC_KEY` is not set).
 4. Open `http://localhost:8080` in Chrome. Web client loads.
-5. Generate a Server 1 access token (use `Server1`'s `/auth/login`). Paste into the client and click Connect. Status shows "connected" and the log shows `{ "type": "welcome", ... }`.
+5. Type `dev` in the token field and click Connect. Status shows "connected" and the log shows `{ "type": "welcome", ... }`.
 6. Type "hello" and Send. The log shows an `Echo { kind: "chat", payload: { text: "hello" } }`.
 7. Click "Record 1s". The log shows `audio_start`, then a `binary frame received: 32000 bytes` line on the client side after the server echoes, then `audio_end`.
-8. Try connecting with an obviously invalid token — connection closes with code `4401`.
+8. Try connecting with an obviously invalid token (not `dev`) — connection closes with code `4401`.
+
+**Optional (if Server 1 is running):** Set `JWT_PUBLIC_KEY` and `SERVER1_REDIS_URL` in `.env`, restart, and repeat steps 5-8 with a real Server 1 token. This proves the prod auth path works too.
 
 If all 8 pass, mark step 1 ✅ in `PLAN.md` Section 8 and open `doc/step-02.md`.
 
@@ -212,7 +228,8 @@ If you find yourself wanting any of the above, write it down for the relevant la
 
 | Risk | Mitigation |
 |---|---|
-| JWT verification works in Server 1 but not Server 2 due to key-format mismatch | The acceptance test uses a real Server 1 token, not a synthetic one. If that fails, fix the PEM parsing now, not later. |
+| JWT verification works in Server 1 but not Server 2 due to key-format mismatch | Dev mode uses a bypass so we are never blocked. When Server 1 is ready, the optional acceptance test uses a real token. If that fails, fix the PEM parsing then, not now. |
+| Dev auth bypass leaks into prod | Controlled by `APP_ENV` only. In prod, `JWT_PUBLIC_KEY` is required and the bypass code is never reached. No `SKIP_AUTH` flag to accidentally leave on. |
 | `MediaRecorder` produces opus-in-webm instead of PCM | We don't use `MediaRecorder`. We use `AudioWorkletNode` + `Float32Array → Int16` conversion + raw `WebSocket.send(buffer)`. The web client code shows exactly this. |
 | Browser blocks mic on `http://` non-localhost | Acceptance test specifies `localhost`. Production needs HTTPS — that's step 19. |
 | LanceDB corrupts on crash | LanceDB is append-only and versioned by design; restart re-opens cleanly. |

@@ -1,10 +1,10 @@
 # Vayumi Server 2 — Master Plan
 
-**Version:** 1.4  
+**Version:** 1.5  
 **Status:** Architecture locked, Step 1 ready to start  
-**Last updated:** 2026-05-10  
-**Companion files:** `doc/step-01.md` (current), `doc/step-NN.md` (next)  
-**Reference diagram:** `orchestrator_diagram_v3.drawio` (17 pages — visual companion to this plan)  
+**Last updated:** 2026-05-16  
+**Companion files:** `doc/step-01.md` (current), `doc/step-NN.md` (next), `doc/roadmap.md` (full step overview), `agent-prompt.md` (reusable build prompt)  
+**Reference diagrams:** `orchestrator_diagram_v3.drawio` (17 pages — architecture), `doc/tracker.md` (build progress + architecture flows)  
 **Sister service:** `Server1/` (TypeScript) — owns auth, identity, sessions, push tokens. Already implemented and verified.
 
 > **How to use this document:** This plan + the v3 diagram are the *complete* spec. If you (or any future agent) read these two end-to-end you have everything you need to build, debug, or extend Vayumi. If a question is not answered here, the answer is "open a step file or extend §7.9 / §7.10 / §7.11 / §13"; do not improvise.
@@ -74,12 +74,20 @@ Vayumi is **two cooperating services**, on purpose:
 | **Tools** | **Native Python tool registry first, MCP adapter second** | A tool is a typed async Python function with JSON args and a normalized `ToolResult`, registered through `tools/registry.py`. We add an **MCP client adapter** (using the official `modelcontextprotocol` Python SDK) so any MCP server (filesystem, GitHub, Notion, etc.) shows up as tools without touching agent code. This gives you "easy to add anything" with zero lock-in. |
 | **Web search tool** | **Tavily** (free tier 1k/mo) with **DuckDuckGo HTML scrape** as a no-key fallback | Tavily already returns clean snippets; DDG fallback means dev never blocks on API keys. |
 | **HTML scraping** | **trafilatura** (best-in-class for article extraction in 2026) | Used by the `summarize_url` sub-agent tool. |
-| **Auth** | **Trust Server 1's JWT, nothing else.** Verify RS256 signature offline + check shared Redis blocklist | Server 1 already owns login, register, password reset, OAuth, sessions, push tokens. Server 2's auth is **30 lines of code** (`server/auth.py`): decode token → validate exp/iat/claims → `GET blocklist:<jti>` in shared Redis → return `TokenPayload(user_id, session_id, scopes)`. After that, every WebSocket connection has a verified `user_id` and Server 2 *never thinks about auth again*. We wire this in Step 1 once and forget. There is no user table on Server 2. There is no login endpoint on Server 2. There is no password code on Server 2. If a token expires mid-session, server emits `event{kind:'token_expiring'}` 5 minutes before exp; client refreshes against Server 1 and reconnects with the same `session_id`. |
+| **Auth** | **Trust Server 1's JWT, nothing else.** Verify RS256 signature offline + check shared Redis blocklist. **Dev bypass:** when `APP_ENV=dev` and `JWT_PUBLIC_KEY` is not set, accept token `"dev"` and return a fixed dev user. No separate flag, no second code path — just env presence. | Server 1 already owns login, register, password reset, OAuth, sessions, push tokens. Server 2's auth is **30 lines of code** (`server/auth.py`): decode token → validate exp/iat/claims → `GET blocklist:<jti>` in shared Redis → return `TokenPayload(user_id, session_id, scopes)`. After that, every WebSocket connection has a verified `user_id` and Server 2 *never thinks about auth again*. We wire this in Step 1 once and forget. There is no user table on Server 2. There is no login endpoint on Server 2. There is no password code on Server 2. If a token expires mid-session, server emits `event{kind:'token_expiring'}` 5 minutes before exp; client refreshes against Server 1 and reconnects with the same `session_id`. |
 | **Datastore** | **Postgres (Supabase) + Redis (shared with Server 1) + LanceDB (local file)** | Postgres for facts/sessions/conversations. Redis for the JWT blocklist + signal bus + pub/sub between proactive notifier and orchestrator. LanceDB is a folder on disk for vectors. |
 | **Async runtime** | **`asyncio` only**. No threads, no multiprocessing for orchestration | Keeps the model simple. The `llama-server` binary is the only subprocess we manage. |
 | **Logging** | **structlog + OpenTelemetry-friendly JSON** | Every turn gets a `turn_id`. Every sub-agent gets a `task_id`. Every signal carries both. You can `grep turn_id=xxx` and see the entire flow. |
 | **Tests** | **pytest + pytest-asyncio + a recorded-LLM fixture** | We record `llama-server` responses for fixed prompts and replay them in CI so tests don't need a model. |
 | **Frontend reference client** | **Plain HTML + vanilla JS in `web-client/index.html`** | Single file. ~150 LoC. Demonstrates: mic capture, WS connect, PCM upload, audio playback, captions, interrupt button, chat box. No framework, no build step. **This is the "we won't get stuck on the client at the end" guarantee.** |
+
+### Multimodal inputs — deferred
+
+Gemma 3n E2B natively supports image, audio, and video inputs via its vision encoder (MobileNetV5) and audio encoder (USM). However, the current GGUF builds available on HuggingFace (`ggml-org/gemma-3n-E2B-it-GGUF`) are **text-only**. llama.cpp has merged vision support (PR #18256, Jan 2026) but it requires a separate `--mmproj` GGUF file that is not yet stable for server-mode multi-slot use.
+
+**Decision:** We start with text-only GGUF. The system handles voice through the STT/TTS pipeline (audio -> Whisper -> text -> LLM -> text -> Kokoro -> audio), not through native model audio input. Image, video, and audio-as-model-input are deferred — the approach (tool-based processing vs native multimodal GGUF) will be decided later based on upstream GGUF progress.
+
+**Upgrade path when ready:** Add `--mmproj <file>.gguf` to the `llama-server` startup command in `engine/runner.py`. Zero architecture changes — the upload endpoint, tool pipeline, and sub-agent system all remain valid regardless of whether the LLM sees images natively or via tool-generated text descriptions.
 
 ### What we explicitly say no to
 
@@ -779,7 +787,7 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 
 | # | Step | File | Status |
 |---|---|---|---|
-| 1 | Project scaffold + config + db/redis/lancedb wiring + Server 1 JWT auth + WebSocket echo | `doc/step-01.md` | ⬜ next |
+| 1 | Project scaffold + config + db/redis/lancedb wiring + Server 1 JWT auth + WebSocket echo | `doc/step-01.md` | ✅ |
 | 2 | Engine plane: `llama-server` runner + slot pool + main-only completion | `doc/step-02.md` | ⬜ |
 | 3 | Voice plane: Groq STT + Kokoro TTS + interrupt | `doc/step-03.md` | ⬜ |
 | 4 | Web client v1 (single HTML file): mic, WS, captions, playback, interrupt button, client_state/client_control handling | `doc/step-04.md` | ⬜ |
@@ -1235,3 +1243,4 @@ If this example feels coherent, the architecture is doing its job. If any step f
 | 1.2 | 2026-05-09 | Added §7.6 multi-task coordination (no mix-ups), §7.7 STEP → user paths (UI / status question / optional verbal digest) with example phrases, §7.8 PDF-homework multi-tool chain inside one delegate. Fixed stale §14 cross-refs. Diagram page 15 expanded + addendum boxes for §7.6–§7.8. |
 | 1.3 | 2026-05-10 | Added §7.9 unified `NEEDS_INFO` / mid-task amendment / confirmation / suggestion contract and §7.10 tool access, discovery, `ToolEntry`, `ToolResult`, confirmation, and `tool_search` rules. Split task `[ANSWER_TO ...]` from user-delivery `[RESPOND_VIA ...]`. Diagram reference bumped to v3 (16 pages). |
 | 1.4 | 2026-05-10 | Added file/image upload contract, client audio control messages, upload env vars, and §7.11 full implementation API map across auth/session, transport/upload, voice/interrupt, orchestrator, sub-agents, engine, memory/files, tools/MCP, and web client. Diagram reference bumped to v3 (17 pages). |
+| 1.5 | 2026-05-16 | Added "Multimodal inputs — deferred" note in §2 clarifying text-only GGUF start, STT/TTS voice pipeline, and one-flag upgrade path. Added `doc/roadmap.md` (full step-by-step feature/change breakdown) and `implementation_tracker.drawio` (visual build progress). |
