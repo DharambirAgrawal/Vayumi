@@ -29,6 +29,7 @@ async def init_postgres(database_url: str) -> asyncpg.Pool:
         database_url,
         min_size=2,
         max_size=10,
+        statement_cache_size=0,
     )
     assert pool is not None
     async with pool.acquire() as conn:

@@ -15,9 +15,14 @@ from server.transport.protocol import (
     ErrorMessage,
     ErrorPayload,
     HelloMessage,
+    InterruptMessage,
     PingMessage,
     PongMessage,
     PongPayload,
+    ServerAudioEndMessage,
+    ServerAudioEndPayload,
+    ServerAudioStartMessage,
+    ServerAudioStartPayload,
     WelcomeMessage,
     WelcomePayload,
     parse_client_message,
@@ -88,6 +93,12 @@ class TestParseClientMessage:
         assert isinstance(msg, PingMessage)
         assert msg.payload.t == 1234567890
 
+    def test_interrupt(self) -> None:
+        raw = json.dumps({"type": "interrupt", "payload": {"source": "button"}})
+        msg = parse_client_message(raw)
+        assert isinstance(msg, InterruptMessage)
+        assert msg.payload.source == "button"
+
     def test_invalid_type_raises(self) -> None:
         raw = json.dumps({"type": "unknown_type", "payload": {}})
         with pytest.raises(Exception):
@@ -137,6 +148,23 @@ class TestSerializeServerMessage:
         assert data["type"] == "caption"
         assert data["payload"]["text"] == "hello"
         assert data["payload"]["partial"] is True
+
+    def test_server_audio_start(self) -> None:
+        msg = ServerAudioStartMessage(
+            payload=ServerAudioStartPayload(turn_id="turn-1"),
+        )
+        raw = serialize_server_message(msg)
+        data = json.loads(raw)
+        assert data["type"] == "audio_start"
+        assert data["payload"]["turn_id"] == "turn-1"
+        assert data["payload"]["sample_rate"] == 16000
+
+    def test_server_audio_end(self) -> None:
+        msg = ServerAudioEndMessage(payload=ServerAudioEndPayload(turn_id="turn-1"))
+        raw = serialize_server_message(msg)
+        data = json.loads(raw)
+        assert data["type"] == "audio_end"
+        assert data["payload"]["turn_id"] == "turn-1"
 
     def test_pong(self) -> None:
         msg = PongMessage(payload=PongPayload(t=999))

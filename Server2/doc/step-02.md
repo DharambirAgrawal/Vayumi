@@ -1,6 +1,6 @@
 # Step 02 — Engine plane: llama-server runner + slot pool + main-only completion
 
-**Status:** ⬜ pending  
+**Status:** ✅ done  
 **Depends on:** step-01  
 **Estimated effort:** 1–2 days  
 **Owner:** you  

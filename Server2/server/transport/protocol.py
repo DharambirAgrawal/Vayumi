@@ -47,6 +47,15 @@ class AudioEndMessage(BaseModel):
     payload: AudioEndPayload = AudioEndPayload()
 
 
+class InterruptPayload(BaseModel):
+    source: Literal["wake", "button", "voice"]
+
+
+class InterruptMessage(BaseModel):
+    type: Literal["interrupt"] = "interrupt"
+    payload: InterruptPayload
+
+
 class PingPayload(BaseModel):
     t: int
 
@@ -57,7 +66,12 @@ class PingMessage(BaseModel):
 
 
 ClientMessage = Annotated[
-    HelloMessage | ChatMessage | AudioStartMessage | AudioEndMessage | PingMessage,
+    HelloMessage
+    | ChatMessage
+    | AudioStartMessage
+    | AudioEndMessage
+    | InterruptMessage
+    | PingMessage,
     Field(discriminator="type"),
 ]
 
@@ -95,6 +109,26 @@ class CaptionMessage(BaseModel):
     payload: CaptionPayload
 
 
+class ServerAudioStartPayload(BaseModel):
+    sample_rate: int = 16000
+    format: str = "pcm_s16le"
+    turn_id: str
+
+
+class ServerAudioStartMessage(BaseModel):
+    type: Literal["audio_start"] = "audio_start"
+    payload: ServerAudioStartPayload
+
+
+class ServerAudioEndPayload(BaseModel):
+    turn_id: str
+
+
+class ServerAudioEndMessage(BaseModel):
+    type: Literal["audio_end"] = "audio_end"
+    payload: ServerAudioEndPayload
+
+
 class PongPayload(BaseModel):
     t: int
 
@@ -114,7 +148,15 @@ class ErrorMessage(BaseModel):
     payload: ErrorPayload
 
 
-ServerMessage = WelcomeMessage | EchoMessage | CaptionMessage | PongMessage | ErrorMessage
+ServerMessage = (
+    WelcomeMessage
+    | EchoMessage
+    | CaptionMessage
+    | ServerAudioStartMessage
+    | ServerAudioEndMessage
+    | PongMessage
+    | ErrorMessage
+)
 
 
 # ── Helpers ──────────────────────────────────────────────

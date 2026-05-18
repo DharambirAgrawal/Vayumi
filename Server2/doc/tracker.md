@@ -3,7 +3,7 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-05-17 — Step 1 complete
+> **Last updated:** 2026-05-17 — Step 3 complete
 
 ---
 
@@ -14,7 +14,7 @@ PHASE 1 — SPINE                                            PHASE 2 — MULTI-A
 ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┬─────────┐
 │ Step 1  │ Step 2  │ Step 3  │ Step 4  │ Step 5  │ Step 6  │  │ Step 7  │ Step 8  │ Step 9  │ Step 10 │ Step 11 │
 │Scaffold │ Engine  │ Voice   │ Client  │ Memory  │ Tools   │  │SubAgent │Capabil. │Notifier │Retrieval│Summariz.│
-│  ✅     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
+│  ✅     │  ✅     │  ✅     │  ⬜     │  ⬜     │  ⬜     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
 └─────────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘
                │         │         │         │         │            │         │         │         │         │
                ▼         ▼         ▼         ▼         ▼            ▼         ▼         ▼         ▼         ▼
@@ -28,7 +28,35 @@ PHASE 3 — MODES & POLISH                         PHASE 4 — CLIENTS & DEPLOY
 
 Legend: ✅ done   🔄 in progress   ⬜ not started   ❌ blocked
 
-Completed: 1 / 20    Phase 1: 1/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/4
+Completed: 3 / 20    Phase 1: 3/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/4
+```
+
+---
+
+## What Step 2 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              ENGINE PLANE                                       │
+│                                                                                 │
+│  server/engine/runner.py                                                        │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ start_llama_server() → /opt/homebrew/bin/llama-server                    │  │
+│  │ flags: -m model.gguf --port 8081 -np 4 --ctx-size 32768 -sps 0.5         │  │
+│  │ health_check() polls /health until ready                                  │  │
+│  │ stop_llama_server() terminates the subprocess on app shutdown             │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  server/engine/pool.py                                                          │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ CompletionPriority: P0 Main, P1 sub-agent, P2 summarizer                  │  │
+│  │ submit(request, priority, slot_hint=0) → CompletionHandle                 │  │
+│  │ dispatcher streams llama-server tokens back to transport                  │  │
+│  │ slot 0 is used for Main; slots 1-3 are ready for later steps              │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  Chat path: WS chat → build_main_prompt() → engine pool P0 slot 0 → caption     │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -215,12 +243,12 @@ This is the target. Grey sections are not built yet.
 │ VOICE PLANE             │  │ ORCHESTRATOR PLANE       │  │ ENGINE PLANE         │
 │ (server/voice/)         │  │ (server/orchestrator/)   │  │ (server/engine/)     │
 │                         │  │                          │  │                      │
-│ ░░ STT (Groq/local)    │  │ ░░ supervisor.py         │  │ ░░ runner.py         │
-│ ░░ TTS (Kokoro)        │  │ ░░ directives.py         │  │    llama-server      │
-│ ░░ VAD (Silero)        │  │ ░░ signal_bus.py         │  │ ░░ pool.py           │
-│ ░░ interrupt.py        │  │ ░░ notifier.py           │  │    4 slots, P0/P1/P2 │
-│                         │  │ ░░ task_board.py         │  │ ░░ prompt.py         │
-│ steps 3-4              │  │ steps 5-9                │  │ step 2               │
+│ ✅ STT (Groq)          │  │ ░░ supervisor.py         │  │ ✅ runner.py         │
+│ ✅ TTS (Kokoro)        │  │ ░░ directives.py         │  │    llama-server      │
+│ ✅ VAD (Silero)        │  │ ░░ signal_bus.py         │  │ ✅ pool.py           │
+│ ✅ interrupt.py        │  │ ░░ notifier.py           │  │    4 slots, P0/P1/P2 │
+│ ✅ turn.py (ws path)   │  │ ░░ task_board.py         │  │ ✅ prompt.py         │
+│ step 3 ✅, polish s4   │  │ steps 5-9                │  │ ✅ step 2            │
 └─────────────────────────┘  └────────────┬─────────────┘  └──────────────────────┘
                                           │
                     ┌─────────────────────┼──────────────────────┐
@@ -368,30 +396,52 @@ Server2/
 ├── PLAN.md                     ✅ frozen architecture
 ├── doc/
 │   ├── step-01.md              ✅ this step
+│   ├── step-02.md              ✅ engine plane
+│   ├── step-03.md              ✅ voice plane
+│   ├── step-04.md              ⬜ pending
 │   ├── tracker.md              ✅ this file — progress + architecture flows
 │   ├── roadmap.md              ✅ full 20-step overview
 │   └── history.md              ✅ change log
+├── prompts/
+│   └── main.txt                ✅ Main Agent system prompt
 ├── server/
 │   ├── __init__.py             ✅
-│   ├── app.py                  ✅ FastAPI + lifespan
-│   ├── config.py               ✅ Settings (pydantic-settings)
+│   ├── app.py                  ✅ FastAPI + lifespan + engine + voice boot
+│   ├── config.py               ✅ Settings + engine + voice defaults
 │   ├── logger.py               ✅ structlog setup
 │   ├── auth.py                 ✅ verify_token (dev bypass + RS256 prod)
 │   ├── db/
 │   │   ├── __init__.py         ✅
 │   │   ├── postgres.py         ✅ asyncpg pool + migration
-│   │   ├── redis.py            ✅ own Redis + Server 1 Redis
+│   │   ├── redis.py            ✅ own Redis + Server 1 Redis, masked logs
 │   │   └── lancedb.py          ✅ connect + writable check
+│   ├── engine/
+│   │   ├── __init__.py         ✅
+│   │   ├── runner.py           ✅ llama-server subprocess lifecycle
+│   │   ├── pool.py             ✅ priority queue + slot manager
+│   │   └── prompt.py           ✅ Main prompt assembly
+│   ├── voice/
+│   │   ├── stt/groq.py         ✅ Groq Whisper STT
+│   │   ├── tts/kokoro.py       ✅ Kokoro streaming TTS
+│   │   ├── vad/silero.py       ✅ Silero VAD
+│   │   ├── interrupt.py        ✅ interrupt FSM
+│   │   ├── turn.py             ✅ voice turn pipeline
+│   │   └── boot.py             ✅ voice plane init
 │   └── transport/
 │       ├── __init__.py         ✅
-│       ├── ws.py               ✅ WS endpoint + echo loop
-│       └── protocol.py         ✅ typed message envelopes
+│       ├── ws.py               ✅ voice capture + chat + interrupt
+│       └── protocol.py         ✅ caption + server audio + interrupt
 ├── web-client/
-│   ├── index.html              ✅ dev client UI
-│   └── client.js               ✅ WS + AudioWorklet + PCM capture
+│   ├── index.html              ✅ dev client + interrupt button
+│   └── client.js               ✅ WS + mic + TTS playback queue
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
     └── unit/
-        └── test_protocol.py    ✅ 17 tests (all green)
+        ├── test_db_redis.py    ✅ Redis URL log masking
+        ├── test_engine_pool.py ✅ engine queue + streaming
+        ├── test_engine_prompt.py ✅ Main prompt assembly
+        ├── test_engine_runner.py ✅ llama command + health
+        ├── test_protocol.py    ✅ protocol round-trips
+        └── test_voice_*.py     ✅ voice plane unit tests
 ```

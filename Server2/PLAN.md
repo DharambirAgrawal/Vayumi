@@ -1,9 +1,9 @@
 # Vayumi Server 2 — Master Plan
 
 **Version:** 1.6  
-**Status:** Architecture locked, Step 2 next (Step 1 complete)  
-**Last updated:** 2026-05-17  
-**Companion files:** `doc/step-02.md` (current), `doc/roadmap.md` (full step overview), `doc/tracker.md` (progress + flows), `agent-prompt.md` (reusable build prompt)  
+**Status:** Architecture locked, Step 3 next (Steps 1-2 complete)  
+**Last updated:** 2026-05-18  
+**Companion files:** `doc/step-03.md` (current), `doc/roadmap.md` (full step overview), `doc/tracker.md` (progress + flows), `agent-prompt.md` (reusable build prompt)  
 **Reference diagrams:** `orchestrator_diagram_v3.drawio` (17 pages — architecture), `doc/tracker.md` (build progress + architecture flows)  
 **Sister service:** `Server1/` (TypeScript) — owns auth, identity, sessions, push tokens. Already implemented and verified.
 
@@ -788,8 +788,8 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 | # | Step | File | Status |
 |---|---|---|---|
 | 1 | Project scaffold + config + db/redis/lancedb wiring + Server 1 JWT auth + WebSocket echo | `doc/step-01.md` | ✅ |
-| 2 | Engine plane: `llama-server` runner + slot pool + main-only completion | `doc/step-02.md` | ⬜ |
-| 3 | Voice plane: Groq STT + Kokoro TTS + interrupt | `doc/step-03.md` | ⬜ |
+| 2 | Engine plane: `llama-server` runner + slot pool + main-only completion | `doc/step-02.md` | ✅ |
+| 3 | Voice plane: Groq STT + Kokoro TTS + interrupt | `doc/step-03.md` | ✅ |
 | 4 | Web client v1 (single HTML file): mic, WS, captions, playback, interrupt button, client_state/client_control handling | `doc/step-04.md` | ⬜ |
 | 5 | Memory v1: warm profile + session history + Postgres versioned facts | `doc/step-05.md` | ⬜ |
 | 6 | Tool plane: registry + runner + `tool_search` + `web_search` (Tavily/DDG) + Main can call cheap tools | `doc/step-06.md` | ⬜ |

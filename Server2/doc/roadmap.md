@@ -77,9 +77,9 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 
 ---
 
-### Step 2 — Engine plane ⬜
+### Step 2 — Engine plane ✅
 
-**File:** [`doc/step-02.md`](step-02.md) (stub — fill in before implementation)  
+**File:** [`doc/step-02.md`](step-02.md)  
 **Estimated effort:** 1–2 days  
 **Diagram pages:** 02, 06
 
@@ -111,9 +111,9 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 
 ---
 
-### Step 3 — Voice plane ⬜
+### Step 3 — Voice plane ✅
 
-**File:** `doc/step-03.md`  
+**File:** [`doc/step-03.md`](step-03.md)  
 **Estimated effort:** 2 days  
 **Diagram pages:** 04, 10
 

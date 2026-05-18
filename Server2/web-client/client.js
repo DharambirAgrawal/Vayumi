@@ -11,8 +11,12 @@
   const chatInput = $("chatInput");
   const btnSend = $("btnSend");
   const btnRecord = $("btnRecord");
+  const btnInterrupt = $("btnInterrupt");
 
   let ws = null;
+  let playbackCtx = null;
+  let nextPlayTime = 0;
+  let activeSources = [];
 
   function setStatus(state) {
     statusEl.textContent = state;
@@ -23,13 +27,14 @@
     chatInput.disabled = !connected;
     btnSend.disabled = !connected;
     btnRecord.disabled = !connected;
+    btnInterrupt.disabled = !connected;
   }
 
   function appendLog(text, cls) {
-    const el = document.createElement("div");
-    el.className = "log-entry " + (cls || "info");
-    el.textContent = text;
-    logArea.appendChild(el);
+    const row = document.createElement("div");
+    row.className = "log-entry " + (cls || "info");
+    row.textContent = text;
+    logArea.appendChild(row);
     logArea.scrollTop = logArea.scrollHeight;
   }
 
@@ -38,6 +43,51 @@
     const msg = JSON.stringify({ type, payload });
     ws.send(msg);
     appendLog(">>> " + msg, "sent");
+  }
+
+  function ensurePlaybackContext(sampleRate) {
+    if (!playbackCtx || playbackCtx.sampleRate !== sampleRate) {
+      playbackCtx = new AudioContext({ sampleRate: sampleRate });
+      nextPlayTime = playbackCtx.currentTime;
+    }
+    return playbackCtx;
+  }
+
+  function stopPlayback() {
+    activeSources.forEach(function (source) {
+      try {
+        source.stop();
+      } catch (_) {}
+    });
+    activeSources = [];
+    if (playbackCtx) {
+      nextPlayTime = playbackCtx.currentTime;
+    }
+  }
+
+  function queuePcmPlayback(arrayBuffer, sampleRate) {
+    const ctx = ensurePlaybackContext(sampleRate);
+    const int16 = new Int16Array(arrayBuffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768;
+    }
+
+    const buffer = ctx.createBuffer(1, float32.length, sampleRate);
+    buffer.copyToChannel(float32, 0);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+
+    const startAt = Math.max(ctx.currentTime, nextPlayTime);
+    source.start(startAt);
+    nextPlayTime = startAt + buffer.duration;
+    activeSources.push(source);
+    source.onended = function () {
+      activeSources = activeSources.filter(function (s) {
+        return s !== source;
+      });
+    };
   }
 
   function connect() {
@@ -54,6 +104,7 @@
     appendLog("Connecting to " + url + " ...");
 
     ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
 
     ws.onopen = function () {
       setStatus("connected");
@@ -68,15 +119,16 @@
       if (typeof ev.data === "string") {
         appendLog("<<< " + ev.data, "recv");
         renderServerMessage(ev.data);
-      } else if (ev.data instanceof Blob) {
-        ev.data.arrayBuffer().then(function (buf) {
-          appendLog("<<< binary frame received: " + buf.byteLength + " bytes", "recv");
-        });
+      } else if (ev.data instanceof ArrayBuffer) {
+        const rate = pendingAudioRate || 16000;
+        queuePcmPlayback(ev.data, rate);
+        appendLog("<<< binary TTS frame: " + ev.data.byteLength + " bytes", "recv");
       }
     };
 
     ws.onclose = function (ev) {
       setStatus("closed");
+      stopPlayback();
       appendLog("WebSocket closed: code=" + ev.code + " reason=" + (ev.reason || "(none)"));
       ws = null;
     };
@@ -85,6 +137,8 @@
       appendLog("WebSocket error", "error");
     };
   }
+
+  let pendingAudioRate = 16000;
 
   function disconnect() {
     if (ws) ws.close();
@@ -97,6 +151,12 @@
     chatInput.value = "";
   }
 
+  function sendInterrupt() {
+    stopPlayback();
+    sendJson("interrupt", { source: "button" });
+    appendLog("Interrupt sent", "info");
+  }
+
   function renderServerMessage(raw) {
     let msg;
     try {
@@ -107,6 +167,14 @@
     if (msg.type === "caption") {
       const marker = msg.payload.partial ? "caption chunk" : "caption final";
       appendLog(marker + ": " + msg.payload.text, "caption");
+    }
+    if (msg.type === "audio_start") {
+      pendingAudioRate = msg.payload.sample_rate || 16000;
+      stopPlayback();
+      appendLog("TTS stream start turn_id=" + msg.payload.turn_id, "info");
+    }
+    if (msg.type === "audio_end") {
+      appendLog("TTS stream end turn_id=" + msg.payload.turn_id, "info");
     }
   }
 
@@ -203,6 +271,7 @@
   btnConnect.addEventListener("click", connect);
   btnDisconnect.addEventListener("click", disconnect);
   btnSend.addEventListener("click", sendChat);
+  btnInterrupt.addEventListener("click", sendInterrupt);
   chatInput.addEventListener("keydown", function (e) {
     if (e.key === "Enter") sendChat();
   });
