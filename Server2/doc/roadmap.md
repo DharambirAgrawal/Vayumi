@@ -479,3 +479,4 @@ These apply to every step. If a step violates any of them, it is not done.
 4. No new dependencies without adding to pyproject.toml and the rejected-alternatives table if relevant.
 5. Every step ends with a green `pytest` run.
 6. If a step is tempted to pull in work from a later step, write it in the later step file instead.
+7. Keep `.env` focused on secrets, deployment endpoints, machine-local paths, ports, and explicit overrides. Put ordinary defaults in `server/config.py` and document optional overrides in `.env.example`.

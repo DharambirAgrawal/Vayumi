@@ -2,6 +2,7 @@
 
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
+> Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
 > **Last updated:** 2026-05-17 — Step 1 complete
 
 ---

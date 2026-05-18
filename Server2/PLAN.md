@@ -844,6 +844,8 @@ Past restarts happened because of these specific traps. Each is now a hard rule.
 
 ## 10. Environment variables
 
+Environment variables are for secrets, deployment-specific endpoints, machine-local paths, ports, and operator overrides. Ordinary non-secret defaults belong in `server/config.py` so local development does not require a large `.env` file.
+
 ```bash
 # App
 APP_ENV=dev                         # dev | prod

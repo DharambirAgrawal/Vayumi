@@ -49,6 +49,7 @@ ENVIRONMENT:
 - `SERVER1_REDIS_URL`: optional in dev; used only for JWT blocklist keys `blocklist:<jti>`. When shared with Server 1, it can be the same URL as `REDIS_URL`.
 - LanceDB: local directory (`LANCEDB_DIR`, default `./data/lancedb`).
 - `docker-compose.dev.yml` is **optional** (local Postgres + Redis only). **Do not require Docker.** If `.env` already has working cloud URLs, skip Docker and run the server directly.
+- Keep `.env` small: secrets, deployment endpoints, machine-local paths, ports, and explicit overrides only. Put ordinary defaults in `server/config.py` and document optional overrides in `.env.example`.
 - Boot: `python -m uvicorn server.app:app --port 8080` (from `Server2/` with venv active). Tests: `python -m pytest tests/unit -q`.
 
 AFTER all acceptance tests pass, do the COMPLETION PHASE — update all tracking files:
