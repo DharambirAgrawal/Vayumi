@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     llama_parallel_slots: int = 4
     llama_ctx_per_slot: int = 8192
 
+    # ── Voice (code defaults; env only overrides) ─────────
+    stt_backend: str = "groq"
+    groq_api_key: str | None = None
+    kokoro_model_dir: str = "./models/kokoro"
+    kokoro_voice: str = "af_heart"
+
+    # ── Embeddings (optional path for future ONNX export) ──
+    bge_model_path: str = "./models/bge-small-en-v1.5.onnx"
+
     @field_validator("app_env")
     @classmethod
     def _validate_app_env(cls, v: str) -> str:
@@ -54,6 +63,13 @@ class Settings(BaseSettings):
     def _validate_positive_int(cls, v: int) -> int:
         if v < 1:
             raise ValueError("value must be >= 1")
+        return v
+
+    @field_validator("stt_backend")
+    @classmethod
+    def _validate_stt_backend(cls, v: str) -> str:
+        if v not in ("groq", "local"):
+            raise ValueError("STT_BACKEND must be 'groq' or 'local'")
         return v
 
     @property

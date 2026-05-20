@@ -47,6 +47,15 @@ class AudioEndMessage(BaseModel):
     payload: AudioEndPayload = AudioEndPayload()
 
 
+class InterruptPayload(BaseModel):
+    source: Literal["wake", "button", "voice"]
+
+
+class InterruptMessage(BaseModel):
+    type: Literal["interrupt"] = "interrupt"
+    payload: InterruptPayload
+
+
 class PingPayload(BaseModel):
     t: int
 
@@ -56,8 +65,36 @@ class PingMessage(BaseModel):
     payload: PingPayload
 
 
+class ClientStatePayload(BaseModel):
+    playback: Literal["idle", "playing", "paused"]
+    capture: Literal["idle", "recording"]
+    visible: bool
+    route: Literal["speaker", "earpiece", "bluetooth"] | None = None
+
+
+class ClientStateMessage(BaseModel):
+    type: Literal["client_state"] = "client_state"
+    payload: ClientStatePayload
+
+
+class ModePayload(BaseModel):
+    mode: Literal["conversation", "meeting"]
+
+
+class ModeMessage(BaseModel):
+    type: Literal["mode"] = "mode"
+    payload: ModePayload
+
+
 ClientMessage = Annotated[
-    HelloMessage | ChatMessage | AudioStartMessage | AudioEndMessage | PingMessage,
+    HelloMessage
+    | ChatMessage
+    | AudioStartMessage
+    | AudioEndMessage
+    | InterruptMessage
+    | PingMessage
+    | ClientStateMessage
+    | ModeMessage,
     Field(discriminator="type"),
 ]
 
@@ -95,6 +132,26 @@ class CaptionMessage(BaseModel):
     payload: CaptionPayload
 
 
+class ServerAudioStartPayload(BaseModel):
+    sample_rate: int = 16000
+    format: str = "pcm_s16le"
+    turn_id: str
+
+
+class ServerAudioStartMessage(BaseModel):
+    type: Literal["audio_start"] = "audio_start"
+    payload: ServerAudioStartPayload
+
+
+class ServerAudioEndPayload(BaseModel):
+    turn_id: str
+
+
+class ServerAudioEndMessage(BaseModel):
+    type: Literal["audio_end"] = "audio_end"
+    payload: ServerAudioEndPayload
+
+
 class PongPayload(BaseModel):
     t: int
 
@@ -114,7 +171,58 @@ class ErrorMessage(BaseModel):
     payload: ErrorPayload
 
 
-ServerMessage = WelcomeMessage | EchoMessage | CaptionMessage | PongMessage | ErrorMessage
+ClientControlCommand = Literal[
+    "play",
+    "pause",
+    "stop",
+    "duck",
+    "unduck",
+    "clear_queue",
+    "start_capture",
+    "stop_capture",
+]
+
+
+class ClientControlPayload(BaseModel):
+    command: ClientControlCommand
+    reason: str
+    turn_id: str | None = None
+
+
+class ClientControlMessage(BaseModel):
+    type: Literal["client_control"] = "client_control"
+    payload: ClientControlPayload
+
+
+class EventPayload(BaseModel):
+    kind: Literal[
+        "tool_started",
+        "tool_done",
+        "task_step",
+        "task_done",
+        "task_error",
+        "file_processing",
+    ]
+    task_id: str
+    summary: str
+
+
+class EventMessage(BaseModel):
+    type: Literal["event"] = "event"
+    payload: EventPayload
+
+
+ServerMessage = (
+    WelcomeMessage
+    | EchoMessage
+    | CaptionMessage
+    | ServerAudioStartMessage
+    | ServerAudioEndMessage
+    | ClientControlMessage
+    | EventMessage
+    | PongMessage
+    | ErrorMessage
+)
 
 
 # ── Helpers ──────────────────────────────────────────────
