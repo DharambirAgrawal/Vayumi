@@ -113,6 +113,13 @@ const socketOptions = {
 const isTlsEnabled = env.REDIS_TLS_ENABLED === "true";
 
 const buildRedisOptions = (): RedisClientOptions => {
+  if (env.REDIS_URL) {
+    return {
+      url: env.REDIS_URL,
+      socket: socketOptions,
+    };
+  }
+
   if (env.REDIS_HOST && env.REDIS_PORT && env.REDIS_PASSWORD) {
     return {
       username: env.REDIS_USERNAME ?? "default",
