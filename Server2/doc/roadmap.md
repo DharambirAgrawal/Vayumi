@@ -146,7 +146,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 
 ---
 
-### Step 4 — Web client v1 ⬜
+### Step 4 — Web client v1 ✅
 
 **File:** `doc/step-04.md`  
 **Estimated effort:** 1 day  
@@ -178,7 +178,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 
 ---
 
-### Step 5 — Memory v1 ⬜
+### Step 5 — Memory v1 ✅
 
 **File:** `doc/step-05.md`  
 **Estimated effort:** 2 days  

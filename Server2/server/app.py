@@ -14,6 +14,7 @@ from server.db.redis import close_redis, init_redis, init_server1_redis
 from server.engine.pool import close_engine_pool, init_engine_pool
 from server.engine.runner import config_from_settings, start_llama_server, stop_llama_server
 from server.logger import get_logger, setup_logging
+from server.memory.embeddings import close_embedder, init_embedder
 from server.transport.ws import ws_endpoint
 from server.voice.boot import init_voice_plane
 
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     elif settings.is_dev:
         log.warning("app.server1_redis_skipped", reason="SERVER1_REDIS_URL not set (dev mode)")
 
+    init_embedder()
     await init_lancedb(settings.lancedb_dir)
 
     llama_config = config_from_settings(settings)
@@ -77,6 +79,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_engine_pool()
     await stop_llama_server()
     await close_lancedb()
+    close_embedder()
     await close_redis()
     await close_postgres()
     log.info("app.stopped")

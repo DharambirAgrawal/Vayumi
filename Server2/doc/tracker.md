@@ -3,7 +3,7 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-05-17 — Step 3 complete
+> **Last updated:** 2026-05-17 — Step 5 complete
 
 ---
 
@@ -14,7 +14,7 @@ PHASE 1 — SPINE                                            PHASE 2 — MULTI-A
 ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┬─────────┐
 │ Step 1  │ Step 2  │ Step 3  │ Step 4  │ Step 5  │ Step 6  │  │ Step 7  │ Step 8  │ Step 9  │ Step 10 │ Step 11 │
 │Scaffold │ Engine  │ Voice   │ Client  │ Memory  │ Tools   │  │SubAgent │Capabil. │Notifier │Retrieval│Summariz.│
-│  ✅     │  ✅     │  ✅     │  ⬜     │  ⬜     │  ⬜     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
+│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ⬜     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
 └─────────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘
                │         │         │         │         │            │         │         │         │         │
                ▼         ▼         ▼         ▼         ▼            ▼         ▼         ▼         ▼         ▼
@@ -28,7 +28,101 @@ PHASE 3 — MODES & POLISH                         PHASE 4 — CLIENTS & DEPLOY
 
 Legend: ✅ done   🔄 in progress   ⬜ not started   ❌ blocked
 
-Completed: 3 / 20    Phase 1: 3/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/4
+Completed: 5 / 20    Phase 1: 5/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/4
+```
+
+---
+
+## What Step 5 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         MEMORY v1 + SUPERVISOR TURNS                            │
+│                                                                                 │
+│  server/memory/                                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ facts.py — set_fact / get_fact / get_chain (Postgres versioned)          │  │
+│  │ warm.py — build_warm_profile, mark_dirty, Redis warm_cache TTL           │  │
+│  │ session.py — load_or_create_session, append_turn, recent_turns           │  │
+│  │ embeddings.py — bge-small-en-v1.5 (sentence-transformers)                │  │
+│  │ retrieval.py — stub (step 10)                                            │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  server/orchestrator/                                                           │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ supervisor.py — run_turn: warm + history → Main → directives             │  │
+│  │ directives.py — [REMEMBER] / [RECALL] / [RECALL chain]                   │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  server/db/schema.sql — facts, sessions, turns                                  │
+│  LanceDB facts_index — embedding per active fact                                │
+│  Chat + voice paths route through Supervisor                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Memory turn flow (Step 5)
+
+```
+ User message (chat or voice transcript)
+        │
+        ▼
+ Supervisor.run_turn
+        │
+        ├── build_warm_profile(user_id)  ← Postgres facts + Redis cache
+        ├── recent_turns(session_id)
+        ├── append_turn(user)
+        │
+        ▼
+ build_main_prompt(warm + history + user)
+        │
+        ▼
+ Engine P0 slot 0 → stream captions
+        │
+        ▼
+ parse_directives → set_fact / get_fact / get_chain
+        │
+        ├── [RECALL] → follow-up completion with [RECALL_RESULT …]
+        └── strip_directives → final caption + TTS (voice)
+```
+
+---
+
+## What Step 4 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         WEB CLIENT + CLIENT CONTROL                             │
+│                                                                                 │
+│  web-client/                                                                    │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ index.html + style.css — conversation UI (captions, chat, activity)      │  │
+│  │ client.js — toggle mic, TTS queue, client_state / client_control         │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  server/transport/client_control.py                                             │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ ClientControlSession — tracks playback/capture/visibility/route          │  │
+│  │ send_client_control() — play/stop/clear_queue/duck/unduck/capture        │  │
+│  │ interrupt → stop + clear_queue; TTS audio_start → play                   │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  protocol.py — client_state, mode (client→server); client_control, event       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Audio control handshake (Step 4)
+
+```
+ Server                              Web Client
+   │                                      │
+   │── client_control {stop,clear_queue} ─▶│  (on interrupt)
+   │◀──────── client_state {playback:idle} ─│
+   │                                      │
+   │── audio_start + client_control play ─▶│  (TTS begins)
+   │── binary PCM frames ─────────────────▶│
+   │◀──────── client_state {playing} ─────│
+   │── audio_end ─────────────────────────▶│
+   │◀──────── client_state {idle} ──────────│
 ```
 
 ---
@@ -243,12 +337,12 @@ This is the target. Grey sections are not built yet.
 │ VOICE PLANE             │  │ ORCHESTRATOR PLANE       │  │ ENGINE PLANE         │
 │ (server/voice/)         │  │ (server/orchestrator/)   │  │ (server/engine/)     │
 │                         │  │                          │  │                      │
-│ ✅ STT (Groq)          │  │ ░░ supervisor.py         │  │ ✅ runner.py         │
-│ ✅ TTS (Kokoro)        │  │ ░░ directives.py         │  │    llama-server      │
+│ ✅ STT (Groq)          │  │ ✅ supervisor.py         │  │ ✅ runner.py         │
+│ ✅ TTS (Kokoro)        │  │ ✅ directives.py         │  │    llama-server      │
 │ ✅ VAD (Silero)        │  │ ░░ signal_bus.py         │  │ ✅ pool.py           │
 │ ✅ interrupt.py        │  │ ░░ notifier.py           │  │    4 slots, P0/P1/P2 │
-│ ✅ turn.py (ws path)   │  │ ░░ task_board.py         │  │ ✅ prompt.py         │
-│ step 3 ✅, polish s4   │  │ steps 5-9                │  │ ✅ step 2            │
+│ ✅ turn → supervisor   │  │ ░░ task_board.py         │  │ ✅ prompt.py + warm  │
+│ step 3 ✅, polish s4   │  │ steps 7-9                │  │ ✅ step 2            │
 └─────────────────────────┘  └────────────┬─────────────┘  └──────────────────────┘
                                           │
                     ┌─────────────────────┼──────────────────────┐
@@ -258,13 +352,13 @@ This is the target. Grey sections are not built yet.
 │ SUB-AGENT PLANE          │  │ TOOL PLANE             │  │ MEMORY PLANE           │
 │ (server/subagents/)      │  │ (server/tools/)        │  │ (server/memory/)       │
 │                          │  │                        │  │                        │
-│ ░░ worker.py             │  │ ░░ registry.py         │  │ ░░ facts.py (versioned)│
-│ ░░ report.py             │  │ ░░ runner.py           │  │ ░░ warm.py (profile)   │
-│ ░░ capabilities/         │  │ ░░ web_search.py       │  │ ░░ retrieval.py        │
-│    research/             │  │ ░░ mcp_adapter.py      │  │ ░░ session.py          │
+│ ░░ worker.py             │  │ ░░ registry.py         │  │ ✅ facts.py (versioned)│
+│ ░░ report.py             │  │ ░░ runner.py           │  │ ✅ warm.py (profile)   │
+│ ░░ capabilities/         │  │ ░░ web_search.py       │  │ ░░ retrieval.py (stub) │
+│    research/             │  │ ░░ mcp_adapter.py      │  │ ✅ session.py          │
 │    productivity/         │  │ ░░ tool_search.py      │  │ ░░ summarizer.py       │
-│    comms/                │  │                        │  │                        │
-│ steps 7-8               │  │ step 6                 │  │ steps 5, 10-11         │
+│    comms/                │  │                        │  │ ✅ embeddings.py       │
+│ steps 7-8               │  │ step 6                 │  │ step 5 ✅, 10-11       │
 └──────────────────────────┘  └────────────────────────┘  └────────────────────────┘
                                                                     │
                                                                     ▼
@@ -276,9 +370,9 @@ This is the target. Grey sections are not built yet.
 │  │   (Supabase)     │    │   (cloud)        │    │   (local dir)       │              │
 │  │                  │    │                  │    │                     │              │
 │  │ server_health    │    │ own: signals,    │    │ _ping (health)     │              │
-│  │ ░░ facts         │    │      cache       │    │ ░░ facts_index     │              │
-│  │ ░░ sessions      │    │ S1: blocklist    │    │    (embeddings)    │              │
-│  │ ░░ turns         │    │                  │    │                     │              │
+│  │ ✅ facts         │    │ warm_cache       │    │ ✅ facts_index     │              │
+│  │ ✅ sessions      │    │ S1: blocklist    │    │    (embeddings)    │              │
+│  │ ✅ turns         │    │                  │    │                     │              │
 │  │ ░░ tasks         │    │                  │    │                     │              │
 │  │ ░░ signals       │    │                  │    │                     │              │
 │  └─────────────────┘    └─────────────────┘    └─────────────────────┘              │
@@ -398,7 +492,9 @@ Server2/
 │   ├── step-01.md              ✅ this step
 │   ├── step-02.md              ✅ engine plane
 │   ├── step-03.md              ✅ voice plane
-│   ├── step-04.md              ⬜ pending
+│   ├── step-04.md              ✅ web client v1
+│   ├── step-05.md              ✅ memory v1
+│   ├── step-06.md              ⬜ pending
 │   ├── tracker.md              ✅ this file — progress + architecture flows
 │   ├── roadmap.md              ✅ full 20-step overview
 │   └── history.md              ✅ change log
@@ -414,12 +510,24 @@ Server2/
 │   │   ├── __init__.py         ✅
 │   │   ├── postgres.py         ✅ asyncpg pool + migration
 │   │   ├── redis.py            ✅ own Redis + Server 1 Redis, masked logs
-│   │   └── lancedb.py          ✅ connect + writable check
+│   │   ├── lancedb.py          ✅ connect + writable check + facts_index
+│   │   └── schema.sql          ✅ facts, sessions, turns DDL
 │   ├── engine/
 │   │   ├── __init__.py         ✅
 │   │   ├── runner.py           ✅ llama-server subprocess lifecycle
 │   │   ├── pool.py             ✅ priority queue + slot manager
-│   │   └── prompt.py           ✅ Main prompt assembly
+│   │   └── prompt.py           ✅ Main prompt assembly + warm/history
+│   ├── memory/
+│   │   ├── __init__.py         ✅
+│   │   ├── embeddings.py       ✅ bge-small-en-v1.5 embedder
+│   │   ├── facts.py            ✅ versioned fact CRUD + LanceDB upsert
+│   │   ├── warm.py             ✅ warm profile + dirty flag + Redis cache
+│   │   ├── session.py          ✅ session + turn history
+│   │   └── retrieval.py        ✅ stub (step 10)
+│   ├── orchestrator/
+│   │   ├── __init__.py         ✅
+│   │   ├── directives.py       ✅ REMEMBER / RECALL parsing
+│   │   └── supervisor.py       ✅ context assembly + turn lifecycle
 │   ├── voice/
 │   │   ├── stt/groq.py         ✅ Groq Whisper STT
 │   │   ├── tts/kokoro.py       ✅ Kokoro streaming TTS
@@ -429,11 +537,13 @@ Server2/
 │   │   └── boot.py             ✅ voice plane init
 │   └── transport/
 │       ├── __init__.py         ✅
-│       ├── ws.py               ✅ voice capture + chat + interrupt
-│       └── protocol.py         ✅ caption + server audio + interrupt
+│       ├── ws.py               ✅ voice + chat + client_state/mode
+│       ├── protocol.py         ✅ client_state, client_control, event
+│       └── client_control.py   ✅ server→client playback/capture commands
 ├── web-client/
-│   ├── index.html              ✅ dev client + interrupt button
-│   └── client.js               ✅ WS + mic + TTS playback queue
+│   ├── index.html              ✅ conversation UI
+│   ├── style.css               ✅ styles
+│   └── client.js               ✅ mic toggle, client_state/control
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
@@ -443,5 +553,10 @@ Server2/
         ├── test_engine_prompt.py ✅ Main prompt assembly
         ├── test_engine_runner.py ✅ llama command + health
         ├── test_protocol.py    ✅ protocol round-trips
-        └── test_voice_*.py     ✅ voice plane unit tests
+        ├── test_client_control.py ✅ client control session + send
+        ├── test_voice_*.py     ✅ voice plane unit tests
+        ├── test_memory_facts.py ✅ fact versioning + chains
+        ├── test_memory_warm.py ✅ warm profile build + dirty
+        ├── test_directives.py  ✅ REMEMBER/RECALL parse + execute
+        └── test_supervisor.py  ✅ turn lifecycle + RECALL follow-up
 ```

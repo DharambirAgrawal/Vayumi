@@ -1,23 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import asyncpg
 
 from server.logger import get_logger
 
-if TYPE_CHECKING:
-    pass
-
 log = get_logger("db.postgres")
 
-SCHEMA_SQL = """\
-CREATE TABLE IF NOT EXISTS server_health (
-    id SMALLINT PRIMARY KEY DEFAULT 1,
-    last_boot TIMESTAMPTZ NOT NULL,
-    CHECK (id = 1)
-);
-"""
+_SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 _pool: asyncpg.Pool | None = None
 
@@ -32,8 +23,9 @@ async def init_postgres(database_url: str) -> asyncpg.Pool:
         statement_cache_size=0,
     )
     assert pool is not None
+    schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
     async with pool.acquire() as conn:
-        await conn.execute(SCHEMA_SQL)
+        await conn.execute(schema_sql)
     log.info("postgres.ok", msg="schema migrated")
     _pool = pool
     return pool

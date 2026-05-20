@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     kokoro_model_dir: str = "./models/kokoro"
     kokoro_voice: str = "af_heart"
 
+    # ── Embeddings (optional path for future ONNX export) ──
+    bge_model_path: str = "./models/bge-small-en-v1.5.onnx"
+
     @field_validator("app_env")
     @classmethod
     def _validate_app_env(cls, v: str) -> str:

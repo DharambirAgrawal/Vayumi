@@ -181,3 +181,68 @@ This log tracks updates pushed to GitHub for Server2. Each entry should be small
 
 **Follow-ups:**
 - Step 4: Web client v1 polish (`client_state` / `client_control`, UI)
+
+---
+
+## 2026-05-17 - Step 4 complete: Web client v1 + client control
+
+**Scope:** client | transport | tests
+
+**Why:** Polish the reference web client into a full voice conversation UI with `client_state` / `client_control` so server and client stay in sync on playback and capture.
+
+**Key changes:**
+- Conversation UI: captions bar, chat bubbles, activity feed, mode toggle (meeting stub), toggle mic.
+- `client_state` / `client_control` / `mode` / `event` protocol types.
+- `server/transport/client_control.py` with `send_client_control`, `handle_client_state`, interrupt → stop/clear_queue, TTS → play.
+- Web client reports state after connect, playback/capture changes, and every `client_control`.
+- 11 new unit tests (51 total).
+
+**Files/areas:**
+- NEW: `web-client/style.css`, `server/transport/client_control.py`, `tests/unit/test_client_control.py`, `doc/step-05.md` (stub)
+- CHANGED: `web-client/{index.html,client.js}`, `server/transport/{protocol,ws}.py`, `server/voice/turn.py`
+- CHANGED: `PLAN.md`, `doc/{step-04,roadmap,tracker,history}.md`
+
+**Plan/diagram references:**
+- PLAN.md §5 (WS protocol), §7.11 (client_control API), §8 Step 4
+- Diagram pages 01, 04, 05, 17 (audio control flow)
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 51 passed
+- `ruff check server/ tests/` — all checks passed
+
+**Follow-ups:**
+- Step 5: Memory v1 (warm profile, session history, versioned facts)
+
+---
+
+## 2026-05-17 - Step 5 complete: Memory v1 + supervisor turns
+
+**Scope:** memory | orchestrator | engine | transport | voice | tests
+
+**Why:** Give Main a real memory layer — versioned facts, warm profile, session history, and REMEMBER/RECALL directives — wired into chat and voice turns.
+
+**Key changes:**
+- Postgres schema: `facts`, `sessions`, `turns` (versioned fact chains, partial unique on active rows).
+- Memory plane: `set_fact` / `get_fact` / `get_chain`, `build_warm_profile` + Redis cache, `append_turn` / `recent_turns`.
+- bge-small-en-v1.5 embedder via `sentence-transformers`; LanceDB `facts_index` upsert on write.
+- `Supervisor.run_turn` assembles warm + history, streams Main completion, executes directives, RECALL follow-up pass.
+- `[REMEMBER]` / `[RECALL]` / `[RECALL chain]` parser in `directives.py`.
+- Chat and voice paths route through supervisor; `prompts/main.txt` updated for memory directives.
+- 10 new unit tests (61 total).
+
+**Files/areas:**
+- NEW: `server/db/schema.sql`, `server/memory/*`, `server/orchestrator/{directives,supervisor}.py`
+- CHANGED: `server/db/{postgres,lancedb}.py`, `server/engine/prompt.py`, `server/transport/ws.py`, `server/voice/turn.py`, `server/app.py`, `server/config.py`, `prompts/main.txt`, `pyproject.toml`, `.env.example`
+- NEW: `tests/unit/test_{memory_facts,memory_warm,directives,supervisor}.py`, `doc/step-06.md` (stub)
+- CHANGED: `PLAN.md`, `doc/{step-05,roadmap,tracker,history}.md`
+
+**Plan/diagram references:**
+- PLAN.md §3.7 (Memory plane), §7 (directive grammar), §7.11 (memory API), §8 Step 5, §10–§11
+- Diagram page 09 (memory layers)
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 61 passed
+- `ruff check server/ tests/` — all checks passed
+
+**Follow-ups:**
+- Step 6: Tool plane (registry, runner, web_search, tool_search)

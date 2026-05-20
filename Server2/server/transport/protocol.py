@@ -65,13 +65,36 @@ class PingMessage(BaseModel):
     payload: PingPayload
 
 
+class ClientStatePayload(BaseModel):
+    playback: Literal["idle", "playing", "paused"]
+    capture: Literal["idle", "recording"]
+    visible: bool
+    route: Literal["speaker", "earpiece", "bluetooth"] | None = None
+
+
+class ClientStateMessage(BaseModel):
+    type: Literal["client_state"] = "client_state"
+    payload: ClientStatePayload
+
+
+class ModePayload(BaseModel):
+    mode: Literal["conversation", "meeting"]
+
+
+class ModeMessage(BaseModel):
+    type: Literal["mode"] = "mode"
+    payload: ModePayload
+
+
 ClientMessage = Annotated[
     HelloMessage
     | ChatMessage
     | AudioStartMessage
     | AudioEndMessage
     | InterruptMessage
-    | PingMessage,
+    | PingMessage
+    | ClientStateMessage
+    | ModeMessage,
     Field(discriminator="type"),
 ]
 
@@ -148,12 +171,55 @@ class ErrorMessage(BaseModel):
     payload: ErrorPayload
 
 
+ClientControlCommand = Literal[
+    "play",
+    "pause",
+    "stop",
+    "duck",
+    "unduck",
+    "clear_queue",
+    "start_capture",
+    "stop_capture",
+]
+
+
+class ClientControlPayload(BaseModel):
+    command: ClientControlCommand
+    reason: str
+    turn_id: str | None = None
+
+
+class ClientControlMessage(BaseModel):
+    type: Literal["client_control"] = "client_control"
+    payload: ClientControlPayload
+
+
+class EventPayload(BaseModel):
+    kind: Literal[
+        "tool_started",
+        "tool_done",
+        "task_step",
+        "task_done",
+        "task_error",
+        "file_processing",
+    ]
+    task_id: str
+    summary: str
+
+
+class EventMessage(BaseModel):
+    type: Literal["event"] = "event"
+    payload: EventPayload
+
+
 ServerMessage = (
     WelcomeMessage
     | EchoMessage
     | CaptionMessage
     | ServerAudioStartMessage
     | ServerAudioEndMessage
+    | ClientControlMessage
+    | EventMessage
     | PongMessage
     | ErrorMessage
 )

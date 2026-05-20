@@ -7,20 +7,22 @@ from typing import TYPE_CHECKING
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 from server.auth import AuthError, verify_token
-from server.engine.pool import CompletionPriority, CompletionRequest
-from server.engine.prompt import MainPromptContext, build_main_prompt
 from server.logger import get_logger
+from server.orchestrator.supervisor import Supervisor
+from server.transport.client_control import ClientControlSession, send_interrupt_controls
 from server.transport.protocol import (
     AudioEndMessage,
     AudioStartMessage,
     CaptionMessage,
     CaptionPayload,
     ChatMessage,
+    ClientStateMessage,
     EchoMessage,
     EchoPayload,
     ErrorMessage,
     ErrorPayload,
     InterruptMessage,
+    ModeMessage,
     PingMessage,
     PongMessage,
     PongPayload,
@@ -52,8 +54,11 @@ class _VoiceCapture:
 @dataclass
 class _WsSession:
     user_id: str
+    session_id: str
+    supervisor: Supervisor
     interrupt: InterruptController = field(default_factory=InterruptController)
     capture: _VoiceCapture = field(default_factory=_VoiceCapture)
+    client_control: ClientControlSession = field(default_factory=ClientControlSession)
     turn_task: asyncio.Task[None] | None = None
 
 
@@ -88,7 +93,15 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     )
     await send_json(websocket, welcome)
 
-    session = _WsSession(user_id=token_payload.user_id)
+    session = _WsSession(
+        user_id=token_payload.user_id,
+        session_id=token_payload.session_id,
+        supervisor=Supervisor(
+            user_id=token_payload.user_id,
+            session_id=token_payload.session_id,
+        ),
+    )
+    await session.supervisor.ensure_session()
 
     try:
         async with asyncio.TaskGroup() as tg:
@@ -143,9 +156,20 @@ async def _handle_text(websocket: WebSocket, raw: str, session: _WsSession) -> N
         await _handle_audio_end(websocket, session)
 
     elif isinstance(msg, InterruptMessage):
+        await send_interrupt_controls(
+            websocket,
+            turn_id=session.interrupt.turn_id or None,
+            reason=f"interrupt:{msg.payload.source}",
+        )
         await session.interrupt.handle_interrupt(msg.payload.source)
         if session.turn_task and not session.turn_task.done():
             session.turn_task.cancel()
+
+    elif isinstance(msg, ClientStateMessage):
+        session.client_control.handle_client_state(msg.payload)
+
+    elif isinstance(msg, ModeMessage):
+        session.client_control.set_mode(msg.payload.mode)
 
     else:
         echo = EchoMessage(
@@ -188,6 +212,8 @@ async def _handle_audio_end(websocket: WebSocket, session: _WsSession) -> None:
             interrupt=session.interrupt,
             pcm_chunks=pcm_chunks,
             user_id=session.user_id,
+            session_id=session.session_id,
+            supervisor=session.supervisor,
         ),
         name=f"voice-turn-{session.user_id}",
     )
@@ -196,18 +222,19 @@ async def _handle_audio_end(websocket: WebSocket, session: _WsSession) -> None:
 
 async def _handle_chat(websocket: WebSocket, msg: ChatMessage, session: _WsSession) -> None:
     engine_pool: EnginePool = websocket.app.state.engine_pool
-    prompt = build_main_prompt(MainPromptContext(user_text=msg.payload.text))
-    request = CompletionRequest(prompt=prompt)
-    handle = await engine_pool.submit(request, CompletionPriority.P0_MAIN, slot_hint=0)
 
-    full_text = ""
+    async def on_token(token: str) -> None:
+        await send_json(
+            websocket,
+            CaptionMessage(payload=CaptionPayload(text=token, partial=True)),
+        )
+
     try:
-        async for token in handle:
-            full_text += token
-            await send_json(
-                websocket,
-                CaptionMessage(payload=CaptionPayload(text=token, partial=True)),
-            )
+        output = await session.supervisor.run_turn(
+            msg.payload.text,
+            engine_pool=engine_pool,
+            on_token=on_token,
+        )
     except Exception as exc:
         log.error("ws.chat_completion_failed", user_id=session.user_id, error=str(exc))
         err = ErrorMessage(payload=ErrorPayload(code=4500, message="Completion failed"))
@@ -216,7 +243,7 @@ async def _handle_chat(websocket: WebSocket, msg: ChatMessage, session: _WsSessi
 
     await send_json(
         websocket,
-        CaptionMessage(payload=CaptionPayload(text=full_text, partial=False)),
+        CaptionMessage(payload=CaptionPayload(text=output.assistant_text, partial=False)),
     )
 
 

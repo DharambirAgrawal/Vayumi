@@ -10,12 +10,18 @@ from server.transport.protocol import (
     CaptionMessage,
     CaptionPayload,
     ChatMessage,
+    ClientControlMessage,
+    ClientControlPayload,
+    ClientStateMessage,
     EchoMessage,
     EchoPayload,
     ErrorMessage,
     ErrorPayload,
+    EventMessage,
+    EventPayload,
     HelloMessage,
     InterruptMessage,
+    ModeMessage,
     PingMessage,
     PongMessage,
     PongPayload,
@@ -99,6 +105,25 @@ class TestParseClientMessage:
         assert isinstance(msg, InterruptMessage)
         assert msg.payload.source == "button"
 
+    def test_client_state(self) -> None:
+        raw = json.dumps({
+            "type": "client_state",
+            "payload": {
+                "playback": "idle",
+                "capture": "recording",
+                "visible": True,
+            },
+        })
+        msg = parse_client_message(raw)
+        assert isinstance(msg, ClientStateMessage)
+        assert msg.payload.capture == "recording"
+
+    def test_mode(self) -> None:
+        raw = json.dumps({"type": "mode", "payload": {"mode": "conversation"}})
+        msg = parse_client_message(raw)
+        assert isinstance(msg, ModeMessage)
+        assert msg.payload.mode == "conversation"
+
     def test_invalid_type_raises(self) -> None:
         raw = json.dumps({"type": "unknown_type", "payload": {}})
         with pytest.raises(Exception):
@@ -179,6 +204,24 @@ class TestSerializeServerMessage:
         data = json.loads(raw)
         assert data["type"] == "error"
         assert data["payload"]["code"] == 4400
+
+    def test_client_control(self) -> None:
+        msg = ClientControlMessage(
+            payload=ClientControlPayload(command="stop", reason="interrupt"),
+        )
+        raw = serialize_server_message(msg)
+        data = json.loads(raw)
+        assert data["type"] == "client_control"
+        assert data["payload"]["command"] == "stop"
+
+    def test_event(self) -> None:
+        msg = EventMessage(
+            payload=EventPayload(kind="task_step", task_id="t1", summary="Searching"),
+        )
+        raw = serialize_server_message(msg)
+        data = json.loads(raw)
+        assert data["type"] == "event"
+        assert data["payload"]["kind"] == "task_step"
 
 
 class TestRoundTrip:

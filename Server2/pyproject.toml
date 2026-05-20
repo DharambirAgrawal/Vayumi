@@ -19,6 +19,7 @@ dependencies = [
     "silero-vad>=5.1",
     "pykokoro>=0.6",
     "groq>=0.13",
+    "sentence-transformers>=3.3",
 ]
 
 [tool.uv]
