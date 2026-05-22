@@ -5,6 +5,8 @@ import json
 import pytest
 
 from server.transport.protocol import (
+    AssistantChatMessage,
+    AssistantChatMessagePayload,
     AudioEndMessage,
     AudioStartMessage,
     CaptionMessage,
@@ -29,6 +31,8 @@ from server.transport.protocol import (
     ServerAudioEndPayload,
     ServerAudioStartMessage,
     ServerAudioStartPayload,
+    UserMessage,
+    UserMessagePayload,
     WelcomeMessage,
     WelcomePayload,
     parse_client_message,
@@ -149,12 +153,52 @@ class TestParseClientMessage:
 
 class TestSerializeServerMessage:
     def test_welcome(self) -> None:
-        msg = WelcomeMessage(payload=WelcomePayload(session_id="s_1"))
+        msg = WelcomeMessage(
+            payload=WelcomePayload(
+                session_id="s_1",
+                resumed=True,
+                task_board_snapshot={"tasks": []},
+            ),
+        )
         raw = serialize_server_message(msg)
         data = json.loads(raw)
         assert data["type"] == "welcome"
         assert data["payload"]["session_id"] == "s_1"
-        assert "server_version" in data["payload"]
+        assert data["payload"]["resumed"] is True
+        assert data["payload"]["task_board_snapshot"] == {"tasks": []}
+
+    def test_chat_message(self) -> None:
+        msg = AssistantChatMessage(
+            payload=AssistantChatMessagePayload(
+                text="full reply",
+                turn_id="t1",
+                final=True,
+            ),
+        )
+        raw = serialize_server_message(msg)
+        data = json.loads(raw)
+        assert data["type"] == "chat_message"
+        assert data["payload"]["final"] is True
+
+    def test_user_message(self) -> None:
+        msg = UserMessage(
+            payload=UserMessagePayload(
+                text="how are you",
+                turn_id="t1",
+                source="voice",
+            ),
+        )
+        data = json.loads(serialize_server_message(msg))
+        assert data["type"] == "user_message"
+        assert data["payload"]["source"] == "voice"
+
+    def test_client_control_capture_commands(self) -> None:
+        for cmd in ("start_capture", "stop_capture"):
+            msg = ClientControlMessage(
+                payload=ClientControlPayload(command=cmd, reason="tts"),
+            )
+            data = json.loads(serialize_server_message(msg))
+            assert data["payload"]["command"] == cmd
 
     def test_echo(self) -> None:
         msg = EchoMessage(
@@ -222,6 +266,17 @@ class TestSerializeServerMessage:
         data = json.loads(raw)
         assert data["type"] == "event"
         assert data["payload"]["kind"] == "task_step"
+
+    def test_session_superseded_event(self) -> None:
+        msg = EventMessage(
+            payload=EventPayload(
+                kind="session_superseded",
+                task_id="",
+                summary="new_device",
+            ),
+        )
+        data = json.loads(serialize_server_message(msg))
+        assert data["payload"]["kind"] == "session_superseded"
 
 
 class TestRoundTrip:

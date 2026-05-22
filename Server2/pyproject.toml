@@ -20,6 +20,7 @@ dependencies = [
     "pykokoro>=0.6",
     "groq>=0.13",
     "sentence-transformers>=3.3",
+    "tavily-python>=0.5",
 ]
 
 [tool.uv]

@@ -1,8 +1,8 @@
 # Vayumi Server 2 — Master Plan
 
-**Version:** 1.6  
-**Status:** Architecture locked, Step 6 next (Steps 1-5 complete)  
-**Last updated:** 2026-05-18  
+**Version:** 1.7  
+**Status:** Architecture locked, Step 8 next (Steps 1-7 complete)  
+**Last updated:** 2026-05-21  
 **Companion files:** `doc/step-06.md` (current), `doc/roadmap.md` (full step overview), `doc/tracker.md` (progress + flows), `agent-prompt.md` (reusable build prompt)  
 **Reference diagrams:** `orchestrator_diagram_v3.drawio` (17 pages — architecture), `doc/tracker.md` (build progress + architecture flows)  
 **Sister service:** `Server1/` (TypeScript) — owns auth, identity, sessions, push tokens. Already implemented and verified.
@@ -68,7 +68,7 @@ Vayumi is **two cooperating services**, on purpose:
 | **TTS** | **Kokoro via `pykokoro` (ONNX, streaming)** | RTF 0.03 on GPU, still real-time on CPU for the small model. Streams sentence-level PCM. Already chosen — we keep it. |
 | **VAD** | **Silero VAD (ONNX, ~2 MB)** | More accurate than WebRTC VAD, still tiny. Used both for end-of-utterance and for client-local interrupt cues. |
 | **Wake word** | **openWakeWord** with the existing custom "Vayumi" ONNX model | You already trained it; no reason to re-do. Runs client-side on web/app/ESP32. The server never does wake detection — that's the client's job to save bandwidth. |
-| **Transport** | **WebSocket for session/audio/control + signed HTTPS upload endpoint for large files** | Plain WS works on browser, mobile, and ESP32. Binary WS frames remain audio-only so the server can stream low-latency PCM without ambiguity. Files/images use an upload endpoint that returns `file_id`; the chat message references that id. Echo cancellation is the *client's* responsibility. |
+| **Transport** | **WebSocket for session/audio/control + signed HTTPS upload endpoint for large files** | Plain WS works on browser, mobile, and ESP32. Binary WS frames remain audio-only so the server can stream low-latency PCM without ambiguity. Files/images use an upload endpoint that returns `file_id`; the chat message references that id. Echo cancellation is the *client's* responsibility; the server assists via `client_control` commands (see §5.5). |
 | **Memory** | **Hybrid: Postgres (versioned facts + sessions) + LanceDB (embedded, semantic retrieval)** | Postgres gives ACID, versioned chains, and superseded history exactly as your diagram needs. LanceDB is a single Python import, disk-backed, scales to millions of vectors, and its versioning maps cleanly to your "superseded fact" model. **No external memory framework** (Mem0/Letta/Zep/MemoryOS) — we own the schema, we own the API, we never get blocked by an upstream library decision. mem0's *fact extraction prompt* is good prior art and we will borrow that pattern. |
 | **Embeddings** | **`bge-small-en-v1.5` via `sentence-transformers` ONNX** | 33M params, runs on CPU in milliseconds, MIT-licensed, top of the small-model leaderboard. |
 | **Tools** | **Native Python tool registry first, MCP adapter second** | A tool is a typed async Python function with JSON args and a normalized `ToolResult`, registered through `tools/registry.py`. We add an **MCP client adapter** (using the official `modelcontextprotocol` Python SDK) so any MCP server (filesystem, GitHub, Notion, etc.) shows up as tools without touching agent code. This gives you "easy to add anything" with zero lock-in. |
@@ -126,7 +126,7 @@ These are the same as the diagram, restated in code-level terms.
 - `prompt.py`: builds the prompt for each role from the role's prompt template + injected context block. The Main Agent prompt is in `prompts/main.txt`. Each capability has its own sub-agent prompt in `prompts/sub/<capability>.txt`.
 
 ### 3.4 Orchestrator plane (`server/orchestrator/`)
-- `supervisor.py`: the per-session brain. One instance per WS connection.
+- `supervisor.py`: the per-session brain. One instance per `user_id` (session singleton — see §5.0). The WebSocket is reattached via `attach_transport()` on reconnect or device handover; sub-agents stay bound to the Supervisor, not the socket.
 - `directives.py`: parses `[DELEGATE]`, `[STOP_TASK]`, `[ANSWER_TO]`, `[RESPOND_VIA]`, `[REMEMBER]`, and `[RECALL]` blocks from Main's stream. **Discarded if interrupt fires mid-block** (page 9 of the diagram, "interrupt safety guarantee").
 - `signal_bus.py`: in-process asyncio queue for sub-agent → main signals (`STEP`, `NEEDS_INFO`, `DONE`, `ERROR`).
 - `notifier.py`: background loop that drains the signal bus and fires synthetic turns when the user is silent.
@@ -251,6 +251,28 @@ Server2/
 
 One endpoint: `wss://server2.example.com/ws/v1/session?token=<jwt>`.
 
+### 5.0 Session singleton — one active connection per user
+
+A user (`user_id`) may have **at most one active WebSocket connection** at any time across all clients (web, mobile, ESP32). This is not a limitation — it is the feature that makes the assistant feel like one coherent voice across all devices.
+
+**Why one session:**
+- Sub-agents, the task board, memory, and voice state are all per-session. Two simultaneous connections would require all of that to be shared, which adds complexity and split-brain risk with no UX benefit.
+- The user cannot be in two places at once. If their phone connects, their laptop session should yield.
+
+**Connection lifecycle rules:**
+
+| Scenario | What happens |
+|---|---|
+| New connection, same `user_id`, no existing session | Normal connect. New `session_id` created. `welcome` sent. |
+| New connection, same `user_id`, existing session, **different** `session_id` in `hello` or none | **Device handover.** Server sends `event{kind:'session_superseded', reason:'new_device'}` on the OLD connection and closes it (code 4001). Supervisor reattaches to the NEW connection with the **same** `session_id`, same task board, same in-flight tasks, same memory. New client gets `welcome{session_id, resumed:true}`. |
+| New connection, same `user_id`, same `session_id` in `hello` | **Reconnect** (same device, network drop). Old connection is already gone. Supervisor reattaches to new socket. Client gets `welcome{session_id, resumed:true}`. History, task board, warm profile all intact. |
+| New connection, different `user_id` | Separate session, no interference. |
+| Old connection sends a message after receiving `session_superseded` | Server ignores it. Connection is already in close handshake. |
+
+**In-flight tasks on device handover:** Sub-agent workers are running as asyncio tasks bound to the Supervisor, not to the WebSocket connection. Device handover rebinds the Supervisor to a new socket; sub-agents continue running without interruption. The new client receives the current task board in `welcome{task_board_snapshot}` so it can render the activity feed immediately.
+
+**Implementation note:** The Supervisor registry in `server/transport/ws.py` maps `user_id → Supervisor`. On new connection for an existing `user_id`, the registry finds the live Supervisor, calls `supervisor.attach_transport(new_ws)`, and the old socket is closed cleanly. No state is duplicated.
+
 ### 5.1 Message envelope
 
 - **Binary frames** = raw 16-bit PCM mono 16 kHz audio. Always direction is implicit: client→server is mic, server→client is TTS.
@@ -260,30 +282,29 @@ One endpoint: `wss://server2.example.com/ws/v1/session?token=<jwt>`.
 
 | `type` | `payload` | Meaning |
 |---|---|---|
-| `hello` | `{ client: "web"\|"ios"\|"android"\|"esp32", capabilities: { aec: bool, vad: bool, wake: bool }, session_id?: str }` | Sent first. Server replies with `welcome`. |
-| `chat` | `{ text: string, attachments?: [{file_id, kind, mime, name, size_bytes}] }` | Typed message, optionally referring to uploaded files/images. |
+| `hello` | `{ client: "web"\|"ios"\|"android"\|"esp32", capabilities: { aec: bool, vad: bool, wake: bool, tts: bool }, session_id?: str }` | Sent first. `capabilities.tts=false` means this client has no speaker — server will default to `chat_only` for all responses. Server replies with `welcome`. |
+| `chat` | `{ text: string, attachments?: [{file_id, kind, mime, name, size_bytes}] }` | Typed message, optionally referring to uploaded files/images. Server responds voice+chat by default (see §7, Rule 11). |
 | `audio_start` | `{ sample_rate: 16000, format: "pcm_s16le" }` | Mic stream starting; binary frames follow. |
 | `audio_end` | `{}` | End of utterance (client-side VAD decided so). |
-| `interrupt` | `{ source: "wake"\|"button"\|"voice" }` | Stop current speech. Background tasks keep running. |
+| `interrupt` | `{ source: "wake"\|"button"\|"voice" }` | Stop current speech immediately. Background tasks keep running. |
 | `mode` | `{ mode: "conversation"\|"meeting" }` | Switch mode. |
-| `client_state` | `{ playback: "idle"\|"playing"\|"paused", capture: "idle"\|"recording", visible: bool, route?: "speaker"\|"earpiece"\|"bluetooth" }` | Client tells server what the UI/audio layer is doing. |
+| `client_state` | `{ playback: "idle"\|"playing"\|"paused", capture: "idle"\|"recording", visible: bool, route?: "speaker"\|"earpiece"\|"bluetooth"\|"none" }` | Client tells server what the UI/audio layer is doing. Sent on every change. Server uses this to make `respond_via` decisions (see §7, Rule 13). |
 | `ping` | `{ t: int }` | Heartbeat. |
 
 ### 5.3 Server → client JSON types
 
 | `type` | `payload` | Meaning |
 |---|---|---|
-| `welcome` | `{ session_id, server_version }` | Reply to `hello`. |
-| `caption` | `{ text, partial: bool }` | Live caption of what TTS will speak. |
-| `audio_start` | `{ sample_rate, format, turn_id }` | TTS stream starting; binary frames follow. |
-| `audio_end` | `{ turn_id }` | TTS done. |
+| `welcome` | `{ session_id, server_version, resumed: bool, task_board_snapshot? }` | Reply to `hello`. `resumed:true` means an existing session was found. `task_board_snapshot` contains current running/paused tasks for the client to render immediately. |
+| `caption` | `{ text, partial: bool, turn_id }` | Text of what TTS is about to speak or is speaking. Sent sentence-by-sentence BEFORE the corresponding audio frames. Always sent regardless of `respond_via` — even `chat_only` turns emit captions so the user sees the text. |
+| `chat_message` | `{ text, turn_id, final: bool }` | Full text of the assistant's response for display in the chat UI. Sent once when the complete response is assembled. Distinct from `caption` (which is sentence-level and TTS-synchronized); `chat_message` is the canonical text record. |
+| `audio_start` | `{ sample_rate, format, turn_id }` | TTS stream starting; binary frames follow. Only emitted when `respond_via` includes voice. |
+| `audio_end` | `{ turn_id }` | TTS done for this turn. |
 | `client_control` | `{ command: "play"\|"pause"\|"stop"\|"duck"\|"unduck"\|"clear_queue"\|"start_capture"\|"stop_capture", reason, turn_id? }` | Server asks the client to control local playback/capture. Client confirms by sending `client_state`. |
 | `event` | `{ kind: "tool_started"\|"tool_done"\|"task_step"\|"task_done"\|"task_error", task_id, summary }` | UX event for the activity feed. |
 | `notification` | `{ task_id, text }` | Proactive surface (sub-agent finished while user was idle). |
 | `error` | `{ code, message }` | Server-side error the user should know about. |
 | `pong` | `{ t }` | Heartbeat reply. |
-
-This WebSocket protocol is **the only realtime session contract between client and server**. It is small, self-describing, and works equally on a browser `WebSocket`, a mobile native socket, or an ESP32 `esp_websocket_client`. File/image bytes use the upload endpoint in §5.4 and then re-enter the session as `chat.attachments[]`. Adding an app or hardware client later means implementing these two contracts, not redesigning anything server-side.
 
 ### 5.4 File and image upload contract
 
@@ -296,12 +317,61 @@ Binary WebSocket frames are audio-only. User files/images go through an upload e
 | `event{kind:"file_processing"}` | `{file_id, status, summary}` | Lets the client show OCR/transcription/chunking progress. |
 
 Upload rules:
-
 - Images: `image/png`, `image/jpeg`, `image/webp`, max 20 MB.
 - Documents: PDF, TXT, MD, CSV, DOCX later, max 100 MB.
 - Audio/video files are accepted later for meeting/import mode, not Step 1.
 - Uploaded files are not automatically memory. A file enters memory only if Main emits `[REMEMBER]` or a sub-agent returns `facts_to_persist`.
 - Image understanding is a tool/capability issue. The transport layer only stores and references bytes.
+
+### 5.5 Text and caption delivery contract
+
+This section defines exactly when text appears, in what form, and what happens if TTS fails. These rules apply to **every** response regardless of whether it was triggered by voice or typed chat.
+
+**Two text channels, both always sent:**
+
+1. **`caption` events** — sentence-by-sentence, TTS-synchronized. Sent BEFORE the corresponding audio frames begin for that sentence. This is what the client displays as live captions during TTS playback.
+
+2. **`chat_message` event** — the full assembled response, sent once when the complete LLM output is known. This is the persistent chat UI record. It is sent regardless of `respond_via` — even a `chat_only` turn (no TTS) emits a `chat_message`.
+
+**Why both:**
+- `caption` lets the client animate text in sync with speech, word by word, sentence by sentence.
+- `chat_message` ensures the user always has the full text available even if they missed the captions, TTS failed, or they are in a chat-only context.
+
+**Ordering within a turn:**
+
+```
+LLM streams sentence 1 text
+  → emit caption{text:"sentence 1", partial:false, turn_id}
+  → send audio_start{turn_id}
+  → stream binary PCM frames for sentence 1
+LLM streams sentence 2 text
+  → emit caption{text:"sentence 2", partial:false, turn_id}
+  → stream binary PCM frames for sentence 2
+...
+LLM output complete
+  → emit audio_end{turn_id}
+  → emit chat_message{text:"full response", turn_id, final:true}
+```
+
+**If TTS fails mid-response:**
+- `audio_end{turn_id, error:true}` is emitted immediately.
+- All `caption` events already sent remain visible to the user — text is not lost.
+- `chat_message` is still emitted with whatever text was generated so far.
+- Server sends `client_control{command:"clear_queue", reason:"tts_error"}` so the client discards any buffered audio.
+- Main does not regenerate — the text the user saw in captions is the response. If the user asks again, they get a fresh response.
+
+**If interrupt fires mid-TTS:**
+- `audio_end{turn_id, interrupted:true}` is emitted.
+- `caption` events already sent stay on screen (client may grey them out or not — its choice).
+- `chat_message` is emitted with the text up to the interrupt point. Partial response is marked with `final:false`.
+- Server sends `client_control{command:"clear_queue", reason:"interrupted"}`.
+- The queue of pending TTS sentences (not yet played) is discarded. They are NOT spoken after the interrupt. The interrupted turn is over.
+
+**Queue depth for typed chat:**
+- A user may type multiple messages rapidly. The TTS queue depth is **1 pending** item beyond what is currently playing.
+- If a third message arrives while one is playing and one is pending: the pending item is replaced by the new one. The new message's text enters the chat history normally but the superseded pending audio is dropped.
+- This prevents a backlog of stale responses playing after a user has moved on.
+- Voice interrupts always take priority and clear the entire queue regardless of depth.
 
 ---
 
@@ -317,7 +387,7 @@ Upload rules:
 | First audio frame to client | 100 ms | transport |
 | **End-to-end first audio** | **≈ 1.0 s** | combined |
 
-If we miss this on a normal turn, that's a regression and a new step is opened to fix it. Long-input turns get the "I got it, processing in chunks" ack within 300 ms (page 2 of the diagram, "long-input protection").
+Typed chat turns follow the same budget for first TTS sentence (the text rendering is instant; the latency budget is the same). If we miss this on a normal turn, that's a regression and a new step is opened to fix it. Long-input turns get the "I got it, processing in chunks" ack within 300 ms (page 2 of the diagram, "long-input protection").
 
 ---
 
@@ -333,12 +403,13 @@ These rules are non-negotiable. Every step inherits them.
 6. **Retrieval is on-demand.** It enters context only when the orchestrator explicitly asks.
 7. **The proactive notifier uses the normal turn pipeline.** A `DONE` signal becomes a synthetic user turn; Main decides if/what to say.
 8. **One engine for everything.** Main, sub-agents, summarizer share one `llama-server` process via the priority queue.
-9. **Every tool announces intent before it runs.** UX rule: the user always knows what's happening.
+9. **Every tool announces intent before it runs.** UX rule: the user always knows what's happening. The `event{kind:'tool_started'}` fires before the tool executes.
 10. **Every step ships with the web client working.** No "we'll integrate the client later."
+11. **Typed chat triggers voice by default.** When a user sends a `chat` message, the server responds with `respond_via=voice_and_chat` unless the session is voice-incapable or a blocking condition applies (see Rule 13). Typing something does not mean the user wants a silent response — the assistant speaks and shows the caption. If the user is on a device with a speaker, they hear the reply.
+12. **Echo suppression via `client_control` is mandatory for ALL TTS, regardless of what triggered it.** Before any `audio_start` frame is sent, the server emits `client_control{command:'stop_capture', reason:'tts_start'}`. After `audio_end` plus the echo suppression delay (default 1.2 s), the server emits `client_control{command:'start_capture'}`. This prevents the AI's own voice from being fed back as user input. This rule applies whether the turn was triggered by a voice command, a typed chat message, or a proactive notification. No exceptions.
+13. **`respond_via` is computed per turn from session state, not from input kind alone.** See the full decision table in §7.5.
 
----
-
-## 7.5 Agent vs Sub-agent — the exact capability split
+### 7.5 Agent vs Sub-agent — the exact capability split
 
 This is the table the rest of the plan keeps referring to. It is locked. Whenever you add a new capability or tool, decide its row before writing code.
 
@@ -386,7 +457,69 @@ This is the table the rest of the plan keeps referring to. It is locked. Wheneve
 
 These are the **only** directives Main can emit. Anything else is plain text → goes to TTS / chat. The orchestrator's parser is small (≈ 120 lines of regex + Pydantic validation) and lives in `server/orchestrator/directives.py`.
 
-`ANSWER_TO` is only for task coordination. It resumes a paused sub-agent or appends extra context to a running sub-agent. `RESPOND_VIA` is only for user delivery. Do not overload one directive for both meanings.
+`ANSWER_TO` is only for task coordination. It resumes a paused sub-agent or appends extra context to a running sub-agent. `RESPOND_VIA` overrides the computed default for the current turn only. Do not overload one directive for both meanings.
+
+### `respond_via` full decision table (Rule 13)
+
+The Supervisor computes `respond_via` at the start of every `handle_turn` call. It reads the most recent `client_state` (updated by the client on every change). The Main LLM may override with an explicit `[RESPOND_VIA ...]` directive, which takes final precedence.
+
+| Input kind | Client conditions | `respond_via` | `interrupt_policy` |
+|---|---|---|---|
+| voice | any | `voice_and_chat` | `replace` |
+| chat (typed) | `capabilities.tts = false` (declared in `hello`) | `chat_only` | `queue` |
+| chat (typed) | `client_state.playback = playing` | `chat_only` | `queue` |
+| chat (typed) | `client_state.route = none` (muted/no speaker) | `chat_only` | `queue` |
+| chat (typed) | meeting mode active | `chat_only` | `queue` |
+| chat (typed) | `client_state.visible = false` (app backgrounded) | `chat_only` | `queue` |
+| chat (typed) | none of the above | **`voice_and_chat`** | `queue` |
+| proactive (notifier) | `client_state.visible = false` | `chat_only` (push via Server 1 if available) | `queue` |
+| proactive (notifier) | `client_state.capture = recording` | `chat_only` | `queue` |
+| proactive (notifier) | meeting mode active | `chat_only` | `queue` |
+| proactive (notifier) | NEEDS_INFO signal, any state | `voice_and_chat` | `queue` |
+| proactive (notifier) | DONE signal, all conditions normal | `voice_and_chat` | `queue` |
+| system (token expiring, reconnect) | any | `chat_only` | `queue` |
+
+**Key clarifications:**
+
+- `interrupt_policy=replace` means: if Main is currently speaking, the new voice turn cancels it immediately and starts fresh. Used for voice commands only.
+- `interrupt_policy=queue` means: if Main is currently speaking, the new response is queued to play after current speech ends. Used for typed chat and proactive notifications.
+- **A typed chat message NEVER interrupts ongoing speech.** The user chose to type; they can wait. If they want to interrupt, they use the wake word or interrupt button — which sends an explicit `interrupt` message, not a `chat` message.
+- **`[RESPOND_VIA]` from Main overrides the computed value.** Main may emit `[RESPOND_VIA chat]` to suppress voice for a particular turn (e.g., the response contains code or a long table that doesn't read well aloud). Main may emit `[RESPOND_VIA voice]` for a turn that would otherwise be `chat_only` (e.g., an urgent proactive notification).
+
+### Interrupt behavior — complete FSM
+
+The interrupt FSM owns the speaking state machine and lives in `server/voice/interrupt.py`.
+
+```
+States: IDLE → THINKING → SPEAKING → QUEUED
+                                   ↗
+                         THINKING →
+```
+
+| Event | From state | Action | To state |
+|---|---|---|---|
+| `handle_turn` called | IDLE | Context assembly + submit to engine P0 | THINKING |
+| First LLM token arrives | THINKING | Emit `caption{partial:true}`, start TTS for first sentence | SPEAKING |
+| All LLM tokens done + all audio sent | SPEAKING | Emit `audio_end`, emit `chat_message{final:true}`, send `client_control{start_capture}` | IDLE |
+| `interrupt` received from client | THINKING | Cancel P0 engine slot, discard directive buffer | IDLE |
+| `interrupt` received from client | SPEAKING | Cancel P0 engine slot, discard remaining TTS queue, emit `audio_end{interrupted:true}`, emit `chat_message{final:false}` for text so far, send `client_control{clear_queue}`, send `client_control{start_capture}` | IDLE |
+| New `handle_turn` arrives with `interrupt_policy=replace` | SPEAKING | Same as interrupt — cancel everything, start new turn | THINKING |
+| New `handle_turn` arrives with `interrupt_policy=queue` | SPEAKING | Enqueue the new turn; current speech continues; queue depth = 1 | SPEAKING (queued turn waiting) |
+| New `handle_turn` arrives with `interrupt_policy=queue` | SPEAKING (already 1 queued) | Replace the pending queued turn with the new one; current speech continues | SPEAKING (new queued turn waiting) |
+| Current speech ends | SPEAKING (with queued turn) | Start the queued turn immediately | THINKING |
+| `interrupt` received | SPEAKING (with queued turn) | Cancel current speech AND discard queued turn | IDLE |
+
+**Echo suppression on every state transition into SPEAKING:**
+
+Before the first `audio_start` frame of any TTS response:
+1. `client_control{command:'stop_capture', reason:'tts_start', turn_id}` is sent.
+2. The client mutes/stops capture immediately.
+3. Binary PCM frames begin.
+4. After `audio_end`, a timer fires after `SELF_ECHO_SUPPRESSION_DELAY` (default 1200 ms).
+5. `client_control{command:'start_capture', reason:'echo_clear'}` is sent.
+6. The client resumes capture.
+
+This happens for **every** TTS output — voice-initiated, typed-chat-initiated, and proactive-notification-initiated. No exceptions. If the client declares `capabilities.aec=true` (hardware AEC on device), the delay in step 4 may be reduced to 300 ms, but the `stop_capture` / `start_capture` cycle still runs.
 
 ---
 
@@ -426,7 +559,7 @@ User sees progress in the UI. Main says nothing unless asked.
 1. User speaks or types a status question.
 2. `handle_turn` builds Main prompt **including the current task_board snapshot**.
 3. Main paraphrases **from structured fields**, e.g. *"The research task is finished. I'm still generating your PDF."*
-4. TTS / chat is Main only.
+4. TTS / chat is Main only. Respond_via is computed per Rule 13 (voice if session is voice-capable).
 
 This is the usual pattern for voice-heavy clients without a rich feed.
 
@@ -503,7 +636,7 @@ class ReportSignal(BaseModel):
 Rules:
 
 - `STEP` updates UI/activity feed only by default. No Main call unless the user asks or digest policy fires.
-- `NEEDS_INFO` pauses the task. `payload.question` is stored on `task_board[task_id].waiting_for`.
+- `NEEDS_INFO` pauses the task. `payload.question` is stored on `task_board[task_id].waiting_for`. Notifier fires proactive turn using Rule 13 to decide voice vs chat.
 - `DONE` finalizes the task. Optional `payload.artifacts`, `payload.facts_to_persist`, `payload.note_for_agent`, and `payload.suggestion` are visible to Main as structured fields.
 - `ERROR` is a failed task. If `payload.user_actionable=true`, Main surfaces it like `NEEDS_INFO`; otherwise Supervisor may auto-retry within the worker retry budget.
 
@@ -541,9 +674,9 @@ Main gets this structured block on every turn. It does not get raw sub-agent tra
 
 | Case | Sub-agent output | Supervisor state | Main action | Resume behavior |
 |---|---|---|---|---|
-| Needs more info | `report(NEEDS_INFO, summary, payload={"question": "..."})` | `task.status="paused"`, `waiting_for=question` | Asks user naturally | `[ANSWER_TO task_id=x1 answer="..." mode="reply"]` calls `resume_with(...)`. |
+| Needs more info | `report(NEEDS_INFO, summary, payload={"question": "..."})` | `task.status="paused"`, `waiting_for=question` | Asks user naturally via voice+chat (Rule 13) | `[ANSWER_TO task_id=x1 answer="..." mode="reply"]` calls `resume_with(...)`. |
 | User adds context while running | No sub-agent signal required | Task remains `running`; task_board shows it | Main sees active task + new user text | `[ANSWER_TO task_id=x1 answer="Additional context: ..." mode="amendment"]` appends next message to worker queue. |
-| Tool confirmation | Tool returns `ToolResult(status="confirmation_required", ...)`; worker converts to `NEEDS_INFO` | Task paused | Main asks for yes/no with details | User yes -> `[ANSWER_TO ... answer={"confirmed": true}]`; worker calls same tool with `confirmed=True`. |
+| Tool confirmation | Tool returns `ToolResult(status="confirmation_required", ...)`; worker converts to `NEEDS_INFO` | Task paused | Main asks for yes/no with details via voice+chat | User yes -> `[ANSWER_TO ... answer={"confirmed": true}]`; worker calls same tool with `confirmed=True`. |
 | Note from finished task | `report(DONE, payload={"note_for_agent": "..."})` | Task done; note stored | Main decides whether to surface | If user wants it, Main delegates a new task. |
 | Proactive suggestion | `report(DONE, payload={"suggestion": "..."})` | Task done; suggestion stored | Main may ask user if useful | If user says yes, Main delegates a new task. |
 
@@ -616,13 +749,6 @@ tool_search(query: str, capability: str | None = None) -> list[ToolCard]
 
 `ToolCard` contains only `name`, `capability`, `description`, `risk`, and required auth labels. Main can use `tool_search` to decide whether Vayumi is capable, then either call a cheap direct tool or delegate. A sub-agent can use `tool_search` inside its own capability if the capability has many MCP-imported tools. The runner still validates every final tool call against `ToolRegistry`.
 
-Example behavior:
-
-- User: "Can you update my Notion project page?"
-- Main calls `tool_search("notion project page update")`.
-- If a `productivity` Notion tool exists, Main delegates to productivity.
-- If no tool exists, Main says it cannot do that yet and may offer to connect/configure an MCP server later.
-
 ### Confirmation example: email send
 
 The comms tool never sends just because the LLM asked. It returns a confirmation result first:
@@ -677,8 +803,9 @@ This is the broad function catalog. It is not saying every function ships in Ste
 
 | File | Function / class | Responsibility |
 |---|---|---|
-| `server/transport/ws.py` | `ws_endpoint(websocket)` | FastAPI WebSocket entry point. Authenticates, accepts, creates/attaches Supervisor. |
+| `server/transport/ws.py` | `ws_endpoint(websocket)` | FastAPI WebSocket entry point. Authenticates, enforces session singleton (§5.0), accepts, creates/attaches Supervisor. |
 | `server/transport/ws.py` | `inbound_loop()` / `outbound_loop()` | Split receive/send loops inside one TaskGroup. |
+| `server/transport/ws.py` | `enforce_session_singleton(user_id, new_ws) -> Supervisor` | Finds existing Supervisor for user_id if any; closes old WS with `session_superseded`; reattaches or creates. |
 | `server/transport/protocol.py` | `parse_client_message(raw) -> ClientMessage` | Pydantic discriminated-union parse for JSON frames. |
 | `server/transport/protocol.py` | `serialize_server_message(message) -> str` | Typed server JSON frame serialization. |
 | `server/transport/ws.py` | `send_json(message)` / `send_audio_frame(pcm)` | The only low-level WebSocket send functions. |
@@ -687,9 +814,9 @@ This is the broad function catalog. It is not saying every function ships in Ste
 | `server/transport/uploads.py` | `get_uploaded_file(file_id, user_id) -> FileRef` | Retrieves metadata/path for tools and sub-agents. |
 | `server/transport/uploads.py` | `delete_uploaded_file(file_id, user_id)` | User-initiated cleanup / retention policy hook. |
 | `server/transport/client_control.py` | `send_client_control(command, reason, turn_id=None)` | Server asks client to play/pause/stop/duck/unduck/start/stop capture. |
-| `server/transport/client_control.py` | `handle_client_state(state)` | Client confirms local playback/capture/visibility/audio route. |
+| `server/transport/client_control.py` | `handle_client_state(state)` | Client confirms local playback/capture/visibility/audio route. Updates the respond_via cache for this session. |
 
-Client-control rule: the server may request local audio behavior, but the client is the device owner. The server sends `client_control`; the client replies with `client_state`. If the client cannot comply, it reports state honestly and the Supervisor adapts.
+Client-control rule: the server may request local audio behavior, but the client is the device owner. The server sends `client_control`; the client replies with `client_state`. If the client cannot comply, it reports state honestly and the Supervisor adapts. The server never assumes compliance — it always reads `client_state` to know actual device status.
 
 ### Voice, audio, and interrupt
 
@@ -700,25 +827,27 @@ Client-control rule: the server may request local audio behavior, but the client
 | `server/voice/stt/local.py` | `LocalFasterWhisper.transcribe(...)` | Offline fallback for completed utterances. |
 | `server/voice/tts/kokoro.py` | `KokoroTTS.synthesize_stream(text, voice) -> AsyncIterator[PcmFrame]` | Sentence-level streaming TTS. |
 | `server/voice/vad/silero.py` | `SileroVAD.accept_frame(frame) -> VadEvent` | Server-side end-of-utterance fallback and tests. |
-| `server/voice/interrupt.py` | `InterruptController.handle_interrupt(source)` | Single interrupt entry point. Cancels speech scope, clears directive buffer, returns to LISTENING. |
+| `server/voice/interrupt.py` | `InterruptController.handle_interrupt(source)` | Single interrupt entry point. Cancels speech scope, clears directive buffer, discards TTS queue, returns to IDLE. |
 | `server/voice/interrupt.py` | `cancel_tts(turn_id)` / `cancel_main_decode(turn_id)` | Stop user-facing speech/Main only. Sub-agents continue unless `[STOP_TASK]`. |
 | `server/voice/interrupt.py` | `drop_partial_utterance(reason)` | Discards incomplete STT text after wake/button interrupt. |
+| `server/voice/interrupt.py` | `compute_respond_via(session_state, input_kind) -> RespondVia` | Implements the full decision table from §7.5 Rule 13. Called at the start of every handle_turn. |
+| `server/voice/interrupt.py` | `begin_tts_with_echo_suppression(turn_id)` | Sends `stop_capture` before first audio frame; schedules `start_capture` after audio_end + delay. |
 | `server/orchestrator/supervisor.py` | `on_audio_start(payload)` / `on_audio_chunk(bytes)` / `on_audio_end()` | Bridges transport audio events into STT/turn handling. |
 
 ### Orchestrator, turns, directives, and tasks
 
 | File | Function / class | Responsibility |
 |---|---|---|
-| `server/orchestrator/supervisor.py` | `handle_turn(input: TurnInput)` | One entry point for chat, voice transcript, proactive signal, and file/image turns. |
+| `server/orchestrator/supervisor.py` | `handle_turn(input: TurnInput)` | One entry point for chat, voice transcript, proactive signal, and file/image turns. Computes respond_via at start. |
 | `server/orchestrator/supervisor.py` | `assemble_main_context(input) -> MainContext` | Warm profile, history, active tasks, retrieval snippets, attachment summaries. |
-| `server/orchestrator/supervisor.py` | `stream_main_response(context)` | Submits Main to P0, streams text, parses directives, drives TTS/chat. |
+| `server/orchestrator/supervisor.py` | `stream_main_response(context, respond_via)` | Submits Main to P0, streams text, parses directives, drives TTS/chat per respond_via. |
 | `server/orchestrator/directives.py` | `parse_directive_blocks(stream) -> AsyncIterator[Directive | TextChunk]` | Splits plain text from directive blocks safely while streaming. |
 | `server/orchestrator/directives.py` | `validate_directive(directive) -> TypedDirective` | Pydantic validation for DELEGATE/STOP_TASK/ANSWER_TO/etc. |
 | `server/orchestrator/supervisor.py` | `execute_directive(directive)` | Applies parsed directives to memory, tasks, retrieval, response channel, or tool dispatch. |
 | `server/orchestrator/task_board.py` | `create_task(...)`, `pause_task(...)`, `resume_task(...)`, `cancel_task(...)`, `complete_task(...)` | Canonical task lifecycle mutations. |
 | `server/orchestrator/task_board.py` | `render_for_main()` / `render_for_client()` | Separate compact Main context from richer client activity feed. |
-| `server/orchestrator/notifier.py` | `maybe_surface_signal(signal)` | Gates DONE/NEEDS_INFO/ERROR by user silence, importance, debounce, and client visibility. |
-| `server/orchestrator/notifier.py` | `build_synthetic_turn(signals)` | Runs Main through normal `handle_turn` for proactive text. |
+| `server/orchestrator/notifier.py` | `maybe_surface_signal(signal)` | Gates DONE/NEEDS_INFO/ERROR by user silence, importance, debounce, client visibility, and session mode. |
+| `server/orchestrator/notifier.py` | `build_synthetic_turn(signals)` | Runs Main through normal `handle_turn` for proactive text. Uses Rule 13 to determine respond_via. |
 
 ### Sub-agents and capability bundles
 
@@ -771,9 +900,10 @@ Client-control rule: the server may request local audio behavior, but the client
 |---|---|---|
 | `web-client/client.js` | `connect(token)` / `sendJson(type, payload)` / `sendPcmFrame(frame)` | Basic WebSocket contract implementation. |
 | `web-client/client.js` | `startMic()` / `stopMic()` / `recordOneSecond()` | AudioWorklet capture and PCM conversion. |
-| `web-client/client.js` | `handleServerAudio(frame)` / `handleClientControl(command)` | Playback queue and server-requested local controls. |
+| `web-client/client.js` | `handleServerAudio(frame)` / `handleClientControl(command)` | Playback queue and server-requested local controls. `stop_capture` mutes mic. `start_capture` resumes after echo suppression delay. `clear_queue` discards all buffered audio immediately. |
 | `web-client/client.js` | `uploadFile(file) -> UploadedFile` / `sendChat(text, attachments)` | User file/image upload, then chat reference. |
-| `web-client/client.js` | `renderEvent(event)` / `renderTaskBoard(events)` | Activity feed pills/timeline. |
+| `web-client/client.js` | `renderCaption(event)` / `renderChatMessage(event)` / `renderEvent(event)` | Live captions (sentence-by-sentence), final chat messages, and activity feed pills. |
+| `web-client/client.js` | `handleClientState(state)` | Sends `client_state` update to server whenever local audio/visibility changes. |
 
 ---
 
@@ -789,39 +919,40 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 |---|---|---|---|
 | 1 | Project scaffold + config + db/redis/lancedb wiring + Server 1 JWT auth + WebSocket echo | `doc/step-01.md` | ✅ |
 | 2 | Engine plane: `llama-server` runner + slot pool + main-only completion | `doc/step-02.md` | ✅ |
-| 3 | Voice plane: Groq STT + Kokoro TTS + interrupt | `doc/step-03.md` | ✅ |
+| 3 | Voice plane: Groq STT + Kokoro TTS + interrupt FSM | `doc/step-03.md` | ✅ |
 | 4 | Web client v1 (single HTML file): mic, WS, captions, playback, interrupt button, client_state/client_control handling | `doc/step-04.md` | ✅ |
 | 5 | Memory v1: warm profile + session history + Postgres versioned facts | `doc/step-05.md` | ✅ |
-| 6 | Tool plane: registry + runner + `tool_search` + `web_search` (Tavily/DDG) + Main can call cheap tools | `doc/step-06.md` | ⬜ |
+| 6 | v1.7 contract backfill: session singleton + respond_via + echo suppression + chat_message | `doc/step-06.md` | ✅ |
+| 7 | Tool plane: registry + runner + `tool_search` + `web_search` (Tavily/DDG) + Main can call cheap tools | `doc/step-07.md` | ✅ |
 
 ### Phase 2 — Multi-agent
 
 | # | Step | Status |
 |---|---|---|
-| 7 | Sub-agent worker + signal bus + `report()` schema + task pause/resume via `[ANSWER_TO task_id=...]` | ⬜ |
-| 8 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) + tool access gates | ⬜ |
-| 9 | Proactive notifier + synthetic turn pipeline | ⬜ |
-| 10 | LanceDB retrieval tool + memory_recall on-demand | ⬜ |
-| 11 | Summarizer (P2) + automatic compression at 20k tokens | ⬜ |
+| 8 | Sub-agent worker + signal bus + `report()` schema + task pause/resume via `[ANSWER_TO task_id=...]` | ⬜ |
+| 9 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) + tool access gates | ⬜ |
+| 10 | Proactive notifier + synthetic turn pipeline + respond_via decision per Rule 13 | ⬜ |
+| 11 | LanceDB retrieval tool + memory_recall on-demand | ⬜ |
+| 12 | Summarizer (P2) + automatic compression at 20k tokens | ⬜ |
 
 ### Phase 3 — Modes & polish
 
 | # | Step | Status |
 |---|---|---|
-| 12 | Meeting mode (diarization-friendly transcript accumulation, post-meeting summary) | ⬜ |
-| 13 | Local STT fallback (faster-whisper) + offline mode flag | ⬜ |
-| 14 | Server-side wake-word echo trap (anti-self-trigger when TTS is playing) | ⬜ |
-| 15 | File/image upload + attachment summaries + long-input ack + chunked async doc analysis | ⬜ |
-| 16 | MCP adapter — connect arbitrary MCP servers, mirror their tools | ⬜ |
+| 13 | Meeting mode (diarization-friendly transcript accumulation, post-meeting summary) | ⬜ |
+| 14 | Local STT fallback (faster-whisper) + offline mode flag | ⬜ |
+| 15 | Server-side wake-word echo trap (anti-self-trigger when TTS is playing, extends Rule 12) | ⬜ |
+| 16 | File/image upload + attachment summaries + long-input ack + chunked async doc analysis | ⬜ |
+| 17 | MCP adapter — connect arbitrary MCP servers, mirror their tools | ⬜ |
 
 ### Phase 4 — Clients & deploy
 
 | # | Step | Status |
 |---|---|---|
-| 17 | Mobile reference client (React Native or Flutter — your pick) | ⬜ |
-| 18 | ESP32 firmware + protocol port | ⬜ |
-| 19 | Production hardening: backpressure, reconnection, rate limits | ⬜ |
-| 20 | Observability dashboard | ⬜ |
+| 18 | Mobile reference client (React Native or Flutter — your pick) | ⬜ |
+| 19 | ESP32 firmware + protocol port | ⬜ |
+| 20 | Production hardening: backpressure, reconnection, rate limits | ⬜ |
+| 21 | Observability dashboard | ⬜ |
 
 ---
 
@@ -835,10 +966,13 @@ Past restarts happened because of these specific traps. Each is now a hard rule.
 | "Subagent context bled into main" | Subagents never write to the main session history. They `report()` to the signal bus. Only the supervisor decides what enters main's context. |
 | "Memory got hallucinated" | Facts only get written via `memory_save` (typed args) or the post-turn summarizer (typed extraction schema). Never inferred from free text inside the main loop. |
 | "Tool calling broke multi-step" | Main does **not** do raw OpenAI tool-calling. It writes `[DELEGATE capability=research goal="…"]` directives. The orchestrator parses, validates, spawns. Single-step tools (web_search, memory_save) are still directives, just shorter ones. This isolates Main from tool schemas entirely. |
-| "Voice and chat fought over state" | Both go through `supervisor.handle_turn(input)`. There's one turn pipeline; voice and chat are just two different `input.kind` values. |
+| "Voice and chat fought over state" | Both go through `supervisor.handle_turn(input)`. There's one turn pipeline; voice and chat are just two different `input.kind` values. respond_via is computed from session state, not from a separate code path. |
 | "The client integration broke at the end" | The web client is in the repo from step 1. Every step has an acceptance test that includes "the web client still works." If it doesn't, the step is not done. |
 | "Async deadlocks during interrupts" | One asyncio event loop. Every long-running coroutine has a `cancel_scope`. Interrupt = cancel the speech scope only. Tasks live in their own scope. |
 | "Stack got out of date" | This `PLAN.md` is the source of truth. If a library is replaced, we add a row to the changelog and update Section 2. We don't switch silently. |
+| "Two devices connected at once" | Session singleton enforced at connection time. Old WS gets `session_superseded`, new WS gets `welcome{resumed:true}`. Sub-agents never notice — they're bound to the Supervisor, not the socket. |
+| "Typed chat got no voice response" | respond_via is computed per Rule 13 in §7. Default for typed chat with voice-capable session is `voice_and_chat`. This is explicit code in `compute_respond_via()`, not an afterthought. |
+| "AI's own voice triggered the wake word" | Rule 12 is mandatory: `stop_capture` before every TTS output, `start_capture` after echo suppression delay. No exceptions. `begin_tts_with_echo_suppression()` is the only function that sends `audio_start`. It always sends `stop_capture` first. |
 
 ---
 
@@ -881,8 +1015,12 @@ GROQ_API_KEY=
 STT_LOCAL_MODEL=base.en             # faster-whisper
 
 # TTS
-KOKORO_MODEL_DIR=./models/kokoro
+KOKORO_MODEL_DIR=./models/tts
 KOKORO_VOICE=af_heart
+
+# Voice
+SELF_ECHO_SUPPRESSION_DELAY_MS=1200  # how long after audio_end to wait before start_capture
+AEC_CLIENT_SUPPRESSION_DELAY_MS=300  # shorter delay when client declares capabilities.aec=true
 
 # Embeddings
 BGE_MODEL_PATH=./models/bge-small-en-v1.5.onnx
@@ -890,6 +1028,10 @@ BGE_MODEL_PATH=./models/bge-small-en-v1.5.onnx
 # Tools
 TAVILY_API_KEY=                     # optional; falls back to DDG
 MCP_SERVERS_JSON=./config/mcp.json  # optional; declares MCP servers to mirror
+
+# Session
+SESSION_SINGLETON_CLOSE_CODE=4001   # WebSocket close code sent on session_superseded
+SESSION_LINGER_SECONDS=60           # how long Supervisor stays alive after WS disconnect before persisting and releasing
 ```
 
 ---
@@ -959,7 +1101,7 @@ dev-dependencies = [
 
 ## 13. Worked example — a real multi-step session, end to end
 
-This section is the **acceptance test for understanding**. If you can follow every step and explain *why* each thing happens, you understand the system. It exercises: voice + chat, two parallel sub-agents, a mid-task user interjection, a memory update with versioning, a `[RECALL]`, an interrupt that does NOT kill background tasks, a sub-agent `NEEDS_INFO`, a tool failure with recovery, and the proactive notifier surfacing two completions.
+This section is the **acceptance test for understanding**. If you can follow every step and explain *why* each thing happens, you understand the system. It exercises: voice + typed chat (with voice response), two parallel sub-agents, a mid-task user interjection, a memory update with versioning, a `[RECALL]`, an interrupt that does NOT kill background tasks, a sub-agent `NEEDS_INFO`, a tool failure with recovery, the proactive notifier surfacing completions, and the session singleton handling a device handover.
 
 The diagram companion is **page 15** of `orchestrator_diagram_v3.drawio` (one giant sequence chart of this same example).
 
@@ -978,6 +1120,7 @@ The diagram companion is **page 15** of `orchestrator_diagram_v3.drawio` (one gi
 - llama-server is up: slot 0 holds Main's KV (system prompt + last 6 turns ≈ 2.4k tokens). Slots 1, 2, 3 are free.
 - Redis signal-bus channel is subscribed for this session.
 - Conversation context already in Main: light banter from earlier today.
+- Latest `client_state`: `{playback:'idle', capture:'idle', visible:true, route:'speaker'}`.
 
 ### 13.1 Turn 1 — User gives a multi-step goal (voice)
 
@@ -989,14 +1132,16 @@ What happens, in order, with timestamps relative to when the user finished speak
 |---|---|---|
 | 0 | Client (web) | Local Silero VAD signals end-of-utterance. Sends `audio_end`. |
 | ~250 | Voice plane | Groq Whisper streaming returns FINAL transcript. |
-| 260 | Supervisor | `handle_turn(input={kind:'voice', text:'...'})`. State `LISTENING → THINKING`. |
+| 260 | Supervisor | `handle_turn(input={kind:'voice', text:'...'})`. `compute_respond_via(session_state, 'voice')` → `voice_and_chat`, `replace`. State `IDLE → THINKING`. |
 | 265 | Memory plane | Concurrent fetch: warm profile (cached, free), recent history (8 turns from PG), task_board snapshot (empty), drain signal_bus (empty). |
 | 320 | Engine pool | Build Main prompt: system + warm + history + user_msg ≈ 3.0k tokens. Submit P0 to slot 0. |
 | 700 | Main (slot 0) | First token arrives. Begins streaming. |
-| 720 | Directives parser | Reads first 30 tokens — they're plain text. Pipes them to TTS as a sentence: *"Got it — I'll find apps and start a draft in parallel."* |
-| 800 | Voice plane | Kokoro emits first 20 ms PCM frame for that sentence. |
+| 720 | Directives parser | Reads first 30 tokens — plain text: *"Got it — I'll find apps and start a draft in parallel."* |
+| 720 | Transport | `begin_tts_with_echo_suppression(turn_id)` called. Sends `client_control{stop_capture, reason:'tts_start'}`. Client mutes mic. |
+| 725 | Transport | Emits `caption{text:"Got it — I'll find apps and start a draft in parallel.", partial:false, turn_id}`. |
+| 800 | Voice plane | Kokoro emits first 20 ms PCM frame. Sends `audio_start{turn_id}`. |
 | 850 | Transport | First audio frame leaves the WebSocket. **User hears the start of the reply at ~1.0 s.** State `THINKING → SPEAKING`. |
-| 1100 | Main (still streaming) | Emits two directive blocks back-to-back: |
+| 1100 | Main (still streaming) | Emits two directive blocks back-to-back (stripped from TTS/caption stream): |
 
 ```
 [DELEGATE capability=research
@@ -1010,227 +1155,170 @@ What happens, in order, with timestamps relative to when the user finished speak
 
 | t (ms) | Component | Action |
 |---|---|---|
-| 1101 | Directives parser | Parses both. Validates capability + payload schemas. The second has `blocked_on:"r1_done"` — Supervisor will hold its actual run until r1 reports DONE; the row exists immediately on the task_board with status `blocked`. |
-| 1110 | Supervisor | `spawn_subagent(research, …)` → creates `task_id=r1`, allocates slot 1, status `running`. Writes to PG: `tasks(id=r1, user_id=u_42, capability='research', status='running', goal='…')`. |
-| 1115 | Supervisor | Creates `task_id=p2`, status `blocked` (waiting on r1). Adds to task_board. |
-| 1120 | Transport | Emits `event{kind:'tool_started', task_id:'r1', summary:'Researching calendar-sharing apps'}` and same for p2 (with note "queued, depends on r1"). |
-| 1200 | Main (slot 0) | Continues with one closing sentence: *"I'll let you know when the comparison is ready."* Emits `[RESPOND_VIA voice]`. Then stops. State `SPEAKING → IDLE`. |
+| 1101 | Directives parser | Parses both. Validates. Second has `blocked_on:"r1_done"` — held with status `blocked`. |
+| 1110 | Supervisor | `spawn_subagent(research, …)` → `task_id=r1`, slot 1, status `running`. |
+| 1115 | Supervisor | Creates `task_id=p2`, status `blocked`. |
+| 1120 | Transport | Emits `event{kind:'tool_started', task_id:'r1', …}` and `event` for p2 (queued). |
+| 1200 | Main (slot 0) | Closing sentence: *"I'll let you know when the comparison is ready."* Emits `[RESPOND_VIA voice]`. Stops. |
+| 1250 | Transport | Sends `audio_end{turn_id}`. Starts echo suppression timer (1200 ms). |
+| 1300 | Transport | Emits `chat_message{text:"Got it — I'll find apps and start a draft in parallel. I'll let you know when the comparison is ready.", turn_id, final:true}`. |
+| 2450 | Transport | Echo suppression timer fires. Sends `client_control{start_capture, reason:'echo_clear'}`. Client resumes mic. State `SPEAKING → IDLE`. |
 
-**What the user sees / hears:** voice reply ≈ 1.0 s in, two activity-feed pills appear ("Researching calendar-sharing apps" with a spinner; "Drafting team email" with "queued").
+**What the user sees / hears:** voice reply ≈ 1.0 s in, two activity-feed pills appear. Captions shown in sync with speech. Full chat message appears in the chat UI. Mic resumes after 1.2 s of silence post-speech.
 
-**What's in memory after Turn 1:** nothing new written. The user's request itself is a turn row in PG `turns` (raw); not yet a fact.
+### 13.2 Turn 2 — User TYPES a message (not voice)
 
-### 13.2 Sub-agents r1 and r2 start working
+While sub-agents are running, user types in the chat box: *"Actually, also check if any of them have a free tier."*
 
-Concurrent with everything above:
+| t | Component | Action |
+|---|---|---|
+| 0 | Supervisor | `handle_turn(input={kind:'chat', text:'...'})`. |
+| 1 | Voice plane | `compute_respond_via(session_state={playback:'idle', capture:'idle', visible:true, route:'speaker'}, 'chat')` — none of the blocking conditions apply → **`voice_and_chat`**, `interrupt_policy=queue`. |
+| 50 | Memory | Concurrent: warm profile check (not dirty, cached), session state check. |
+| 100 | Context | task_board includes r1 (running, STEP "picked 3 candidates") and p2 (blocked). |
+| 400 | Main | Streams: *"Got it — I'll make sure to check free tiers too."* Emits `[ANSWER_TO task_id=r1 answer="Also check if any apps have a free tier" mode="amendment"]`. |
+| 401 | Transport | `begin_tts_with_echo_suppression(turn_id_2)`. Sends `client_control{stop_capture}`. Emits `caption`. |
+| 500 | Transport | Audio starts. `interrupt_policy=queue` — if Main was speaking (it's not), this would queue. Since IDLE, it plays immediately. |
+| 600 | Supervisor | Applies `[ANSWER_TO]` — appends amendment to r1's input queue. r1 will process it on its next reasoning step. |
+| 700 | Transport | `audio_end`. `chat_message{text:"Got it — I'll make sure to check free tiers too.", final:true}`. Echo suppression timer starts. |
+
+**Key point:** The user typed, but they got a voice reply AND saw the text in the chat. This is `voice_and_chat` for typed input — exactly what Rule 11 specifies. The interrupt_policy was `queue` so if the AI had been mid-speech, the response would have waited.
+
+### 13.3 Sub-agents r1 and p2 work; r1 finishes
+
+(Same as original §13.2 sub-agent work. r1 finds Cron, Fantastical, Vimcal, checks free tiers, emits STEP signals that update the activity feed. r1 emits DONE. p2 unblocks.)
+
+### 13.4 r2 hits a problem — `NEEDS_INFO` and proactive notification
+
+p2 tries to send via gmail, gets OAuth scope error, emits `NEEDS_INFO`. Notifier fires.
+
+`build_synthetic_turn(signals=[{task:p2, kind:NEEDS_INFO}])`:
+- `input.kind = 'proactive'`
+- `compute_respond_via` check: `client_state.visible=true`, `capture='idle'`, NEEDS_INFO importance=1.0, not meeting mode → **`voice_and_chat`**, `queue`.
+
+Main streams: *"Quick blocker on the email draft — your gmail is connected as read-only. Want me to open the reconnect flow so I can draft on your behalf? Otherwise I can give you a copy-pasteable text right here."*
+
+`begin_tts_with_echo_suppression()` runs. User hears and reads this proactively — without having said anything. This is the PersonaPlex-like push behavior.
+
+### 13.5 Turn 3 — User responds, then interrupts mid-speech, then changes mind
+
+User (voice): *"Just give me the text he—"* — changes mind mid-sentence. Says: *"Vayumi, stop. Forget the email — just tell me what Cron costs."*
+
+| t | Component | Action |
+|---|---|---|
+| 0 | Client | Wake-word "Vayumi" fires. Sends `interrupt{source:'wake'}`. Begins capturing new utterance. |
+| 5 ms | Supervisor | `InterruptController.handle_interrupt('wake')`. |
+| 5 ms | Voice plane | State → IDLE. `cancel_tts(current_turn_id)`. Sends `audio_end{interrupted:true}`. Sends `client_control{clear_queue}`. Sends `client_control{start_capture}` immediately (interrupt overrides echo suppression delay — user needs to speak now). |
+| 5 ms | Directives | Directive buffer cleared. |
+| 5 ms | Background tasks | **Untouched.** p2 remains WAIT_USER. r1 is already done. |
+| ~700 | Voice plane | STT FINAL: *"Just give me the text he"* — the aborted first utterance, dropped (interrupt before `audio_end`). |
+| ~1200 | Voice plane | STT FINAL: *"forget the email — just tell me what Cron costs."* |
+| 1210 | Supervisor | `handle_turn({kind:'voice', text:'forget the email — just tell me what Cron costs.'})`. `compute_respond_via` → `voice_and_chat`, `replace`. |
+| 1500 | Main | Reads task_board: p2 `waiting_user`, r1 `done (Cron $5/u/mo)`. User intent: cancel p2, answer Cron pricing. |
+| 1510 | Main | Emits `[STOP_TASK task_id=p2]`. Then speaks: *"Cron is $5 per user per month. Want me to also tell you what's free vs paid?"* |
+| 1515 | Supervisor | Cancels p2 worker. Writes `tasks.status='cancelled'`. Emits `event{kind:'task_done', task_id:'p2', summary:'cancelled'}`. |
+| 1520 | Transport | `begin_tts_with_echo_suppression(new_turn_id)`. `stop_capture` sent. Caption and audio stream. |
+
+User hears the answer ≈ 1.0 s after finishing speaking. p2 pill goes red. r1 pill stays green.
+
+### 13.6 Device handover — user switches to mobile
+
+User closes laptop. WS closes. Supervisor lingers 60 s (`SESSION_LINGER_SECONDS`), then calls `persist_session_snapshot()` and releases slot 0's KV.
+
+15 minutes later, user opens mobile app. Mobile sends `hello{client:'ios', capabilities:{aec:true, vad:true, wake:true, tts:true}, session_id:null}`.
 
 | Component | Action |
 |---|---|
-| `SubAgentWorker(r1)` | Loads `prompts/sub/research.txt` + tool schemas for `research` bundle: `web_search`, `fetch_html`, `summarize_url`, `memory_recall`. Builds prompt: system + capability_prompt + tool_schemas + goal + payload. Submits P1 to slot 1. |
-| Slot 1 | Llama begins decoding r1's plan. Output starts with `[CALL web_search query="best calendar sharing apps iOS Android 2026"]`. |
-| Orchestrator (tool runner) | Intercepts. Runs `web_search` (Tavily). Returns 8 result snippets as a tool-result message injected into r1's context. |
-| Slot 1 (r1) | Reads results, picks 3 candidates: "Cron", "Fantastical", "Vimcal". Emits `report(STEP, summary="picked 3 candidates: Cron, Fantastical, Vimcal")`. |
-| Signal bus | STEP signal → Supervisor.signal_drainer updates `task_board[r1].latest_progress`. **No LLM call on Main.** |
-| Transport | Emits `event{kind:'task_step', task_id:'r1', summary:'picked 3 candidates'}`. The activity-feed pill updates. |
-| Slot 1 (r1) | Next: `[CALL fetch_html url="https://cron.com/pricing"]`. |
-| Tool runner | trafilatura extracts main article content; truncates to 2k tokens; returns. |
-| (×3) | Same for the other two sites, in this slot. |
-| Slot 1 (r1) | Emits a normalized comparison + `report(DONE, summary='Done. Cron $5/u/mo, Fantastical $5/u/mo, Vimcal $20/u/mo. Cron and Fantastical are closest match.', payload={table:[…], recommended:'Cron', facts_to_persist:[{key:'integrations.calendar.shortlist', value:['Cron','Fantastical','Vimcal']}]})`. |
+| `ws_endpoint` | `auth.verify_token(new_jwt)` → `user_id=u_42`. |
+| `enforce_session_singleton(u_42, new_ws)` | Finds existing (persisted) session for u_42. No live WS to supersede (already closed). Creates new WS binding. |
+| `load_or_create_session(u_42, None, {client:'ios'})` | Finds `sessions` row for u_42. Restores `session_id=s_X`. Rebuilds warm profile from PG (Redis cache expired). |
+| Transport | Sends `welcome{session_id:'s_X', resumed:true, task_board_snapshot:{...}}`. |
+| Client (iOS) | Receives `welcome`. Renders activity feed from `task_board_snapshot`: r1 done (green), p2 cancelled (red). |
+| `compute_respond_via` default | `capabilities.aec=true` — echo suppression delay reduced to 300 ms for this client. |
 
-Sub-agent r1 is done. Slot 1 is freed. r2 was blocked on r1, so the supervisor unblocks it.
+User can ask follow-ups immediately. Sub-agents (none active) would have continued if they had been running. Same memory, same history, same session. No re-research.
 
-### 13.3 r2 (productivity sub-agent) starts; meanwhile user interjects (chat)
+### 13.7 The user updates a fact; old value is preserved (typed chat → voice reply)
 
-While r2 is starting up, the user (still on web) **types** in the chat box: *"oh — also CC my manager"*.
-
-| t | Component | Action |
-|---|---|---|
-| ~1.5s after r1 DONE | Supervisor | Promotes p2 from `blocked` to `running`. Allocates slot 1 (just freed). Builds prompt with: capability_prompt(productivity) + tool_schemas(productivity) + goal + payload. Critically: **payload now also includes the condensed r1 result** as a "context block" so r2 doesn't re-research. Submits P1. |
-| immediately | Transport | Receives the user's typed `chat` message. |
-| immediately | Supervisor | New input arrives. State is IDLE → handle_turn(input={kind:'chat', text:"oh — also CC my manager"}). |
-| t+5 ms | Memory plane | Concurrent fetch as before, **plus** task_board snapshot now contains: `r1=done (with summary)`, `p2=running (just spawned)`. |
-| t+50 ms | Main prompt | system + warm + history + task_board condensed view + new user_msg. The task_board section is roughly: `Tasks in flight: p2 (productivity, drafting team email). Just completed: r1 (research, picked Cron).` — it does NOT include r1's full result, just the summary; that detail was passed only to r2. |
-| t+400 ms | Main streams | *"Got it, adding your manager."* Emits: |
-
-```
-[RECALL key=relationships.manager.email]
-```
-
-| t | Component | Action |
-|---|---|---|
-| t+401 | Directives parser | Pauses Main's stream (suspends decoding on slot 0), runs `memory.facts.get('relationships.manager.email')` → returns `'priya@acme.com'`. Re-injects as `[RECALL_RESULT priya@acme.com]` into Main's context. |
-| t+450 | Slot 0 (Main) | Resumes. Emits: |
-
-```
-[DELEGATE capability=productivity
-   goal="update the in-flight email draft to also CC priya@acme.com"
-   payload={"task_ref":"p2","cc":["priya@acme.com"]}]
-```
-
-| t | Component | Action |
-|---|---|---|
-| t+460 | Supervisor | Sees `task_ref:"p2"` — instead of spawning a new task, it appends an *amendment* to p2's input queue. p2 is already running on slot 1 and will pick this up at its next reasoning step. |
-| t+500 | Main | Closes with: *"Will do."* Emits `[RESPOND_VIA voice]`. State → IDLE. |
-
-**Key thing:** Main never opened the email draft itself. It does not know what r2 has written so far. It just knew the *user's intent* (add a CC) and forwarded it via an amendment to p2.
-
-### 13.4 r2 hits a problem — `NEEDS_INFO`
-
-p2 (now on slot 1) reads its prompt + the freshly appended amendment. It begins drafting. It tries to call `gmail.draft_create`:
-
-| Component | Action |
-|---|---|
-| Slot 1 (p2) | `[CALL gmail.draft_create to=team@acme.com cc=priya@acme.com subject="…" body="…"]` |
-| Tool runner | Calls the gmail tool. The gmail tool calls Server 1's `oauth_integrations` endpoint to fetch the user's gmail token. Server 1 returns: `403 SCOPE_INSUFFICIENT` — the user has connected gmail with read-only scope. |
-| Tool runner | Returns a structured error string to p2: `{"error":"oauth_scope_missing","scopes_needed":["gmail.compose"],"how_to_fix":"client must reconnect gmail with compose scope via Server 1"}`. |
-| Slot 1 (p2) | Reads the error. Knows from prompt that it cannot resolve OAuth itself. Emits `report(NEEDS_INFO, summary="Need gmail compose scope to send a draft", payload={action:"reconnect_gmail_compose"})`. |
-| Signal bus | NEEDS_INFO with importance=1.0. |
-| Notifier (next tick) | Gates pass: AI not speaking, debounce ok, importance high. Builds a synthetic chat-only turn for Main. |
-
-### 13.5 Main surfaces the NEEDS_INFO
-
-A synthetic turn fires: `handle_turn({kind:'proactive', signals:[{task:p2, kind:NEEDS_INFO, summary:…}], respond_via:'chat_only'})`.
-
-Main reads it, writes to chat:
-
-> *"Quick blocker on the email draft — your gmail is connected as read-only. Want me to open the reconnect flow so I can draft on your behalf? Otherwise I can give you a copy-pasteable text right here."*
-
-State → `WAIT_USER`. Activity-feed pill for p2 turns yellow.
-
-### 13.6 User chooses "give me the text", interrupts, then changes mind
-
-User (voice): *"Just give me the text he—"* — and at that moment **the user changes their mind mid-sentence and says louder: "Vayumi, stop. Forget the email — just tell me what Cron costs."**
-
-This is an interrupt mid-utterance. What happens:
-
-| t | Component | Action |
-|---|---|---|
-| 0 | Client | Wake-word fires again ("Vayumi"). Client sends `interrupt{source:'wake'}`. Begins capturing the new utterance. |
-| 5 ms | Supervisor | Speech FSM: any state → LISTENING. |
-| 5 ms | Voice plane | TTS generator (none active right now) — no-op. |
-| 5 ms | Engine pool | Slot 0 (Main) — Main was idle. No completion to cancel. |
-| 5 ms | Directive buffer | Empty. Cleared anyway. |
-| 5 ms | Background tasks | **Untouched.** p2 is still in WAIT_USER on the orchestrator side, but slot 1 is free — p2's worker is suspended awaiting input, not running. |
-| ~250 | Voice plane | New STT FINAL: *"Just give me the text he"* — the *aborted* first utterance. Supervisor sees this as an in-flight transcript whose audio was followed by a wake interrupt; it is dropped (the transcript would have been a turn input, but interrupt fired before `audio_end`). |
-| ~700 | Voice plane | Second STT FINAL: *"forget the email — just tell me what Cron costs."* This is the real next turn. |
-| 710 | Supervisor | `handle_turn({kind:'voice', text:'forget the email — just tell me what Cron costs.'})`. |
-
-Main's prompt now has the task_board showing `p2 (waiting_user)` and `r1 (done)`. The user's intent is two things:
-
-1. *Cancel p2.* Main emits: `[STOP_TASK task_id=p2]`. Supervisor cancels the worker, frees its blocked-on-user state, writes `tasks.status='cancelled'`, emits `event{kind:'task_done', task_id:'p2', summary:'cancelled by user'}`.
-2. *Answer about Cron pricing.* Main has the r1 summary in task_board (which says "Cron $5/u/mo"). It answers immediately:
-
-> *"Cron is $5 per user per month. Want me to also tell you what's free vs paid?"*
-
-User hears it ≈ 1.0 s after finishing speaking. p2's pill goes red ("cancelled"). r1's pill stays green.
-
-### 13.7 The user updates a fact; old value is preserved
-
-User (chat, while still talking voice): *"btw remember my new work email is alex.k@acme.com"*
+User types (on mobile): *"btw remember my new work email is alex.k@acme.com"*
 
 | Component | Action |
 |---|---|
 | Supervisor | `handle_turn({kind:'chat', text:'…'})`. |
-| Main | Reads, emits: |
+| `compute_respond_via` | Mobile, `capabilities.tts=true`, `client_state.playback='idle'`, `visible=true`, no blocking conditions → **`voice_and_chat`**, `queue`. |
+| Main | Emits `[REMEMBER key=email.work value="alex.k@acme.com" source="user_intent"]`. Streams reply: *"Got it — old work email kept on file in case you ever need it."* |
+| Transport | `begin_tts_with_echo_suppression(turn_id)`. `stop_capture` sent. Caption emitted. Audio streams (AEC mode: 300 ms suppression delay). |
+| `memory.facts.set` | Old `alex@acme.com` → `active=false, superseded_by=f_91`. New `alex.k@acme.com` → `active=true`. `warm.dirty=True`. |
+| End of turn | `chat_message{text:"Got it — old work email kept on file in case you ever need it.", final:true}`. |
 
-```
-[REMEMBER key=email.work value="alex.k@acme.com" source="user_intent"]
-```
+User hears the reply AND sees the text in the mobile chat. The warm block rebuilds next turn.
 
-| Component | Action |
-|---|---|
-| Directives parser | Validates. Calls `memory.facts.set('email.work', 'alex.k@acme.com', source='user_intent')`. |
-| `memory.facts.set` | Begins PG transaction. Selects the active row for `email.work` → finds `alex@acme.com` (`id=f_77`). Updates it: `active=false, superseded_at=now(), superseded_by=NEW_ID`. Inserts new row `(id=f_91, key='email.work', value='alex.k@acme.com', active=true, source='user_intent', confidence=1.0, created_at=now())`. Re-embeds the value (bge-small) and upserts the embedding into LanceDB `facts_index` keyed by `f_91`. Sets `warm.dirty=True`. Commits. |
-| Main | Closes with: *"Got it — old work email kept on file in case you ever need it."* |
+### 13.8 Days later — historical recall (voice, still works)
 
-The next turn that runs (any kind), the Supervisor sees `warm.dirty=True` and rebuilds the warm profile (includes the new value, drops the old from L1). `warm.dirty=False` again.
+User (voice): *"What was my old work email?"*
 
-### 13.8 Days later — historical recall (still works, with zero context cost)
+`compute_respond_via` → `voice_and_chat`, `replace`.
 
-User (voice, on mobile this time): *"What was my old work email?"*
+Main emits `[RECALL chain key=email.work]`. Result injected: `[(active, 'alex.k@acme.com', 2026-05-09), (superseded, 'alex@acme.com', 2025-12-01 → 2026-05-09)]`.
 
-| Component | Action |
-|---|---|
-| Supervisor | New voice turn. Main does NOT have the old email in its context (warm has only the active value). |
-| Main | Emits: `[RECALL chain key=email.work]` |
-| Directives parser | Calls `memory.facts.chain('email.work')` → returns ordered list `[(active, 'alex.k@acme.com', 2026-05-09T11:30Z), (superseded, 'alex@acme.com', created 2025-12-01T…, superseded 2026-05-09T11:30Z)]`. Injects as `[RECALL_RESULT …]` into context. |
-| Main | *"Your previous work email was `alex@acme.com`. You changed it to `alex.k@acme.com` on May 9."* |
+Main speaks: *"Your previous work email was alex@acme.com. You changed it to alex.k@acme.com on May 9."*
 
-This costs ~80 tokens of context for this one turn. It costs zero on every other turn. That is the entire point of the versioned-fact design.
+Caption and `chat_message` both sent. User hears and reads.
 
 ### 13.9 Background — the summarizer cleans up
 
-About 2 minutes after the storm of activity, when the system is idle:
-
-| Component | Action |
-|---|---|
-| Summarizer worker (P2, slot 3) | Sees session history is now ~12k tokens. Below 20k threshold; not triggered yet. |
-| Summarizer worker (P2) | Triggered explicitly because r1 is DONE: extracts `facts_to_persist` from r1's report. Validates each candidate: the `integrations.calendar.shortlist` fact passes (high confidence, deduped against existing chain). Writes via `memory.facts.set()`. |
-| LanceDB | New fact embedded into `facts_index`. |
-| Postgres | `tasks` row for r1 is finalized with `result_summary` and `result_full_jsonb` (kept on disk for later [RECALL task:r1] queries). |
-| Postgres | `signals` rows for r1 (STEP, DONE) and p2 (NEEDS_INFO, cancelled) are kept indefinitely as audit. |
+(Same as original §13.9. Summarizer extracts `facts_to_persist` from r1, writes them to MemoryOS via `set_fact`. LanceDB updated.)
 
 ### 13.10 What the data looks like at the end
 
-**Postgres `facts` (versioned)**:
-
+**Postgres `facts`:**
 ```
 f_77  email.work            alex@acme.com           active=false  superseded_by=f_91
 f_91  email.work            alex.k@acme.com         active=true   source=user_intent
 f_92  integrations.calendar.shortlist  ['Cron','Fantastical','Vimcal']  active=true  source=task:r1
-... (everything else unchanged)
 ```
 
-**Postgres `tasks`**:
-
+**Postgres `tasks`:**
 ```
-r1   research      done        result_summary='Cron $5/u/mo …'  duration=11.2s
+r1   research      done        result_summary='Cron $5/u/mo, free tier available'  duration=11.2s
 p2   productivity  cancelled   result_summary='cancelled by user'  duration=8.7s
 ```
 
-**Postgres `signals`** (last 6, in order):
-
+**Postgres `signals`:**
 ```
 r1  STEP        'picked 3 candidates'
-r1  DONE        '… Cron and Fantastical closest …'
+r1  DONE        '… free tier: Cron basic, no free tier: Fantastical, Vimcal'
 p2  STARTED     ''
 p2  NEEDS_INFO  'gmail compose scope missing'
 p2  CANCELLED   'by user request'
 (summarizer)  FACT_WRITE   'integrations.calendar.shortlist'
 ```
 
-**LanceDB `facts_index`**: 2 new rows (f_91, f_92). One stale row (f_77 stays — it's never deleted; chain queries need it).
+**Redis**: signal-bus quiet. warm_cache rebuilt for mobile session.
 
-**Redis**: `signal_bus:<session>` channel has been quiet for 90s. `warm_cache:u_42` is fresh (rebuilt after the email change).
+**llama-server**: slot 0 = Main (mobile session), KV ≈ 5.1k tokens. Slots 1, 2, 3 free. RAM unchanged from boot.
 
-**llama-server**: slot 0 = Main, KV ≈ 5.1k tokens. Slots 1, 2, 3 = free. Total RAM unchanged from boot.
+### 13.11 Reconnect / restart (same as before — works identically with singleton rule)
 
-### 13.11 Reconnect / device handoff (optional, fits the same example)
-
-User closes the laptop. Web client WS goes away. Supervisor lingers 60 s, then writes `sessions.last_seen=now()`, persists conversation state, releases slot 0's KV (the prefix is rebuildable from history).
-
-User opens the mobile app 30 minutes later. Mobile sends `hello{session_id:'s_X', client:'ios', …}`. Server 2:
-
-1. `auth.verify_token(token)` (the token was refreshed by the iOS keychain logic).
-2. Looks up `sessions.s_X` for `u_42`. Found.
-3. Re-instantiates Supervisor; warm profile is rebuilt from PG (no Redis cache hit on mobile). Slot 0 prompt prefix rehydrates over the next turn.
-
-Mobile gets a `welcome` event. The activity feed shows the last 24 h of tasks (r1 done, p2 cancelled). User can ask follow-ups against the same memory state. No re-research happens.
+Device handover is now explicitly handled by `enforce_session_singleton()`. The supervisor registry is the canonical source of truth. No state is lost across handovers because all meaningful state lives in Postgres and Redis, not in the WebSocket connection.
 
 ### 13.12 What this example proves about the design
 
 | Concern | How the example handles it |
 |---|---|
-| Multi-step coordination | r1 → r2 dependency expressed in payload (`blocked_on:"r1_done"`); Supervisor enforces. |
-| Context purity | Main never saw the trafilatura output, the gmail OAuth error blob, or per-step LLM scratchpads. |
-| Mid-task user interjection | "CC my manager" became an *amendment* to p2 instead of a new task. |
+| Multi-step coordination | r1 → r2 dependency expressed in payload; Supervisor enforces. |
+| Context purity | Main never saw trafilatura output, gmail OAuth error, or per-step scratchpads. |
+| Mid-task user interjection | "Also check free tiers" became an amendment to r1 instead of a new task. |
+| Typed chat → voice reply | Turn 2 and Turn 7: typed input, `respond_via=voice_and_chat`, user hears AND reads the reply. |
 | Memory updates | Old email kept; new email active; warm rebuilt; chain queryable later. |
 | Interrupts | Wake-word kills speech only. p2 (waiting on user) survives until explicitly cancelled. |
 | Tool failure | OAuth scope error became a clean NEEDS_INFO signal — never a stack trace at the user. |
-| Proactive surfacing | NEEDS_INFO + DONE both surfaced when AI was silent and importance high enough. |
+| Proactive surfacing | NEEDS_INFO surfaced via voice+chat when AI was silent and client visible. |
 | Cancellation | `[STOP_TASK]` directive cleanly removed p2. |
-| Audit | Every signal, every fact write, every task is in PG, queryable forever. |
-| Server 1 boundary | Auth only checked at handshake. OAuth credentials fetched by tool runner via Server 1, not by Main. |
+| Echo suppression | `stop_capture` before every TTS block, `start_capture` after suppression delay. AEC clients get shorter delay. |
+| Session singleton | Device handover: laptop → mobile. Supervisor reattached, task board snapshotted in `welcome`. |
+| Audit | Every signal, every fact write, every task, every turn is in PG, queryable forever. |
+| Server 1 boundary | Auth only at handshake. OAuth credentials fetched by tool runner via Server 1, not by Main. |
 
 If this example feels coherent, the architecture is doing its job. If any step feels surprising, that's a bug in the plan — log it as a row in Section 9 and tighten the rule.
 
@@ -1241,9 +1329,10 @@ If this example feels coherent, the architecture is doing its job. If any step f
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-05-09 | Initial frozen plan. Stack chosen. Step 1 ready. |
-| 1.1 | 2026-05-09 | Added §1.1 two-server topology, expanded auth row in §2 (Server 1 owns identity; Server 2 only verifies), added §7.5 Agent vs Sub-agent capability split with directive grammar, added §13 worked example (multi-step + parallel sub-agents + interjection + interrupt + memory versioning + recall + cancellation). Diagram reference bumped to v3 (15 pages). |
-| 1.2 | 2026-05-09 | Added §7.6 multi-task coordination (no mix-ups), §7.7 STEP → user paths (UI / status question / optional verbal digest) with example phrases, §7.8 PDF-homework multi-tool chain inside one delegate. Fixed stale §14 cross-refs. Diagram page 15 expanded + addendum boxes for §7.6–§7.8. |
-| 1.3 | 2026-05-10 | Added §7.9 unified `NEEDS_INFO` / mid-task amendment / confirmation / suggestion contract and §7.10 tool access, discovery, `ToolEntry`, `ToolResult`, confirmation, and `tool_search` rules. Split task `[ANSWER_TO ...]` from user-delivery `[RESPOND_VIA ...]`. Diagram reference bumped to v3 (16 pages). |
-| 1.4 | 2026-05-10 | Added file/image upload contract, client audio control messages, upload env vars, and §7.11 full implementation API map across auth/session, transport/upload, voice/interrupt, orchestrator, sub-agents, engine, memory/files, tools/MCP, and web client. Diagram reference bumped to v3 (17 pages). |
-| 1.5 | 2026-05-16 | Added "Multimodal inputs — deferred" note in §2 clarifying text-only GGUF start, STT/TTS voice pipeline, and one-flag upgrade path. Added `doc/roadmap.md` (full step-by-step feature/change breakdown) and `implementation_tracker.drawio` (visual build progress). |
-| 1.6 | 2026-05-17 | Step 1 complete (scaffold + WS echo). Python locked to 3.11. Replaced `implementation_tracker.drawio` with `doc/tracker.md`. Dev setup: cloud Postgres/Redis via `.env` (shared with Server 1); Docker optional. |
+| 1.1 | 2026-05-09 | Added §1.1 two-server topology, expanded auth row in §2, added §7.5 Agent vs Sub-agent capability split with directive grammar, added §13 worked example. Diagram reference bumped to v3 (15 pages). |
+| 1.2 | 2026-05-09 | Added §7.6 multi-task coordination, §7.7 STEP → user paths, §7.8 PDF-homework multi-tool chain. Diagram page 15 expanded. |
+| 1.3 | 2026-05-10 | Added §7.9 unified NEEDS_INFO / mid-task amendment / confirmation / suggestion contract and §7.10 tool access, discovery, ToolEntry, ToolResult, confirmation, tool_search rules. Split task ANSWER_TO from user-delivery RESPOND_VIA. Diagram reference bumped to v3 (16 pages). |
+| 1.4 | 2026-05-10 | Added file/image upload contract, client audio control messages, upload env vars, and §7.11 full implementation API map. Diagram reference bumped to v3 (17 pages). |
+| 1.5 | 2026-05-16 | Added "Multimodal inputs — deferred" note in §2. Added `doc/roadmap.md` and `implementation_tracker.drawio`. |
+| 1.6 | 2026-05-17 | Step 1 complete. Python locked to 3.11. Replaced tracker.drawio with `doc/tracker.md`. Dev setup: cloud Postgres/Redis via `.env`. |
+| 1.7 | 2026-05-19 | **Session singleton (§5.0):** one WS per user enforced at connection time; device handover with `session_superseded` + `welcome{resumed:true}` + `task_board_snapshot`; `enforce_session_singleton()` added to API map. **Typed chat → voice by default (Rule 11):** `chat` input defaults to `voice_and_chat` when session is voice-capable; full `respond_via` decision table added as Rule 13 in §7.5; `compute_respond_via()` added to API map. **Echo suppression mandatory (Rule 12):** `begin_tts_with_echo_suppression()` is the only path to `audio_start`; always sends `stop_capture` first; `start_capture` after delay; AEC clients get reduced delay; `SELF_ECHO_SUPPRESSION_DELAY_MS` and `AEC_CLIENT_SUPPRESSION_DELAY_MS` added to env vars. **Text and caption delivery contract (§5.5):** two channels always sent (`caption` sentence-by-sentence, `chat_message` once complete); behavior on TTS failure, interrupt, and rapid typed messages defined; queue depth = 1 pending; `chat_message` event added to §5.3. **Interrupt FSM (§7.5):** complete state machine table added; queue depth, queue replacement, and queue clearing on interrupt all specified. **`welcome` payload** updated with `resumed` and `task_board_snapshot` fields. **§13 worked example** updated: Turn 2 shows typed chat → voice reply with echo suppression; Turn 3 shows interrupt clearing echo suppression immediately; device handover in §13.6 exercises singleton rule. |

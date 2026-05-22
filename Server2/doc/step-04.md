@@ -61,11 +61,13 @@ tests/unit/
 - **client.js** (PLAN §7.11 names):
   - `connect` / `sendJson` / `sendPcmFrame`
   - `startMic` / `stopMic` — AudioWorklet 16 kHz mono PCM (toggle mic)
-  - `reportClientState` — on connect, after playback/capture/visibility changes, and after every `client_control`
-  - `handleServerAudio` / `handleClientControl`
-  - `renderCaption`, chat bubbles, `renderEvent` / `renderTaskBoard`
+- `hello` includes `capabilities.tts: true` (web client has a speaker; server defaults typed chat to voice per Rule 11)
+- `reportClientState` / `handleClientState` — send `client_state` on **every** playback, capture, and visibility change (not only on connect)
+- `handleServerAudio` / `handleClientControl` — honor `stop_capture` and `start_capture` (pause/resume mic during TTS echo suppression; Step 6 wires server-side enforcement)
+- `renderCaption` (sentence-level, TTS-synced) and `renderChatMessage` (full response once per turn — distinct from captions; Step 6 adds server `chat_message` event)
+- `renderEvent` / `renderTaskBoard`
   - `sendChat`, `sendMode`
-- **Not in this step:** `uploadFile` (step 15)
+- **Not in this step:** `uploadFile` (step 16)
 
 ### 5. Tests
 
@@ -85,7 +87,7 @@ Run in order. All must pass unless marked optional.
 5. Connect with token `dev` → `welcome`; server logs initial `client_state` after client hello.
 6. **Voice:** Toggle mic, speak, stop mic → streamed `caption` partials + final; `audio_start` / binary TTS / `audio_end`; `client_state` reflects `recording` then `playing` then `idle`.
 7. **Interrupt:** During TTS, click Interrupt → server sends `client_control` `stop`/`clear_queue` → playback stops → `client_state` confirms → mic works again.
-8. **Typed chat:** Captions only, no TTS.
+8. **Typed chat:** At Step 4 completion, captions only (no TTS). Step 6 backfill adds `voice_and_chat` for typed input when `capabilities.tts=true`.
 9. **Mode:** Toggle meeting stub → `mode` message logged; UI shows meeting label (no meeting logic).
 10. `ping` → `pong`. Invalid token → close `4401`.
 11. Step 3 behaviors preserved (voice loop, interrupt, chat captions).

@@ -1,102 +1,134 @@
-# Step 06 — Tool plane
+# Step 06 — v1.7 contract backfill (session singleton + respond_via + echo suppression)
 
-**Status:** ⬜ pending  
+**Status:** ✅ done  
 **Depends on:** step-05  
 **Estimated effort:** 2 days  
 **Owner:** you  
-**Diagram pages:** 08
+**Diagram pages:** 03, 05, 10
 
 ---
 
 ## Goal
 
-_Add tool registry, runner, tool_search, web_search, and Main direct tool calls._
+Backfill the v1.7 behavioral contracts into the existing Step 1–5 code:
+
+- **Session singleton** (one active WebSocket per user, device handover).
+- **Typed chat speaks by default** (respond_via decision table).
+- **Echo suppression** via `client_control` on every TTS output.
+- **`chat_message`** as the canonical full response text, distinct from sentence-level captions.
+
+This step is a **behavioral alignment pass**. It updates transport, voice, orchestrator, and client behavior to match PLAN.md v1.7 before we add new features in later steps.
 
 ---
 
 ## Files this step creates or changes
 
 ```
-server/tools/
-├── __init__.py                  NEW — registry bootstrap + tool registration
-├── registry.py                  NEW — ToolEntry/ToolResult models + ToolRegistry
-├── runner.py                    NEW — ToolRunner.execute + confirmation handling
-├── tool_search.py               NEW — tool_search() discovery tool
-├── web_search.py                NEW — Tavily primary + DDG fallback
-├── memory_save.py               NEW — tool wrapper for facts.set
-└── memory_recall.py             NEW — tool wrapper for facts.get/chain
+server/transport/
+├── ws.py                        CHANGED — session singleton + handover
+├── protocol.py                  CHANGED — chat_message + hello/welcome fields
+└── client_control.py            CHANGED — start_capture/stop_capture handling
+server/voice/
+├── streaming_tts.py             NEW — PLAN §5.5 interleaved LLM sentence → TTS PCM
+├── sentence_buffer.py           NEW — sentence boundary extraction from token stream
+├── delivery.py                  CHANGED — chat_message; batch TTS fallback
+├── echo_suppression.py          CHANGED — echo suppression wrapper
+├── tts_stream.py                CHANGED — shared sentence regex
+└── turn.py                      CHANGED — streaming TTS on voice turns
+server/transport/
+├── turn_coordinator.py          NEW — queue/defer voice, profile-only directives
 server/orchestrator/
-├── directives.py                CHANGED — parse/validate [DELEGATE ...] for main tools
-└── supervisor.py                CHANGED — execute main tool calls + emit tool events
-server/transport/protocol.py     CHANGED — event kinds: tool_started/tool_done
-web-client/client.js             CHANGED — render tool events in activity feed
-prompts/main.txt                 CHANGED — guidance for tool calls via [DELEGATE]
+└── supervisor.py                CHANGED — respond_via, chat_message, queue policy; align run_turn → handle_turn(TurnInput) per §7.11
+server/voice/turn.py             CHANGED — TTS path goes through echo suppression
+server/config.py                 CHANGED — echo suppression delay settings
+web-client/
+├── index.html                   CHANGED — chat_message rendering + status
+└── client.js                    CHANGED — start/stop capture + chat_message + queue depth
 tests/unit/
-├── test_tools_registry.py       NEW
-├── test_tools_runner.py         NEW
-├── test_tools_search.py         NEW
-├── test_tools_web_search.py     NEW
-├── test_directives_tools.py     NEW
-└── test_supervisor_tools.py     NEW
+├── test_protocol.py             CHANGED — new message types and fields
+├── test_client_control.py       CHANGED — start_capture/stop_capture
+├── test_voice_interrupt.py       CHANGED — respond_via + suppression
+├── test_supervisor.py           CHANGED — chat_message + queue policy
+├── test_sentence_buffer.py      NEW — sentence boundary extraction
+└── test_streaming_tts.py        NEW — interleaved LLM→TTS pipeline
 ```
 
 ---
 
 ## Detailed tasks
 
-### 1. Tool models + registry
+### 1. Protocol updates (PLAN.md §5)
 
-- Implement `ToolEntry`, `ToolResult`, and `ToolCard` (Pydantic models) per PLAN.md §7.10.
-- Add `ToolRegistry` with `register()`, `get()`, `resolve_for_capability()`, and `search()`.
-- Enforce unique tool names, JSON schema presence, and capability gating at registration.
+- **Hello**: add `capabilities.tts` (bool) and keep existing flags.
+- **Welcome**: add `resumed: bool` and optional `task_board_snapshot`.
+- **Server message**: add `chat_message { text, turn_id, final }`.
+- **Event kinds**: add `session_superseded` with `reason`.
+- **Client control**: ensure `start_capture` and `stop_capture` are in the enum.
 
-### 2. Tool runner
+### 2. Session singleton (PLAN.md §5.0)
 
-- Implement `ToolRunner.execute(task_id, tool_call)`:
-	- Validate tool exists and capability is allowed.
-	- Validate args against `args_schema`.
-	- Run with timeout (asyncio), return normalized `ToolResult`.
-	- Emit `tool_started` and `tool_done` events with latency and tool name.
-- Implement confirmation pipeline stubs (`confirmation_required` result shape + id/hash).
+- Keep a single Supervisor per `user_id` (not per session_id).
+- On a new connection for an existing user:
+  - Send `event { kind: "session_superseded", reason: "new_device" }` on the old connection.
+  - Close old WS with code `SESSION_SINGLETON_CLOSE_CODE` (4001).
+  - Attach the new WebSocket to the existing Supervisor via `attach_transport()`.
+  - Send `welcome { resumed: true, session_id, task_board_snapshot }` to the new client.
+- Reconnect with same `session_id` should reattach and send `welcome { resumed: true }`.
 
-### 3. Core tools (main-only for this step)
+### 3. respond_via decision table (PLAN.md §7.5 Rule 13)
 
-- `tool_search(query, capability=None)` returns compact `ToolCard` list.
-- `web_search(query, max_results=5)`:
-	- Tavily primary when `TAVILY_API_KEY` is set.
-	- DuckDuckGo HTML fallback when Tavily is unavailable or key missing.
-	- Normalize results to `{title, url, snippet, source}` list.
-- `memory_save` and `memory_recall` wrappers around `memory.facts` for tool usage.
+- Implement `compute_respond_via(session_state, input_kind)`.
+- Default for typed chat in a voice-capable session is `voice_and_chat`.
+- Block to `chat_only` if session is not voice-capable or client conditions apply.
+- Typed chat **never interrupts** ongoing speech; policy is queue/replace (see below).
+- Main can override the computed value with `[RESPOND_VIA chat|voice|both]`.
 
-### 4. DELEGATE for main tool calls
+### 4. Echo suppression for ALL TTS (PLAN.md Rule 12)
 
-- Extend `directives.py` to parse `[DELEGATE capability=main goal="..." payload={...}]`.
-- Define `payload` shape for main tool calls:
-	- `{ "tool": "web_search"|"tool_search"|"memory_recall"|"memory_save", "args": { ... } }`.
-- In `Supervisor`, when a main tool directive is encountered:
-	- Run the tool via `ToolRunner`.
-	- Inject a compact tool result block into a follow-up completion (same pattern as RECALL).
-	- If capability is not `main`, return `ToolResult.status="not_capable"` and continue.
+- Add `begin_tts_with_echo_suppression(turn_id)`:
+  - Send `client_control { command: "stop_capture", reason: "tts_start" }`.
+  - Emit `audio_start`, stream PCM, emit `audio_end`.
+  - After `SELF_ECHO_SUPPRESSION_DELAY_MS` (or AEC delay), send `client_control { command: "start_capture", reason: "echo_clear" }`.
+- Echo suppression must run for voice, typed chat, and proactive responses.
 
-### 5. Prompt updates
+### 5. Text delivery contract (PLAN.md §5.5)
 
-- Update `prompts/main.txt` with explicit guidance:
-	- Main can call only the cheap tools above.
-	- Use `[DELEGATE capability=main ...]` with the payload schema.
-	- Say one short intent line before calling a tool (per PLAN.md §7.10).
+- **Streaming TTS:** as each LLM sentence completes, emit `caption{partial:false}` → `audio_start` (once) → PCM for that sentence → continue LLM; after last sentence → `audio_end` → `chat_message`.
+- `caption` partial tokens stream during LLM; sentence captions align with TTS per clause.
+- `chat_message` is the full response text sent once per turn, regardless of respond_via.
+- Batch `begin_tts_with_echo_suppression()` remains fallback when `tts_streamed_during_llm=false`.
+- On interrupt or TTS failure:
+  - Send `audio_end { interrupted:true }` or `audio_end { error:true }`.
+  - Send `chat_message { final:false }` with partial text.
+  - Send `client_control { clear_queue }` and `start_capture` immediately.
 
-### 6. Protocol + client activity feed
+### 6. Typed chat queue policy (PLAN.md §5.5)
 
-- Add `tool_started` / `tool_done` to the `event.kind` enum in `protocol.py`.
-- Render these tool events in the web client activity feed with a simple status label.
+- Queue depth is **1 pending** beyond the currently playing speech.
+- If a third typed chat arrives while one is playing and one is queued, replace the queued one.
+- Voice interrupts always clear the queue.
 
-### 7. Tests
+### 7. Web client updates
 
-- Registry: uniqueness, capability resolve, search filtering.
-- Runner: timeout behavior, confirmation_required shape, not_capable handling.
-- Web search: Tavily success, DDG fallback, normalized output shape (httpx mocked).
-- Directives: DELEGATE parsing + invalid capability behavior.
-- Supervisor: main tool call executes, tool result injected, tool events emitted.
+- Render `chat_message` as the canonical chat bubble; keep captions as live streaming UI.
+- Respect `client_control stop_capture` / `start_capture` by pausing and resuming mic capture.
+- Display session handover notice when `event.kind == session_superseded`.
+- Send `capabilities.tts` in `hello` and keep `client_state` updates.
+
+### 8. Streaming TTS (PLAN.md §5.5)
+
+- On each complete LLM sentence during generation: caption (sentence) → synthesize → stream PCM.
+- `audio_start` once on first sentence; `audio_end` after flush; then `chat_message`.
+- Voice and typed-chat turns both use `StreamingTtsPipeline` when `respond_via` includes voice.
+
+### 9. Tests
+
+- Protocol round-trips include `chat_message`, `start_capture`, `stop_capture`, and welcome fields.
+- Session singleton: second connection closes the first with `session_superseded` and code 4001.
+- `compute_respond_via` follows the Rule 13 decision table.
+- Echo suppression: `stop_capture` precedes audio and `start_capture` is scheduled after.
+- `chat_message` always sent; partial on interrupt is `final:false`.
+- `test_sentence_buffer` and `test_streaming_tts` cover boundary drain and pipeline ordering.
 
 ---
 
@@ -106,32 +138,32 @@ Run in order. All must pass unless marked optional.
 
 1. `python -m pytest tests/unit -q` — green.
 2. `ruff check server/ tests/` — all checks passed.
-3. Unit: `ToolRegistry.resolve_for_capability("main")` returns only main tools.
-4. Unit: `web_search` uses Tavily when key is set; falls back to DDG when not.
-5. Unit: DELEGATE main tool call triggers `tool_started`/`tool_done` events.
-6. Web client still loads and shows tool events in the activity feed.
-7. Optional live: run server, ask "search for latest AI news"; see a short tool event and a response.
+3. Web client loads and connects; `welcome { resumed:false }` on first connect.
+4. **Typed chat** triggers voice when `capabilities.tts=true` (audio_start + TTS + chat_message).
+5. **Echo suppression**: each TTS output sends `stop_capture` before `audio_start`, then `start_capture` after delay.
+6. **Session singleton**: a second connect for the same user sends `session_superseded` to the old WS and closes it with code 4001; new client gets `welcome { resumed:true }`.
+7. **chat_message** is always sent; on interrupt it is partial with `final:false`.
+8. **Chat-only**: if `capabilities.tts=false`, typed chat emits captions + chat_message only (no audio).
+9. **Streaming TTS latency:** on a multi-sentence reply, first `audio_start` + PCM arrives after the **first sentence** completes (not after the full LLM reply).
 
 ---
 
 ## Out of scope
 
-- Sub-agents, signal bus, task board, notifier (Step 7+).
-- MCP adapter and capability bundles (Steps 8 and 16).
-- LanceDB retrieval and summarizer (Steps 10–11).
-- File uploads / attachments (Step 15).
+- Tool plane and sub-agents (Step 07+).
+- Proactive notifier and summarizer.
+- File uploads and attachments.
 
 ---
 
-## Risks and how we'll catch them
+## Risks and how we catch them
 
-- Tavily/ترنت fallback flakiness — mock httpx in unit tests; enforce timeouts.
-- Prompt ambiguity for tool calls — explicit directive schema in `prompts/main.txt` and unit tests for DELEGATE parsing.
-- Tool result injection loops — guard against recursive DELEGATE in the follow-up completion.
+- Echo suppression breaks mic capture → unit tests plus manual mic toggle check.
+- Session handover loses state → ensure `task_board_snapshot` is included on welcome.
+- Chat-only clients receive audio → explicit `capabilities.tts` gating in `compute_respond_via`.
 
 ---
 
 ## Notes for the next step
 
-- Step 7 adds sub-agent worker + signal bus; tool runner should be reusable without changes.
-- Step 8 will expose `web_search`/`memory_recall` to sub-agent capabilities.
+Step 07 adds the tool plane (registry, runner, web_search).

@@ -3,7 +3,39 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-05-17 — Step 5 complete
+> **Last updated:** 2026-05-21 — Step 7 complete (Phase 1 done)
+
+---
+
+## PLAN.md v1.7 contracts (backfill status)
+
+| Contract | API / behavior | Owned by step | Code status |
+|---|---|---|---|
+| Session singleton | `enforce_session_singleton(user_id, new_ws)` | Step 1 → Step 6 | ✅ |
+| Echo suppression | `begin_tts_with_echo_suppression(turn_id)` | Step 3 → Step 6 | ✅ |
+| respond_via table | `compute_respond_via(session_state, input_kind)` | Step 6 | ✅ |
+| `chat_message` vs `caption` | §5.5 two-channel delivery | Step 6 | ✅ |
+| Streaming TTS | `StreamingTtsPipeline` — sentence → PCM during LLM | Step 6 | ✅ |
+| `hello.capabilities.tts` | client declares speaker | Step 4 + Step 6 | ✅ |
+| Proactive respond_via | `build_synthetic_turn` + `input_kind='proactive'` | Step 10 | ⬜ not started |
+
+**Current build step:** Step 8 (sub-agent worker + signal bus).
+
+### Step index (quick reference)
+
+| Step | Name | Status | Detail doc |
+|------|------|--------|------------|
+| 1 | Scaffold + WS echo | ✅ | [step-01.md](step-01.md) |
+| 2 | Engine plane | ✅ | [step-02.md](step-02.md) |
+| 3 | Voice (STT/TTS/interrupt) | ✅ | [step-03.md](step-03.md) |
+| 4 | Web client v1 | ✅ | [step-04.md](step-04.md) |
+| 5 | Memory v1 | ✅ | [step-05.md](step-05.md) |
+| 6 | v1.7 backfill | ✅ | [step-06.md](step-06.md) |
+| 7 | Tool plane | ✅ | [step-07.md](step-07.md) |
+| 8 | Sub-agent worker | ⬜ | [step-08.md](step-08.md) |
+| 9 | Capability bundles | ⬜ | [step-09.md](step-09.md) |
+| 10 | Proactive notifier | ⬜ | [step-10.md](step-10.md) |
+| 11–21 | Retrieval, summarizer, modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
 
 ---
 
@@ -11,24 +43,98 @@
 
 ```
 PHASE 1 — SPINE                                            PHASE 2 — MULTI-AGENT
-┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┬─────────┐
-│ Step 1  │ Step 2  │ Step 3  │ Step 4  │ Step 5  │ Step 6  │  │ Step 7  │ Step 8  │ Step 9  │ Step 10 │ Step 11 │
-│Scaffold │ Engine  │ Voice   │ Client  │ Memory  │ Tools   │  │SubAgent │Capabil. │Notifier │Retrieval│Summariz.│
-│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ⬜     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
-└─────────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘
-               │         │         │         │         │            │         │         │         │         │
-               ▼         ▼         ▼         ▼         ▼            ▼         ▼         ▼         ▼         ▼
+┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┬─────────┐
+│ Step 1  │ Step 2  │ Step 3  │ Step 4  │ Step 5  │ Step 6  │ Step 7  │  │ Step 8  │ Step 9  │ Step 10 │ Step 11 │ Step 12 │
+│Scaffold │ Engine  │ Voice   │ Client  │ Memory  │Backfill │ Tools   │  │SubAgent │Capabil. │Notifier │Retrieval│Summariz.│
+│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
+└─────────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘
+               │         │         │         │         │         │            │         │         │         │         │
+               ▼         ▼         ▼         ▼         ▼         ▼            ▼         ▼         ▼         ▼         ▼
 
 PHASE 3 — MODES & POLISH                         PHASE 4 — CLIENTS & DEPLOY
 ┌─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┐
-│ Step 12 │ Step 13 │ Step 14 │ Step 15 │ Step 16 │  │ Step 17 │ Step 18 │ Step 19 │ Step 20 │
+│ Step 13 │ Step 14 │ Step 15 │ Step 16 │ Step 17 │  │ Step 18 │ Step 19 │ Step 20 │ Step 21 │
 │Meeting  │Local STT│WakeEcho │Uploads  │  MCP    │  │ Mobile  │ ESP32   │Hardening│Observ.  │
 │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
 └─────────┴─────────┴─────────┴─────────┴─────────┘  └─────────┴─────────┴─────────┴─────────┘
 
 Legend: ✅ done   🔄 in progress   ⬜ not started   ❌ blocked
 
-Completed: 5 / 20    Phase 1: 5/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/4
+Completed: 7 / 21    Phase 1: 7/7    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/4
+```
+
+---
+
+## Completed steps (detail sections)
+
+Sections below describe what each finished step added. **Steps 1–7 are complete**; Step 8 is next.
+
+---
+
+## What Step 7 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         TOOL PLANE (Step 7)                                     │
+│                                                                                 │
+│  server/tools/                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ registry.py — ToolEntry, ToolResult, ToolRegistry, validate_tool_args      │  │
+│  │ runner.py — ToolRunner.execute (gate, timeout, events, confirmation)       │  │
+│  │ tool_search.py / web_search.py / memory_save.py / memory_recall.py         │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  server/orchestrator/tool_dispatch.py — parallel DELEGATE runs, not_capable stub │
+│  directives.py — [DELEGATE capability=main goal="..." payload={...}]           │
+│  supervisor.py — tool results → follow-up completion (same pattern as RECALL)  │
+│  ws.py — tool_started / tool_done events on activity feed                        │
+│  app.py — init_tools() at boot; Tavily when TAVILY_API_KEY set                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Main tool turn flow (Step 7)
+
+```
+User message
+     │
+     ▼
+Supervisor.run_turn (pass 1)
+     │
+     ├── Main streams text + optional [DELEGATE ...] blocks
+     │
+     ▼
+tool_dispatch.run_delegate_directives (asyncio.gather for multiple tools)
+     │
+     ├── event tool_started → client activity feed
+     ├── ToolRunner.execute → Tavily or DDG / memory / tool_search
+     └── event tool_done
+     │
+     ▼
+Supervisor.run_turn (pass 2) with [TOOL_RESULT ...] injected
+     │
+     ▼
+caption + chat_message (+ voice per respond_via)
+```
+
+---
+
+## What Step 6 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    v1.7 CONTRACT BACKFILL (Step 6)                              │
+│                                                                                 │
+│  session_registry.py — user_id → UserSession (Supervisor + interrupt + CC)   │
+│  enforce_session_singleton() — supersede old WS (4001), welcome{resumed:true}  │
+│                                                                                 │
+│  respond_via.py — compute_respond_via() per Rule 13                            │
+│  echo_suppression.py — begin_tts_with_echo_suppression() per Rule 12           │
+│  delivery.py — caption + chat_message; batch TTS fallback                      │
+│  streaming_tts.py + sentence_buffer.py — LLM sentence → TTS PCM (§5.5)         │
+│                                                                                 │
+│  ws.py — hello-first handshake; chat/voice share delivery + on_token pipeline  │
+│  client.js — chat_message bubbles, tts:true, stop/start_capture                │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -45,12 +151,12 @@ Completed: 5 / 20    Phase 1: 5/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/
 │  │ warm.py — build_warm_profile, mark_dirty, Redis warm_cache TTL           │  │
 │  │ session.py — load_or_create_session, append_turn, recent_turns           │  │
 │  │ embeddings.py — bge-small-en-v1.5 (sentence-transformers)                │  │
-│  │ retrieval.py — stub (step 10)                                            │  │
+│  │ retrieval.py — stub (step 11)                                            │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                 │
 │  server/orchestrator/                                                           │
 │  ┌───────────────────────────────────────────────────────────────────────────┐  │
-│  │ supervisor.py — run_turn: warm + history → Main → directives             │  │
+│  │ supervisor.py — handle_turn / run_turn + warm + history → Main         │  │
 │  │ directives.py — [REMEMBER] / [RECALL] / [RECALL chain]                   │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                 │
@@ -83,6 +189,30 @@ Completed: 5 / 20    Phase 1: 5/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/
         │
         ├── [RECALL] → follow-up completion with [RECALL_RESULT …]
         └── strip_directives → final caption + TTS (voice)
+```
+
+*(Step 6 extended this path with `respond_via`, `chat_message`, echo suppression, and session singleton — see above.)*
+
+---
+
+## What Step 3 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         VOICE PLANE (STT + TTS + INTERRUPT)                   │
+│                                                                                 │
+│  server/voice/                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ stt/groq.py — Groq Whisper (utterance → transcript)                     │  │
+│  │ tts/kokoro.py — sentence-streamed PCM @ 16 kHz                            │  │
+│  │ vad/silero.py — server-side VAD surface                                   │  │
+│  │ interrupt.py — InterruptController FSM                                    │  │
+│  │ turn.py — audio_end → STT → supervisor → captions + TTS                 │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  Mic PCM → STT → Main (P0) → caption stream + server audio_start/end + PCM    │
+│  Interrupt cancels Main decode + TTS only (background work untouched)          │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -176,65 +306,37 @@ Completed: 5 / 20    Phase 1: 5/6    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/
 
 ---
 
-## Architecture Flow: How a WebSocket Session Works (Step 1)
+## Architecture Flow: WebSocket session (current — through Step 6)
 
 ```
- ┌──────────────┐                          ┌──────────────────────────────────────┐
- │  Web Client  │                          │           Server 2                   │
- │  (browser)   │                          │                                      │
- └──────┬───────┘                          └──────────────────┬───────────────────┘
-        │                                                     │
-        │  1. WS connect: /ws/v1/session?token=dev            │
-        │────────────────────────────────────────────────────▶│
-        │                                                     │
-        │                            ┌────────────────────────┤
-        │                            │  auth.py               │
-        │                            │  verify_token("dev")   │
-        │                            │  → TokenPayload        │
-        │                            │    user_id: dev_user   │
-        │                            │    session_id: dev_ses  │
-        │                            └────────────────────────┤
-        │                                                     │
-        │  2. welcome { session_id, server_version }          │
-        │◀────────────────────────────────────────────────────│
-        │                                                     │
-        │  3. hello { client:"web", capabilities:{...} }      │
-        │────────────────────────────────────────────────────▶│
-        │                                                     │
-        │  4. echo { kind:"hello", payload:{...} }            │
-        │◀────────────────────────────────────────────────────│
-        │                                                     │
-        │  5. chat { text: "hello" }                          │
-        │────────────────────────────────────────────────────▶│
-        │                                                     │
-        │  6. echo { kind:"chat", payload: {text:"hello"} }   │
-        │◀────────────────────────────────────────────────────│
-        │                                                     │
-        │  7. audio_start { sample_rate:16000 }               │
-        │────────────────────────────────────────────────────▶│
-        │                                                     │
-        │  8. [binary PCM frames]                             │
-        │════════════════════════════════════════════════════▶│
-        │                                                     │
-        │  9. [binary PCM frames echoed back]                 │
-        │◀════════════════════════════════════════════════════│
-        │                                                     │
-        │  10. audio_end {}                                   │
-        │────────────────────────────────────────────────────▶│
-        │                                                     │
-        │  11. echo { kind:"audio_end" }                      │
-        │◀────────────────────────────────────────────────────│
-        │                                                     │
-        │  12. ping { t: 1234567890 }                         │
-        │────────────────────────────────────────────────────▶│
-        │                                                     │
-        │  13. pong { t: 1234567890 }                         │
-        │◀────────────────────────────────────────────────────│
-        │                                                     │
+ Client                                              Server 2
+   │                                                      │
+   │  WS connect ?token=jwt                               │
+   │─────────────────────────────────────────────────────▶│ verify_token → accept
+   │                                                      │
+   │  hello { client, capabilities:{tts,aec,...}, session_id? }
+   │─────────────────────────────────────────────────────▶│ enforce_session_singleton(user_id)
+   │                                                      │  (supersede old WS → 4001 if needed)
+   │  welcome { session_id, resumed, task_board_snapshot? }
+   │◀─────────────────────────────────────────────────────│
+   │                                                      │
+   │  client_state { playback, capture, visible, route }  │  (on every UI/audio change)
+   │─────────────────────────────────────────────────────▶│
+   │                                                      │
+   │  chat { text }  OR  audio_start → PCM → audio_end    │
+   │─────────────────────────────────────────────────────▶│ compute_respond_via → handle_turn
+   │                                                      │
+   │◀ caption (streaming) + chat_message (final)          │
+   │◀ client_control stop_capture → audio_start → PCM     │  (if voice_and_chat)
+   │◀ audio_end → client_control start_capture (delay)    │
+   │                                                      │
+   │  interrupt { source }                                │
+   │─────────────────────────────────────────────────────▶│ cancel TTS/Main; chat_message partial
 
-─── = JSON text frame
-═══ = binary PCM frame
+─── JSON    ═══ binary PCM
 ```
+
+*(Step 1 used echo + welcome-before-hello; that path was replaced in Steps 2–6.)*
 
 ---
 
@@ -326,8 +428,8 @@ This is the target. Grey sections are not built yet.
                                            │ WebSocket
                                            ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ TRANSPORT PLANE  (server/transport/)                                    ✅ step 1    │
-│  ws.py ─── auth handshake ─── inbound/outbound loops ─── protocol.py                │
+│ TRANSPORT PLANE  (server/transport/)                         ✅ steps 1, 4, 6       │
+│  ws.py, session_registry.py, client_control.py, protocol.py (chat_message, etc.)  │
 └──────────────────────────────────────────┬───────────────────────────────────────────┘
                                            │
               ┌────────────────────────────┼────────────────────────────┐
@@ -341,8 +443,11 @@ This is the target. Grey sections are not built yet.
 │ ✅ TTS (Kokoro)        │  │ ✅ directives.py         │  │    llama-server      │
 │ ✅ VAD (Silero)        │  │ ░░ signal_bus.py         │  │ ✅ pool.py           │
 │ ✅ interrupt.py        │  │ ░░ notifier.py           │  │    4 slots, P0/P1/P2 │
-│ ✅ turn → supervisor   │  │ ░░ task_board.py         │  │ ✅ prompt.py + warm  │
-│ step 3 ✅, polish s4   │  │ steps 7-9                │  │ ✅ step 2            │
+│ ✅ respond_via.py      │  │ ░░ task_board.py         │  │ ✅ prompt.py + warm  │
+│ ✅ echo_suppression.py │  │ steps 7–10               │  │ ✅ step 2            │
+│ ✅ delivery.py         │  │                          │  │                      │
+│ ✅ turn → supervisor   │  │                          │  │                      │
+│ steps 3, 6             │  │                          │  │                      │
 └─────────────────────────┘  └────────────┬─────────────┘  └──────────────────────┘
                                           │
                     ┌─────────────────────┼──────────────────────┐
@@ -356,9 +461,10 @@ This is the target. Grey sections are not built yet.
 │ ░░ report.py             │  │ ░░ runner.py           │  │ ✅ warm.py (profile)   │
 │ ░░ capabilities/         │  │ ░░ web_search.py       │  │ ░░ retrieval.py (stub) │
 │    research/             │  │ ░░ mcp_adapter.py      │  │ ✅ session.py          │
-│    productivity/         │  │ ░░ tool_search.py      │  │ ░░ summarizer.py       │
+│    productivity/         │  │ ✅ registry/runner     │  │ ░░ summarizer.py       │
+│ ✅ web_search (Tavily) │  │                        │
 │    comms/                │  │                        │  │ ✅ embeddings.py       │
-│ steps 7-8               │  │ step 6                 │  │ step 5 ✅, 10-11       │
+│ steps 8-9               │  │ step 7                 │  │ step 5 ✅, 11-12       │
 └──────────────────────────┘  └────────────────────────┘  └────────────────────────┘
                                                                     │
                                                                     ▼
@@ -385,7 +491,7 @@ Legend: ✅ = built    ░░ = not yet built
 
 ---
 
-## Audio Flow: Voice Turn (target — steps 2-4)
+## Audio Flow: Voice + typed chat turn (current — Steps 3–6)
 
 ```
 User speaks into mic
@@ -417,25 +523,24 @@ User speaks into mic
   └─────────────┬───────────────────────────┬────────────────────┘
                 │                           │
                 ▼                           ▼
+  compute_respond_via → voice_and_chat | chat_only
+           │
+           ▼
   ┌──────────────────┐          ┌────────────────────────────┐
-  │ TTS (Kokoro)     │          │ directives.py              │
-  │ text → PCM       │          │ [DELEGATE] → spawn sub     │
-  │ sentence-stream  │          │ [REMEMBER] → write fact    │
-  └────────┬─────────┘          │ [RECALL]   → read fact     │
-           │                    │ [STOP_TASK]→ cancel sub    │
-           ▼                    └────────────────────────────┘
-  ┌──────────────────┐
-  │ WS binary out    │
-  │ PCM → browser    │
-  │ → speaker        │
-  └──────────────────┘
+  │ begin_tts_with_  │          │ directives.py              │
+  │ echo_suppression │          │ [REMEMBER]/[RECALL]/         │
+  │ stop_capture →   │          │ [RESPOND_VIA] override       │
+  │ TTS → start_cap  │          └────────────────────────────┘
+  └────────┬─────────┘
+           ▼
+  caption (stream) + chat_message (final) + optional PCM
 
-  Total target latency: ~1.0s to first audio frame
+  Target: ~1.0s to first audio frame
 ```
 
 ---
 
-## Sub-Agent Flow (target — steps 7-9)
+## Sub-Agent Flow (target — steps 8-10)
 
 ```
 Main emits: [DELEGATE capability=research goal="..." payload={...}]
@@ -494,16 +599,20 @@ Server2/
 │   ├── step-03.md              ✅ voice plane
 │   ├── step-04.md              ✅ web client v1
 │   ├── step-05.md              ✅ memory v1
-│   ├── step-06.md              ⬜ pending
+│   ├── step-06.md              ✅ v1.7 backfill
+│   ├── step-07.md              ✅ tool plane
+│   ├── step-08.md              ⬜ pending (sub-agent worker)
+│   ├── step-09.md              ⬜ pending (capability bundles)
+│   ├── step-10.md              ⬜ pending (proactive notifier)
 │   ├── tracker.md              ✅ this file — progress + architecture flows
-│   ├── roadmap.md              ✅ full 20-step overview
+│   ├── roadmap.md              ✅ full 21-step overview
 │   └── history.md              ✅ change log
 ├── prompts/
-│   └── main.txt                ✅ Main Agent system prompt
+│   └── main.txt                ✅ Main prompt + DELEGATE tool guidance
 ├── server/
 │   ├── __init__.py             ✅
-│   ├── app.py                  ✅ FastAPI + lifespan + engine + voice boot
-│   ├── config.py               ✅ Settings + engine + voice defaults
+│   ├── app.py                  ✅ FastAPI + lifespan + engine + voice + tools boot
+│   ├── config.py               ✅ Settings + tavily_api_key + voice defaults
 │   ├── logger.py               ✅ structlog setup
 │   ├── auth.py                 ✅ verify_token (dev bypass + RS256 prod)
 │   ├── db/
@@ -523,40 +632,61 @@ Server2/
 │   │   ├── facts.py            ✅ versioned fact CRUD + LanceDB upsert
 │   │   ├── warm.py             ✅ warm profile + dirty flag + Redis cache
 │   │   ├── session.py          ✅ session + turn history
-│   │   └── retrieval.py        ✅ stub (step 10)
+│   │   └── retrieval.py        ✅ stub (step 11)
 │   ├── orchestrator/
 │   │   ├── __init__.py         ✅
-│   │   ├── directives.py       ✅ REMEMBER / RECALL parsing
-│   │   └── supervisor.py       ✅ context assembly + turn lifecycle
+│   │   ├── directives.py       ✅ REMEMBER / RECALL / DELEGATE / RESPOND_VIA
+│   │   ├── tool_dispatch.py    ✅ parallel main DELEGATE execution
+│   │   └── supervisor.py       ✅ handle_turn + tools follow-up pass
+│   ├── tools/
+│   │   ├── __init__.py         ✅ registry bootstrap
+│   │   ├── registry.py         ✅ ToolEntry / ToolResult / ToolRegistry
+│   │   ├── runner.py           ✅ ToolRunner + confirmation stubs
+│   │   ├── tool_search.py      ✅ discovery
+│   │   ├── web_search.py       ✅ Tavily + DDG fallback
+│   │   ├── memory_save.py      ✅ fact write tool
+│   │   └── memory_recall.py    ✅ fact read tool
 │   ├── voice/
 │   │   ├── stt/groq.py         ✅ Groq Whisper STT
-│   │   ├── tts/kokoro.py       ✅ Kokoro streaming TTS
-│   │   ├── vad/silero.py       ✅ Silero VAD
+│   │   ├── tts/kokoro.py         ✅ Kokoro streaming TTS
+│   │   ├── vad/silero.py         ✅ Silero VAD
 │   │   ├── interrupt.py        ✅ interrupt FSM
-│   │   ├── turn.py             ✅ voice turn pipeline
+│   │   ├── respond_via.py      ✅ Rule 13 decision table
+│   │   ├── echo_suppression.py ✅ Rule 12 TTS path
+│   │   ├── delivery.py         ✅ caption + chat_message + TTS
+│   │   ├── streaming_tts.py    ✅ PLAN §5.5 interleaved LLM→TTS
+│   │   ├── sentence_buffer.py  ✅ sentence boundaries from tokens
+│   │   ├── tts_stream.py       ✅ batch sentence PCM (fallback)
+│   │   ├── turn.py             ✅ voice turn → delivery
 │   │   └── boot.py             ✅ voice plane init
 │   └── transport/
 │       ├── __init__.py         ✅
-│       ├── ws.py               ✅ voice + chat + client_state/mode
-│       ├── protocol.py         ✅ client_state, client_control, event
-│       └── client_control.py   ✅ server→client playback/capture commands
+│       ├── ws.py               ✅ hello-first, chat/voice, singleton
+│       ├── session_registry.py ✅ enforce_session_singleton
+│       ├── chat_queue.py       ✅ typed chat queue depth 1
+│       ├── protocol.py         ✅ chat_message, welcome.resumed, events
+│       └── client_control.py   ✅ stop/start_capture + playback
 ├── web-client/
 │   ├── index.html              ✅ conversation UI
 │   ├── style.css               ✅ styles
-│   └── client.js               ✅ mic toggle, client_state/control
+│   └── client.js               ✅ mic, chat_message, tool activity pills
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
-    └── unit/
-        ├── test_db_redis.py    ✅ Redis URL log masking
-        ├── test_engine_pool.py ✅ engine queue + streaming
-        ├── test_engine_prompt.py ✅ Main prompt assembly
-        ├── test_engine_runner.py ✅ llama command + health
-        ├── test_protocol.py    ✅ protocol round-trips
-        ├── test_client_control.py ✅ client control session + send
-        ├── test_voice_*.py     ✅ voice plane unit tests
-        ├── test_memory_facts.py ✅ fact versioning + chains
-        ├── test_memory_warm.py ✅ warm profile build + dirty
-        ├── test_directives.py  ✅ REMEMBER/RECALL parse + execute
-        └── test_supervisor.py  ✅ turn lifecycle + RECALL follow-up
+    └── unit/                   ✅ 108 tests (through Step 7)
+        ├── test_protocol.py
+        ├── test_respond_via.py
+        ├── test_session_singleton.py
+        ├── test_client_control.py
+        ├── test_voice_*.py
+        ├── test_memory_*.py
+        ├── test_directives.py
+        ├── test_directives_tools.py
+        ├── test_supervisor.py
+        ├── test_supervisor_tools.py
+        ├── test_tools_*.py
+        ├── test_tool_dispatch.py
+        ├── test_sentence_buffer.py
+        ├── test_streaming_tts.py
+        └── test_engine_*.py
 ```

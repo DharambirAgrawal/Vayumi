@@ -5,6 +5,7 @@ import pytest
 from server.orchestrator.directives import (
     RecallDirective,
     RememberDirective,
+    filter_profile_directives,
     format_recall_results,
     parse_directives,
     strip_directives,
@@ -32,6 +33,16 @@ def test_parse_recall_and_chain_directives() -> None:
 def test_strip_directives_removes_blocks() -> None:
     raw = 'Sure. [REMEMBER key=name value="Alex" source="user_intent"] Done.'
     assert strip_directives(raw) == "Sure.  Done."
+
+
+def test_filter_profile_directives_drops_invented_keys() -> None:
+    parsed = parse_directives(
+        "[RECALL chain key=story_topic]\n"
+        '[REMEMBER key=preferences.voice value="soft" source="user_intent"]'
+    )
+    filtered = filter_profile_directives(parsed)
+    assert len(filtered) == 1
+    assert filtered[0].key == "preferences.voice"
 
 
 def test_format_recall_results() -> None:

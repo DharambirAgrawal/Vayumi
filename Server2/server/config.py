@@ -31,11 +31,18 @@ class Settings(BaseSettings):
     # ── Voice (code defaults; env only overrides) ─────────
     stt_backend: str = "groq"
     groq_api_key: str | None = None
-    kokoro_model_dir: str = "./models/kokoro"
+    kokoro_model_dir: str = "./models/tts"
     kokoro_voice: str = "af_heart"
+    self_echo_suppression_delay_ms: int = 1200
+    aec_client_suppression_delay_ms: int = 300
+    session_singleton_close_code: int = 4001
+    session_linger_seconds: int = 60
 
     # ── Embeddings (optional path for future ONNX export) ──
     bge_model_path: str = "./models/bge-small-en-v1.5.onnx"
+
+    # ── Tools (optional; web_search falls back to DuckDuckGo without key) ──
+    tavily_api_key: str | None = None
 
     @field_validator("app_env")
     @classmethod

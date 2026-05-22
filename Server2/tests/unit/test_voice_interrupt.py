@@ -20,13 +20,13 @@ async def test_interrupt_button_returns_idle() -> None:
 
 
 @pytest.mark.asyncio
-async def test_interrupt_wake_returns_listening_and_drops_utterance() -> None:
+async def test_interrupt_wake_returns_idle_and_drops_utterance() -> None:
     ctrl = InterruptController()
     ctrl.begin_speaking()
 
     await ctrl.handle_interrupt("wake")
 
-    assert ctrl.state == SpeechState.LISTENING
+    assert ctrl.state == SpeechState.IDLE
     assert ctrl.should_drop_utterance() is True
 
 

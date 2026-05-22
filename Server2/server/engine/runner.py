@@ -61,7 +61,7 @@ def build_llama_command(config: LlamaServerConfig) -> list[str]:
         "--ctx-size",
         str(config.ctx_size),
         "--slot-prompt-similarity",
-        "0.5",
+        "0.0",
     ]
 
 

@@ -86,14 +86,30 @@
     ws.send(arrayBuffer);
   }
 
+  let clientStateTimer = null;
+  let lastReportedState = "";
+
   function reportClientState() {
-    sendJson("client_state", {
+    const snapshot = JSON.stringify({
       playback: clientState.playback,
       capture: clientState.capture,
       visible: document.visibilityState === "visible",
       route: clientState.route,
     });
-    updateAudioStatusUi();
+    if (snapshot === lastReportedState) {
+      updateAudioStatusUi();
+      return;
+    }
+    if (clientStateTimer) {
+      clearTimeout(clientStateTimer);
+    }
+    clientStateTimer = setTimeout(function () {
+      clientStateTimer = null;
+      lastReportedState = snapshot;
+      const parsed = JSON.parse(snapshot);
+      sendJson("client_state", parsed);
+      updateAudioStatusUi();
+    }, 100);
   }
 
   function setPlayback(state) {
@@ -125,10 +141,15 @@
     ws.onopen = function () {
       setConnStatus("connected");
       debugLine("WebSocket open");
-      sendJson("hello", {
+      const helloPayload = {
         client: "web",
-        capabilities: { aec: true, vad: false, wake: false },
-      });
+        capabilities: { aec: true, vad: false, wake: false, tts: true },
+      };
+      if (token === "dev") {
+        helloPayload.session_id =
+          "dev-" + (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+      }
+      sendJson("hello", helloPayload);
       reportClientState();
     };
 
@@ -181,21 +202,48 @@
     }
 
     switch (msg.type) {
+      case "welcome":
+        debugLine(
+          "Session " +
+            msg.payload.session_id +
+            (msg.payload.resumed ? " (resumed)" : " (new)"),
+          "info"
+        );
+        break;
       case "caption":
         renderCaption(msg.payload.text, msg.payload.partial);
         break;
+      case "user_message":
+        appendChatBubble("user", msg.payload.text);
+        break;
+      case "chat_message":
+        renderChatMessage(msg.payload);
+        break;
       case "audio_start":
         pendingAudioRate = msg.payload.sample_rate || 16000;
-        handleClientControl({ command: "clear_queue", reason: "audio_start" });
-        setPlayback("playing");
+        if (msg.payload.turn_id) {
+          stopPlayback();
+          if (playbackCtx && playbackCtx.state === "suspended") {
+            playbackCtx.resume();
+          }
+          setPlayback("playing");
+        }
         break;
       case "audio_end":
+        if (msg.payload && msg.payload.error) {
+          debugLine("TTS failed for turn " + msg.payload.turn_id, "error");
+          stopPlayback();
+        }
         schedulePlaybackIdle();
         break;
       case "client_control":
         handleClientControl(msg.payload);
         break;
       case "event":
+        if (msg.payload.kind === "session_superseded") {
+          debugLine("Session superseded — another device connected", "error");
+          setConnStatus("closed");
+        }
         renderEvent(msg.payload);
         break;
       case "error":
@@ -217,15 +265,28 @@
     setTimeout(check, 50);
   }
 
+  function renderChatMessage(payload) {
+    if (!payload || !payload.text) return;
+    appendChatBubble("assistant", payload.text, payload.final !== false);
+    if (payload.final !== false) {
+      captionBuffer = "";
+      captionText.textContent = "Waiting for assistant…";
+      captionText.classList.add("empty");
+    }
+  }
+
   function renderCaption(text, partial) {
     if (partial) {
       captionBuffer += text;
-    } else {
-      captionBuffer = text;
-      if (text.trim()) {
-        appendChatBubble("assistant", text);
+    } else if (text.trim()) {
+      const prev = captionBuffer.trim();
+      if (!prev) {
+        captionBuffer = text;
+      } else if (prev === text.trim() || prev.endsWith(text.trim())) {
+        captionBuffer = prev;
+      } else if (!prev.includes(text.trim())) {
+        captionBuffer = prev + " " + text.trim();
       }
-      captionBuffer = "";
     }
     if (captionBuffer.trim()) {
       captionText.textContent = captionBuffer;
@@ -239,7 +300,15 @@
     }
   }
 
-  function appendChatBubble(role, text) {
+  function appendChatBubble(role, text, isFinal) {
+    if (role === "assistant" && isFinal === false) {
+      const bubbles = chatThread.querySelectorAll(".bubble.assistant");
+      const last = bubbles[bubbles.length - 1];
+      if (last) {
+        last.querySelector("p").textContent = text;
+        return;
+      }
+    }
     const bubble = document.createElement("div");
     bubble.className = "bubble " + role;
     const meta = document.createElement("div");
@@ -251,6 +320,12 @@
     bubble.appendChild(body);
     chatThread.appendChild(bubble);
     chatThread.scrollTop = chatThread.scrollHeight;
+  }
+
+  function toolEventLabel(kind, summary) {
+    if (kind === "tool_started") return "Tool · " + (summary || "started");
+    if (kind === "tool_done") return "Done · " + (summary || "finished");
+    return (kind || "event") + " · " + (summary || "");
   }
 
   function renderEvent(event) {
@@ -270,11 +345,15 @@
     events.slice(-30).forEach(function (ev) {
       const pill = document.createElement("div");
       pill.className = "event-pill";
+      if (ev.kind === "tool_started" || ev.kind === "tool_done") {
+        pill.classList.add(ev.kind === "tool_started" ? "tool-start" : "tool-done");
+      }
+      const label = toolEventLabel(ev.kind, ev.summary);
       pill.innerHTML =
         '<span class="kind">' +
         ev.kind +
         "</span> · " +
-        (ev.summary || "").replace(/</g, "&lt;");
+        label.replace(/</g, "&lt;");
       activityFeed.appendChild(pill);
     });
     activityFeed.scrollTop = activityFeed.scrollHeight;
@@ -366,10 +445,19 @@
         applyDuck();
         break;
       case "start_capture":
-        if (!micRecording) startMic();
+        if (micRecording) break;
+        if (reason === "interrupted") {
+          debugLine("start_capture skipped (interrupt)", "info");
+          break;
+        }
+        if (clientState.playback === "playing") {
+          debugLine("start_capture skipped (playback active)", "info");
+          break;
+        }
+        startMic();
         break;
       case "stop_capture":
-        if (micRecording) stopMic();
+        if (micRecording) stopMic({ sendAudioEnd: false });
         break;
       default:
         debugLine("Unknown client_control: " + cmd, "error");
@@ -449,8 +537,9 @@
     URL.revokeObjectURL(workletUrl);
   }
 
-  async function stopMic() {
+  async function stopMic(opts) {
     if (!micRecording) return;
+    const sendAudioEnd = !opts || opts.sendAudioEnd !== false;
 
     if (micWorkletNode) {
       micWorkletNode.port.onmessage = null;
@@ -468,7 +557,11 @@
       micAudioCtx = null;
     }
 
-    sendJson("audio_end", {});
+    if (sendAudioEnd) {
+      sendJson("audio_end", {});
+    } else {
+      sendJson("audio_end", { discard: true });
+    }
     micRecording = false;
     btnMic.textContent = "Mic";
     btnMic.classList.remove("mic-active");

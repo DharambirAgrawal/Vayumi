@@ -27,6 +27,7 @@ class CompletionRequest:
     max_tokens: int = 512
     temperature: float = 0.7
     stop: tuple[str, ...] = ()
+    cache_prompt: bool = False
 
 
 class CompletionClient(Protocol):
@@ -62,6 +63,7 @@ class LlamaCompletionClient:
             "stream": True,
             "n_predict": request.max_tokens,
             "temperature": request.temperature,
+            "cache_prompt": request.cache_prompt,
         }
         if request.stop:
             payload["stop"] = list(request.stop)
@@ -72,12 +74,27 @@ class LlamaCompletionClient:
                 f"{base_url}/completion",
                 params={"slot_id": slot_id},
                 json=payload,
+                headers={"Accept": "text/event-stream"},
             ) as response:
                 response.raise_for_status()
-                async for line in response.aiter_lines():
-                    chunk = parse_completion_stream_line(line)
-                    if chunk:
-                        yield chunk
+                buffer = ""
+                async for chunk_text in response.aiter_text():
+                    if not chunk_text:
+                        continue
+                    buffer += chunk_text
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        token = parse_completion_stream_line(line)
+                        if token is not None:
+                            yield token
+                tail = buffer.strip()
+                if tail:
+                    token = parse_completion_stream_line(tail)
+                    if token is not None:
+                        yield token
 
 
 class CompletionHandle:

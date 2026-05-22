@@ -1,0 +1,1 @@
+ python -m uvicorn server.app:app --port 8080

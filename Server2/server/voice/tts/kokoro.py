@@ -20,14 +20,52 @@ FRAME_SAMPLES = OUTPUT_SAMPLE_RATE * FRAME_MS // 1000
 SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
+def _resolve_onnx_model_path(model_dir: Path) -> Path | None:
+    """Return a local .onnx file path, or None to use pykokoro's HuggingFace cache."""
+    if not model_dir.is_dir():
+        return None
+    preferred = model_dir / "kokoro-v1.0.onnx"
+    if preferred.is_file():
+        return preferred
+    onnx_files = sorted(model_dir.glob("*.onnx"))
+    if not onnx_files:
+        return None
+    return onnx_files[0]
+
+
+def _resolve_voices_path(model_dir: Path) -> Path | None:
+    """Return a local voices archive (.bin or .npz), if present."""
+    if not model_dir.is_dir():
+        return None
+    preferred = model_dir / "voices-v1.0.bin"
+    if preferred.is_file():
+        return preferred
+    for pattern in ("voices*.bin", "voices*.npz", "*.bin"):
+        matches = sorted(model_dir.glob(pattern))
+        if matches:
+            return matches[0]
+    return None
+
+
 class KokoroTTS:
     def __init__(self, *, model_dir: Path, voice: str) -> None:
         self._voice = voice
         config: dict[str, object] = {"voice": voice}
-        if model_dir.exists():
-            config["model_path"] = model_dir
+        model_path = _resolve_onnx_model_path(model_dir)
+        voices_path = _resolve_voices_path(model_dir)
+        if model_path is not None:
+            config["model_path"] = model_path
+        if voices_path is not None:
+            config["voices_path"] = voices_path
         self._pipeline = KokoroPipeline(PipelineConfig(**config))
-        log.info("tts.kokoro.ready", voice=voice, model_dir=str(model_dir))
+        log.info(
+            "tts.kokoro.ready",
+            voice=voice,
+            model_dir=str(model_dir),
+            model_source="local" if model_path else "huggingface",
+            model_path=str(model_path) if model_path else None,
+            voices_path=str(voices_path) if voices_path else None,
+        )
 
     async def synthesize_stream(
         self,

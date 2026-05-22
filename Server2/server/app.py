@@ -15,6 +15,7 @@ from server.engine.pool import close_engine_pool, init_engine_pool
 from server.engine.runner import config_from_settings, start_llama_server, stop_llama_server
 from server.logger import get_logger, setup_logging
 from server.memory.embeddings import close_embedder, init_embedder
+from server.tools import init_tools
 from server.transport.ws import ws_endpoint
 from server.voice.boot import init_voice_plane
 
@@ -64,6 +65,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     app.state.voice = await init_voice_plane(settings)
+
+    tool_registry, tool_runner = init_tools(settings)
+    app.state.tool_registry = tool_registry
+    app.state.tool_runner = tool_runner
+    log.info(
+        "app.tools_ready",
+        tool_count=len(tool_registry.list_all()),
+        tavily=bool(settings.tavily_api_key),
+    )
 
     if settings.is_dev and not settings.jwt_public_key:
         log.info("app.dev_auth_bypass", msg="dev mode: auth bypass enabled")

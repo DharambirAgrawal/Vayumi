@@ -54,9 +54,7 @@ class InterruptController:
         await self.cancel_tts(self.turn_id)
         if source in ("wake", "voice"):
             self.drop_partial_utterance(f"interrupt:{source}")
-            self.state = SpeechState.LISTENING
-        else:
-            self.state = SpeechState.IDLE
+        self.state = SpeechState.IDLE
 
     async def cancel_tts(self, turn_id: str) -> None:
         if turn_id and self.turn_id and turn_id != self.turn_id:
