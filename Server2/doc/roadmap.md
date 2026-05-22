@@ -1,6 +1,6 @@
 # Vayumi Server 2 — Full Roadmap
 
-**Source of truth:** [`PLAN.md`](../PLAN.md) v1.5  
+**Source of truth:** [`PLAN.md`](../PLAN.md) v1.7  
 **Architecture diagram:** [`orchestrator_diagram_v3.drawio`](../orchestrator_diagram_v3.drawio) (17 pages)  
 **Progress tracker:** [`doc/tracker.md`](tracker.md)  
 **Step details:** each step links to its `doc/step-NN.md` when that file exists.
@@ -84,15 +84,12 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 **Diagram pages:** 02, 06
 
 **What the user can do after this step:**
-- Send a typed message and receive a streamed text reply from Gemma 3n E2B via the Main Agent (no voice yet, text captions only).
+- Type a message in the web client and receive a streamed text reply from Gemma 3n E2B (captions only — no voice yet).
 
 **Features delivered:**
-- `llama-server` subprocess lifecycle (start, health check, restart on crash, stop)
 - Priority queue with 4 slots: P0 (Main), P1 (sub-agents, unused yet), P2 (summarizer, unused yet)
 - Slot 0 sticky for Main agent
-- Main-only prompt assembly (system prompt + user message)
-- Replace Echo handler with streamed `caption` events
-- Web client shows captions as they arrive
+- `llama-server` subprocess lifecycle + health check
 
 **Files created / changed:**
 
@@ -127,7 +124,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 - STTBackend interface for swappable backends
 - Kokoro TTS streaming (sentence-level PCM)
 - Silero VAD for server-side end-of-utterance detection
-- Interrupt controller + speech state machine (LISTENING, THINKING, SPEAKING, IDLE)
+- Interrupt controller + speech state machine (Step 3: IDLE/LISTENING/THINKING/SPEAKING; Step 6 aligns to PLAN.md §7.5 with QUEUED + respond_via)
 - Binary PCM streaming to client (server -> client TTS audio)
 
 **Files created / changed:**
@@ -207,7 +204,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 | `server/memory/facts.py` | Versioned fact CRUD |
 | `server/memory/warm.py` | Warm profile builder + dirty flag |
 | `server/memory/session.py` | Turn history + session state |
-| `server/memory/retrieval.py` | LanceDB semantic query (stub, full in step 10) |
+| `server/memory/retrieval.py` | LanceDB semantic query (stub, full in step 11) |
 | `server/db/schema.sql` | CHANGED — add facts, sessions, turns tables |
 | `server/db/lancedb.py` | CHANGED — create facts_index table |
 | `server/orchestrator/__init__.py` | Package marker |
@@ -217,9 +214,42 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 
 ---
 
-### Step 6 — Tool plane ⬜
+### Step 6 — v1.7 contract backfill (session singleton + respond_via + echo suppression) ✅
 
 **File:** `doc/step-06.md`  
+**Estimated effort:** 2 days  
+**Diagram pages:** 03, 05, 10
+
+**What the user can do after this step:**
+- Type a message and hear the response by default (if the device has TTS).
+- See `chat_message` as the canonical response text, distinct from captions.
+- Watch mic capture pause during TTS (echo suppression) and resume after.
+- Connect from a second device and see a clean handover (session singleton).
+
+**Features delivered:**
+- Session singleton enforcement + `session_superseded` event
+- `respond_via` decision table for chat/voice/proactive turns
+- `chat_message` server event for full responses
+- Mandatory echo suppression (`stop_capture` / `start_capture` around TTS)
+- Typed chat queue policy (1 pending, replace on overflow)
+
+**Files created / changed:**
+
+| File | Purpose |
+|---|---|
+| `server/transport/ws.py` | CHANGED — singleton + handover + welcome resume |
+| `server/transport/protocol.py` | CHANGED — chat_message + hello/welcome fields |
+| `server/transport/client_control.py` | CHANGED — start_capture/stop_capture |
+| `server/voice/interrupt.py` | CHANGED — respond_via + echo suppression |
+| `server/orchestrator/supervisor.py` | CHANGED — chat_message + queue policy |
+| `server/voice/turn.py` | CHANGED — TTS path uses suppression |
+| `web-client/client.js` | CHANGED — chat_message render + capture control |
+
+---
+
+### Step 7 — Tool plane ✅
+
+**File:** `doc/step-07.md`  
 **Estimated effort:** 2 days  
 **Diagram pages:** 08
 
@@ -234,7 +264,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 - `tool_search` discovery tool
 - `web_search` (Tavily primary, DDG fallback)
 - `memory_save` / `memory_recall` as registered tools
-- `[DELEGATE]` directive parsing (ready for sub-agents, spawning deferred to step 7)
+- `[DELEGATE]` directive parsing (ready for sub-agents, spawning deferred to step 8)
 - `event{kind:tool_started}` / `event{kind:tool_done}` transport events
 
 **Files created / changed:**
@@ -261,11 +291,13 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 7 — Sub-agent worker + signal bus ⬜
+### Step 8 — Sub-agent worker + signal bus ⬜
 
-**File:** `doc/step-07.md`  
+**File:** `doc/step-08.md`  
 **Estimated effort:** 2–3 days  
 **Diagram pages:** 07, 15, 16
+
+> **v1.7 note:** Sub-agents bind to the Supervisor (`user_id`), not the WebSocket. The proactive notifier (Step 10) must call `compute_respond_via` before building synthetic turns; NEEDS_INFO defaults to `voice_and_chat` when the client is visible and not recording.
 
 **What the user can do after this step:**
 - Ask a multi-step question and see it delegated to a sub-agent.
@@ -299,8 +331,9 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 8 — Capability bundles ⬜
+### Step 9 — Capability bundles ⬜
 
+**File:** [`doc/step-09.md`](step-09.md)  
 **Estimated effort:** 2 days  
 **Diagram pages:** 08
 
@@ -316,15 +349,18 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 9 — Proactive notifier ⬜
+### Step 10 — Proactive notifier ⬜
 
+**File:** [`doc/step-10.md`](step-10.md)  
 **Estimated effort:** 1–2 days  
 **Diagram pages:** 11
 
 **Features delivered:**
 - Background loop drains signal bus when user is silent
 - Importance threshold + min-interval debounce
-- Synthetic turn pipeline (notifier -> handle_turn -> Main speaks)
+- `build_synthetic_turn(signals)` calls `compute_respond_via(session_state, input_kind='proactive')` per PLAN.md Rule 13 (full decision table in §7.5)
+- NEEDS_INFO signals default to `voice_and_chat` when client is visible and not recording
+- Synthetic turn pipeline (notifier -> `handle_turn` -> Main speaks)
 - `notification` server message type
 - Client shows notification toasts
 
@@ -332,7 +368,7 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 10 — LanceDB retrieval ⬜
+### Step 11 — LanceDB retrieval ⬜
 
 **Estimated effort:** 1 day  
 **Diagram pages:** 09
@@ -347,7 +383,7 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 11 — Summarizer ⬜
+### Step 12 — Summarizer ⬜
 
 **Estimated effort:** 2 days  
 **Diagram pages:** 09
@@ -368,7 +404,7 @@ Goal: meeting mode, offline fallback, file/image handling, MCP extensibility.
 
 ---
 
-### Step 12 — Meeting mode ⬜
+### Step 13 — Meeting mode ⬜
 
 **Features delivered:**
 - Meeting mode toggle (Main is dormant, transcript accumulates)
@@ -378,7 +414,7 @@ Goal: meeting mode, offline fallback, file/image handling, MCP extensibility.
 
 ---
 
-### Step 13 — Local STT fallback ⬜
+### Step 14 — Local STT fallback ⬜
 
 **Features delivered:**
 - faster-whisper local STT backend
@@ -388,7 +424,7 @@ Goal: meeting mode, offline fallback, file/image handling, MCP extensibility.
 
 ---
 
-### Step 14 — Wake-word echo trap ⬜
+### Step 15 — Wake-word echo trap ⬜
 
 **Features delivered:**
 - Server-side detection of TTS audio leaking into mic
@@ -397,7 +433,7 @@ Goal: meeting mode, offline fallback, file/image handling, MCP extensibility.
 
 ---
 
-### Step 15 — File/image upload + attachments ⬜
+### Step 16 — File/image upload + attachments ⬜
 
 **Features delivered:**
 - `POST /upload/v1/file` endpoint (images: 20MB, docs: 100MB)
@@ -409,7 +445,7 @@ Goal: meeting mode, offline fallback, file/image handling, MCP extensibility.
 
 ---
 
-### Step 16 — MCP adapter ⬜
+### Step 17 — MCP adapter ⬜
 
 **Features delivered:**
 - Connect arbitrary MCP servers declared in `config/mcp.json`
@@ -427,7 +463,7 @@ Goal: mobile client, ESP32 hardware, production hardening, observability.
 
 ---
 
-### Step 17 — Mobile reference client ⬜
+### Step 18 — Mobile reference client ⬜
 
 **Features delivered:**
 - React Native or Flutter reference app
@@ -437,7 +473,7 @@ Goal: mobile client, ESP32 hardware, production hardening, observability.
 
 ---
 
-### Step 18 — ESP32 firmware ⬜
+### Step 19 — ESP32 firmware ⬜
 
 **Features delivered:**
 - ESP32 smart speaker firmware
@@ -448,7 +484,7 @@ Goal: mobile client, ESP32 hardware, production hardening, observability.
 
 ---
 
-### Step 19 — Production hardening ⬜
+### Step 20 — Production hardening ⬜
 
 **Features delivered:**
 - WebSocket backpressure + rate limiting
@@ -459,7 +495,7 @@ Goal: mobile client, ESP32 hardware, production hardening, observability.
 
 ---
 
-### Step 20 — Observability dashboard ⬜
+### Step 21 — Observability dashboard ⬜
 
 **Features delivered:**
 - OpenTelemetry traces (turn_id, task_id correlation)

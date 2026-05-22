@@ -72,7 +72,8 @@ Add from PLAN.md Section 11: `groq`, `pykokoro`, `silero-vad`, `soundfile`.
 - `GroqWhisper` buffers utterance PCM, wraps WAV, calls Groq Whisper, yields a final transcript event.
 - `KokoroTTS.synthesize_stream()` sentence-splits text, synthesizes per sentence, resamples 24 kHz → 16 kHz, emits 20 ms PCM frames.
 - `SileroVAD.accept_frame()` for server-side VAD surface/tests.
-- `InterruptController` with `IDLE → LISTENING → THINKING → SPEAKING → IDLE`, `handle_interrupt`, `cancel_tts`, `cancel_main_decode`, `drop_partial_utterance`.
+- `InterruptController` with speech FSM (`IDLE → THINKING → SPEAKING`, plus `QUEUED` for typed-chat backlog — full table in PLAN.md §7.5). `handle_interrupt`, `cancel_tts`, `cancel_main_decode`, `drop_partial_utterance`.
+- **v1.7 deliverables (verified in Step 6 backfill):** `compute_respond_via(session_state, input_kind)` and `begin_tts_with_echo_suppression(turn_id)` — the only path to `audio_start`; always sends `stop_capture` before PCM and `start_capture` after `SELF_ECHO_SUPPRESSION_DELAY_MS` (1200 ms default, 300 ms when `capabilities.aec=true`).
 
 ### 4. Voice turn pipeline
 
@@ -108,8 +109,10 @@ Run these in order. All must pass unless marked optional.
 5. Open `http://localhost:8080`. Connect with token `dev`.
 6. **Voice:** Record 1s → streamed `caption` partials + final; server `audio_start`, binary TTS frames, `audio_end`.
 7. **Interrupt:** During TTS playback, click Interrupt → speech stops; connection stays open; can record again.
-8. **Typed chat:** Still returns captions only (no TTS).
+8. **Typed chat:** At Step 3 completion, captions only (no TTS). After Step 6 backfill, typed chat defaults to `voice_and_chat` when `capabilities.tts=true` (PLAN.md Rule 11).
 9. `ping` still returns `pong`. Invalid token still closes with `4401`.
+
+**Echo suppression (PLAN.md Rule 12 — verified in Step 6):** On any TTS output, server sends `client_control { command: "stop_capture" }` before `audio_start`, streams PCM, sends `audio_end`, then `client_control { command: "start_capture" }` after the suppression delay (~1.2 s default). Unit tests assert ordering; manual check: mic indicator pauses during TTS.
 
 ---
 

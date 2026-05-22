@@ -31,7 +31,7 @@ def test_build_llama_command_uses_configured_slots_and_context() -> None:
         "--ctx-size",
         "32768",
         "--slot-prompt-similarity",
-        "0.5",
+        "0.0",
     ]
 
 

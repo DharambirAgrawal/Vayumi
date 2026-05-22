@@ -275,7 +275,7 @@
         <mxCell id="la" value="AUTH (auth.py)" style="rounded=1;fillColor=#FFE4E6;strokeColor=#BE123C;strokeWidth=2;verticalAlign=top;spacingTop=8;fontStyle=1;fontSize=13;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="1160" y="80" width="500" height="1200" as="geometry" />
         </mxCell>
-        <mxCell id="lo" value="ORCHESTRATOR (Supervisor per session)" style="rounded=1;fillColor=#FFF7ED;strokeColor=#C2410C;strokeWidth=2;verticalAlign=top;spacingTop=8;fontStyle=1;fontSize=13;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="lo" value="ORCHESTRATOR (Supervisor per user_id — session singleton)" style="rounded=1;fillColor=#FFF7ED;strokeColor=#C2410C;strokeWidth=2;verticalAlign=top;spacingTop=8;fontStyle=1;fontSize=13;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="1700" y="80" width="460" height="1200" as="geometry" />
         </mxCell>
         <mxCell id="c1" value="1) Get JWT from Server 1 login&#10;(stored in OS keychain on app, sessionStorage on web)" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -284,16 +284,16 @@
         <mxCell id="c2" value="2) WebSocket(`/ws/v1/session?token=&lt;jwt&gt;`)" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="250" width="460" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="c3" value="3) On open -&gt; send hello&#10;{ client, capabilities: {aec, vad, wake}, session_id? }" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="c3" value="3) On open -&gt; send hello&#10;{ client, capabilities: {aec, vad, wake, tts}, session_id? }" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="330" width="460" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="c4" value="4) Receive welcome { session_id, server_version }&#10;UI shows 'connected'" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="c4" value="4) Receive welcome { session_id, server_version, resumed, task_board_snapshot? }&#10;UI shows 'connected'" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="900" width="460" height="70" as="geometry" />
         </mxCell>
         <mxCell id="c5" value="5) Heartbeat: ping every 15s, expect pong&#10;3 missed pongs -&gt; reconnect with backoff" style="rounded=1;fillColor=#E0F2FE;strokeColor=#0369A1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="990" width="460" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="c6" value="6) Reconnect rules&#10;same session_id sent in hello -&gt; server reattaches Supervisor&#10;active tasks survive a brief disconnect" style="rounded=1;fillColor=#E0F2FE;strokeColor=#0369A1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="c6" value="6) Reconnect + handover (§5.0)&#10;same session_id in hello -&gt; reconnect, welcome{resumed:true}&#10;new device / no session_id -&gt; old WS: event session_superseded + close 4001&#10;new WS: attach_transport(), welcome{resumed:true, task_board_snapshot}" style="rounded=1;fillColor=#E0F2FE;strokeColor=#0369A1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="1090" width="460" height="100" as="geometry" />
         </mxCell>
         <mxCell id="t1" value="A) ws.handshake&#10;extract token from query string" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -305,13 +305,13 @@
         <mxCell id="t3" value="C) on fail -&gt; close(4401, reason)" style="rounded=1;fillColor=#FECACA;strokeColor=#DC2626;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="600" y="420" width="500" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="t4" value="D) on success -&gt; await ws.accept()&#10;create Supervisor(user_id, session_id)&#10;register in active_sessions[user_id][session_id]" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="t4" value="D) on success -&gt; await ws.accept()&#10;create or reuse Supervisor(user_id, session_id)&#10;enforce_session_singleton(user_id)" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="600" y="500" width="500" height="100" as="geometry" />
         </mxCell>
         <mxCell id="t5" value="E) await first message; must be hello&#10;mismatch -&gt; close(4400)" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="600" y="620" width="500" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t6" value="F) write welcome event&#10;start TaskGroup: inbound_loop, outbound_loop, supervisor_run" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="t6" value="F) write welcome {resumed, task_board_snapshot}&#10;start TaskGroup: inbound_loop, outbound_loop, supervisor_run" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="600" y="720" width="500" height="100" as="geometry" />
         </mxCell>
         <mxCell id="t7" value="G) inbound_loop&#10;dispatch JSON  -&gt; supervisor.on_message&#10;dispatch binary -&gt; supervisor.on_audio_chunk" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -347,7 +347,7 @@
         <mxCell id="o2" value="• load Session row from PG (or create)&#10;• load warm profile (memory.warm.build())&#10;• create empty TaskBoard&#10;• create asyncio queues: incoming, outgoing, signals&#10;• allocate llama slot 0 (sticky)&#10;• subscribe to Redis signal-bus channel for this session" style="rounded=1;fillColor=#FDBA74;strokeColor=#9A3412;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="1720" y="240" width="420" height="180" as="geometry" />
         </mxCell>
-        <mxCell id="o3" value="state machine: IDLE -&gt; LISTENING -&gt; THINKING -&gt; SPEAKING -&gt; IDLE&#10;interrupt -&gt; jump to LISTENING from any state" style="rounded=1;fillColor=#FDE68A;strokeColor=#D97706;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="o3" value="speech FSM (interrupt.py): IDLE -&gt; THINKING -&gt; SPEAKING (+ QUEUED)&#10;interrupt -&gt; IDLE; see page 10 for full §7.5 table" style="rounded=1;fillColor=#FDE68A;strokeColor=#D97706;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="1720" y="440" width="420" height="100" as="geometry" />
         </mxCell>
         <mxCell id="o4" value="on disconnect&#10;persist conversation, mark sessions.last_seen=now()&#10;LIVE TASKS keep running (sub-agents are independent)" style="rounded=1;fillColor=#FED7AA;strokeColor=#EA580C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -487,7 +487,7 @@
         <mxCell id="s13" value="Kokoro emits 20ms PCM frames&#10;pushed to Supervisor.outgoing" style="rounded=1;fillColor=#99F6E4;strokeColor=#0F766E;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="780" y="880" width="280" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="s14" value="ws.outbound_loop sends&#10;caption + audio_start + binary frames + audio_end" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="s14" value="ws.outbound_loop sends&#10;stop_capture -&gt; caption -&gt; audio_start + PCM -&gt; audio_end&#10;chat_message -&gt; start_capture (after delay)" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="450" y="880" width="280" height="100" as="geometry" />
         </mxCell>
         <mxCell id="s15" value="client plays via WebAudio&#10;shows live captions&#10;t ≈ 1.0s — first audio in user's ear" style="rounded=1;fillColor=#BBF7D0;strokeColor=#16A34A;fontStyle=1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -594,10 +594,10 @@
         <mxCell id="cd" value="directives parser&#10;[DELEGATE], [REMEMBER], [RECALL]" style="rounded=1;fillColor=#FDE68A;strokeColor=#D97706;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="1080" y="400" width="500" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="resp_policy" value="RESPONSE POLICY (per turn)&#10;respond_via = inferred from input.kind:&#10;• voice -&gt; voice + caption&#10;• chat  -&gt; chat only (no TTS)&#10;• proactive (notifier) -&gt; chat only&#10;User can override with `mode` message" style="rounded=1;fillColor=#DCFCE7;strokeColor=#388E3C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="resp_policy" value="RESPONSE POLICY (per turn)&#10;respond_via computed from client_state + input.kind&#10;• typed chat defaults to voice+chat when tts-capable&#10;• chat_only when voice not possible / blocked&#10;Override with [RESPOND_VIA ...]" style="rounded=1;fillColor=#DCFCE7;strokeColor=#388E3C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="1080" y="480" width="500" height="160" as="geometry" />
         </mxCell>
-        <mxCell id="cout" value="ws sends caption frames as the model streams&#10;type='caption', partial=true … then partial=false" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="cout" value="ws sends caption frames as the model streams&#10;chat_message emitted when complete; audio only if voice" style="rounded=1;fillColor=#DDD6FE;strokeColor=#6D28D9;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="540" y="660" width="500" height="80" as="geometry" />
         </mxCell>
         <mxCell id="cdone" value="user sees streaming text in chat&#10;same UX as ChatGPT-style streaming" style="rounded=1;fillColor=#BBF7D0;strokeColor=#16A34A;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -1072,8 +1072,11 @@
         <mxCell id="st_wait_user" value="WAIT_USER&#10;(NEEDS_INFO surfaced)" style="ellipse;fillColor=#E9D5FF;strokeColor=#7C3AED;fontSize=11;fontColor=#111827;" vertex="1" parent="1">
           <mxGeometry x="540" y="320" width="180" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="st_int" value="any state -&gt; LISTENING&#10;on interrupt event" style="rounded=1;fillColor=#FECACA;strokeColor=#DC2626;fontStyle=1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="st_int" value="interrupt (any state) -&gt; IDLE&#10;cancel TTS + slot 0; clear_queue + start_capture immediately" style="rounded=1;fillColor=#FECACA;strokeColor=#DC2626;fontStyle=1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="120" y="460" width="600" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="fsm_tbl" value="§7.5 FSM TABLE (PLAN.md v1.7)&#10;handle_turn IDLE-&gt;THINKING | first token THINKING-&gt;SPEAKING&#10;done SPEAKING-&gt;IDLE (+ chat_message final:true + start_capture after delay)&#10;interrupt THINKING/SPEAKING-&gt;IDLE | queue policy: chat/proactive wait (depth=1, replace pending)&#10;voice replace cancels current; typed chat NEVER interrupts speech&#10;Rule 12: stop_capture before every audio_start (begin_tts_with_echo_suppression only path)" style="rounded=1;fillColor=#F0FDF4;strokeColor=#16A34A;fontSize=10;fontColor=#111827;whiteSpace=wrap;html=1;align=left;spacingLeft=8;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="780" y="100" width="1380" height="130" as="geometry" />
         </mxCell>
         <mxCell id="st_e1" value="user voice / chat" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#16A34A;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;strokeWidth=2;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="st_idle" target="st_listen">
           <mxGeometry relative="1" as="geometry" />
@@ -1108,35 +1111,35 @@
         <mxCell id="is4" value="D) Server-side anti-self-trigger (Phase 3 step 14)&#10;if wake-word fires WHILE TTS is playing AND mic level &lt; threshold,&#10;ignore (likely picked up its own audio through speakers without AEC)" style="rounded=1;fillColor=#FED7AA;strokeColor=#EA580C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="1090" width="660" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="is5" value="E) Typed message during TTS&#10;default policy = QUEUE (deliver after current sentence)&#10;user UI can override to REPLACE" style="rounded=1;fillColor=#FED7AA;strokeColor=#EA580C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="is5" value="E) Typed chat during TTS&#10;NEVER interrupts (Rule 13) — queue policy, depth=1 pending, replace on 3rd message&#10;Use interrupt button / wake word to cut in" style="rounded=1;fillColor=#FED7AA;strokeColor=#EA580C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="1210" width="660" height="100" as="geometry" />
         </mxCell>
         <mxCell id="seq" value="WHAT HAPPENS WHEN INTERRUPT FIRES" style="rounded=1;fillColor=#DBEAFE;strokeColor=#2563EB;strokeWidth=2;verticalAlign=top;spacingTop=8;fontStyle=1;fontSize=13;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="780" y="100" width="1380" height="1230" as="geometry" />
+          <mxGeometry x="780" y="250" width="1380" height="1060" as="geometry" />
         </mxCell>
         <mxCell id="seq1" value="1) Cancel SPEAKING coroutine (cancel_scope.cancel())&#10;TTS generator stops emitting; outbound audio stream ends." style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="800" y="160" width="1340" height="80" as="geometry" />
+          <mxGeometry x="800" y="280" width="1340" height="80" as="geometry" />
         </mxCell>
         <mxCell id="seq2" value="2) Cancel ENGINE inference for slot 0 (Main only)&#10;Sub-agent slots are NOT cancelled. They keep running.&#10;HTTP DELETE /completion?id=K (llama.cpp supports per-id cancel)." style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="800" y="260" width="1340" height="100" as="geometry" />
-        </mxCell>
-        <mxCell id="seq3" value="3) DISCARD directive buffer&#10;If [DELEGATE … was being assembled mid-stream, throw it away.&#10;Prevents ghost sub-agents being spawned from half-formed commands." style="rounded=1;fillColor=#FECACA;strokeColor=#DC2626;fontSize=11;fontStyle=1;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="800" y="380" width="1340" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="seq4" value="4) Append synthetic system note to history&#10;[INTERRUPTED at sentence i, AI was about to say: &quot;…&quot;]&#10;so the next turn knows context wasn't fully delivered." style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="seq3" value="3) DISCARD directive buffer&#10;If [DELEGATE … was being assembled mid-stream, throw it away.&#10;Prevents ghost sub-agents being spawned from half-formed commands." style="rounded=1;fillColor=#FECACA;strokeColor=#DC2626;fontSize=11;fontStyle=1;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="800" y="500" width="1340" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="seq5" value="5) Switch FSM to LISTENING (or IDLE if source=='button')&#10;client opens mic immediately on the same intent (low-latency)" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="seq4" value="4) Append synthetic system note to history&#10;[INTERRUPTED at sentence i, AI was about to say: &quot;…&quot;]&#10;so the next turn knows context wasn't fully delivered." style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="800" y="620" width="1340" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="seq6" value="6) Background tasks status&#10;ALL sub-agents continue. ALL summarizer jobs continue.&#10;Their reports keep flowing into signal bus.&#10;The proactive notifier may surface them once user is silent again." style="rounded=1;fillColor=#BBF7D0;strokeColor=#16A34A;fontStyle=1;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="800" y="740" width="1340" height="120" as="geometry" />
+        <mxCell id="seq5" value="5) FSM -&gt; IDLE&#10;emit chat_message{final:false} for partial text&#10;client_control clear_queue + start_capture immediately (interrupt overrides echo suppression delay)" style="rounded=1;fillColor=#BFDBFE;strokeColor=#2563EB;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="800" y="740" width="1340" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="seq6" value="6) Background tasks status&#10;ALL sub-agents continue. ALL summarizer jobs continue.&#10;Their reports keep flowing into signal bus.&#10;The proactive notifier may surface them once user is silent again." style="rounded=1;fillColor=#BBF7D0;strokeColor=#16A34A;fontStyle=1;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="800" y="860" width="1340" height="120" as="geometry" />
         </mxCell>
         <mxCell id="seq7" value="7) 'stop the task too' intent&#10;If user explicitly says 'stop everything' / 'cancel that',&#10;Main will write [STOP_TASK task_id=…] in its next reply.&#10;Orchestrator then cancels the sub-agent + frees its slot." style="rounded=1;fillColor=#FED7AA;strokeColor=#C2410C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="800" y="880" width="1340" height="120" as="geometry" />
+          <mxGeometry x="800" y="1000" width="1340" height="120" as="geometry" />
         </mxCell>
         <mxCell id="seq8" value="LATENCY GUARANTEE&#10;wake-word interrupt to TTS-silence ≤ 100ms&#10;voice interrupt (VAD) to TTS-silence ≤ 200ms&#10;achieved by always running outbound_loop on the same event loop and using cancel_scope" style="rounded=1;fillColor=#FEF08A;strokeColor=#CA8A04;fontSize=11;fontStyle=1;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="800" y="1020" width="1340" height="160" as="geometry" />
+          <mxGeometry x="800" y="1140" width="1340" height="160" as="geometry" />
         </mxCell>
         <mxCell id="seq_e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2563EB;endArrow=block;endFill=1;html=1;rounded=0;orthogonalLoop=1;jettySize=auto;strokeWidth=2;fontSize=11;fontColor=#111827;labelBackgroundColor=#FFFFFF;" edge="1" parent="1" source="seq1" target="seq2">
           <mxGeometry relative="1" as="geometry" />
@@ -1200,7 +1203,7 @@
         <mxCell id="ok" value="ALL GATES PASS -&gt; proceed" style="rounded=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontStyle=1;fontSize=12;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="160" y="1100" width="430" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="run" value="4) build synthetic turn input&#10;{kind: 'proactive', task_id, signals: [...], respond_via: 'chat_only'}&#10;Supervisor.handle_turn(this) -&gt; same as page 4/5" style="rounded=1;fillColor=#BBF7D0;strokeColor=#16A34A;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
+        <mxCell id="run" value="4) build synthetic turn input&#10;{kind: 'proactive', task_id, signals: [...], respond_via: computed}&#10;Supervisor.handle_turn(this) -&gt; same as page 4/5" style="rounded=1;fillColor=#BBF7D0;strokeColor=#16A34A;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="60" y="1180" width="610" height="120" as="geometry" />
         </mxCell>
         <mxCell id="re_speak" value="OPTIONAL VOICE&#10;If user pref allow_proactive_voice=true AND device idle &gt; 5s,&#10;respond_via='voice+chat'." style="rounded=1;fillColor=#FED7AA;strokeColor=#C2410C;fontSize=11;fontColor=#111827;whiteSpace=wrap;html=1;arcSize=6;" vertex="1" parent="1">
@@ -1515,7 +1518,7 @@
         <mxCell id="reject" value="Invalid token&#10;close WS with code 4401" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;fillColor=#FEE2E2;strokeColor=#DC2626;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="930" y="420" width="360" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="protocol" value="protocol.py&#10;Pydantic message envelopes&#10;&#10;Hello · Chat · AudioStart · AudioEnd · Ping&#10;Welcome · Echo · Pong · Error" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=12;fontColor=#111827;strokeWidth=2;fillColor=#E0F2FE;strokeColor=#0369A1;" vertex="1" parent="1">
+        <mxCell id="protocol" value="protocol.py&#10;Pydantic message envelopes&#10;&#10;Hello · Chat · AudioStart · AudioEnd · Interrupt · ClientState · Mode · Ping&#10;Welcome · Caption · ChatMessage · AudioStart · AudioEnd · ClientControl · Event · Notification · Pong · Error" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=12;fontColor=#111827;strokeWidth=2;fillColor=#E0F2FE;strokeColor=#0369A1;" vertex="1" parent="1">
           <mxGeometry x="470" y="560" width="360" height="210" as="geometry" />
         </mxCell>
         <mxCell id="app" value="app.py lifespan&#10;&#10;Settings validates env&#10;Boot dependencies&#10;Mount / web-client&#10;Register WS route" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=12;fontColor=#111827;strokeWidth=2;fillColor=#FFF7ED;strokeColor=#C2410C;" vertex="1" parent="1">
@@ -2050,10 +2053,10 @@
         <mxCell id="sub" value="This page is a function-name index across the whole system: transport, uploads, audio, interrupt, orchestrator, sub-agents, engine, memory, tools, and web client." style="text;html=1;fillColor=none;strokeColor=none;fontColor=#111827;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="40" y="58" width="2500" height="28" as="geometry" />
         </mxCell>
-        <mxCell id="transport" value="TRANSPORT / PROTOCOL / UPLOAD&#10;ws_endpoint(websocket)&#10;inbound_loop() / outbound_loop()&#10;parse_client_message(raw)&#10;serialize_server_message(msg)&#10;send_json(msg) / send_audio_frame(pcm)&#10;receive_audio_frame(bytes)&#10;upload_file(request, token)&#10;get_uploaded_file(file_id, user_id)&#10;send_client_control(command, reason)&#10;handle_client_state(state)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#DBEAFE;strokeColor=#2563EB;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="transport" value="TRANSPORT / PROTOCOL / UPLOAD&#10;ws_endpoint(websocket)&#10;enforce_session_singleton(user_id, new_ws)&#10;inbound_loop() / outbound_loop()&#10;parse_client_message(raw)&#10;serialize_server_message(msg)&#10;send_json(msg) / send_audio_frame(pcm)&#10;receive_audio_frame(bytes)&#10;upload_file(request, token)&#10;get_uploaded_file(file_id, user_id)&#10;send_client_control(command, reason)&#10;handle_client_state(state)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#DBEAFE;strokeColor=#2563EB;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="40" y="120" width="500" height="330" as="geometry" />
         </mxCell>
-        <mxCell id="voice" value="VOICE / AUDIO / INTERRUPT&#10;STTBackend.transcribe_stream(chunks)&#10;GroqWhisper.transcribe_stream(...)&#10;LocalFasterWhisper.transcribe(...)&#10;KokoroTTS.synthesize_stream(text, voice)&#10;SileroVAD.accept_frame(frame)&#10;InterruptController.handle_interrupt(source)&#10;cancel_tts(turn_id)&#10;cancel_main_decode(turn_id)&#10;drop_partial_utterance(reason)&#10;on_audio_start/chunk/end()" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#CCFBF1;strokeColor=#0F766E;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="voice" value="VOICE / AUDIO / INTERRUPT&#10;STTBackend.transcribe_stream(chunks)&#10;GroqWhisper.transcribe_stream(...)&#10;LocalFasterWhisper.transcribe(...)&#10;KokoroTTS.synthesize_stream(text, voice)&#10;SileroVAD.accept_frame(frame)&#10;compute_respond_via(session_state, input_kind)&#10;begin_tts_with_echo_suppression(turn_id)&#10;InterruptController.handle_interrupt(source)&#10;cancel_tts(turn_id)&#10;cancel_main_decode(turn_id)&#10;drop_partial_utterance(reason)&#10;on_audio_start/chunk/end()" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#CCFBF1;strokeColor=#0F766E;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="620" y="120" width="500" height="330" as="geometry" />
         </mxCell>
         <mxCell id="orch" value="ORCHESTRATOR / TASKS&#10;Supervisor.handle_turn(input)&#10;assemble_main_context(input)&#10;stream_main_response(context)&#10;parse_directive_blocks(stream)&#10;validate_directive(directive)&#10;execute_directive(directive)&#10;create_task/pause_task/resume_task&#10;cancel_task/complete_task&#10;TaskBoard.render_for_main()&#10;Notifier.maybe_surface_signal(signal)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FFF7ED;strokeColor=#C2410C;fontStyle=1;" vertex="1" parent="1">
@@ -2077,13 +2080,13 @@
         <mxCell id="client" value="WEB CLIENT REFERENCE&#10;connect(token)&#10;sendJson(type, payload)&#10;sendPcmFrame(frame)&#10;startMic() / stopMic() / recordOneSecond()&#10;handleServerAudio(frame)&#10;handleClientControl(command)&#10;uploadFile(file) -&gt; UploadedFile&#10;sendChat(text, attachments)&#10;renderEvent(event)&#10;renderTaskBoard(events)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#E0F2FE;strokeColor=#0369A1;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="1780" y="540" width="500" height="330" as="geometry" />
         </mxCell>
-        <mxCell id="rules" value="CROSS-CUTTING RULES&#10;• Binary WS frames = audio only. Files/images use upload_file -&gt; file_id -&gt; chat.attachments.&#10;• Server may request client audio behavior with client_control, but client owns the hardware and confirms with client_state.&#10;• Interrupt cancels Main/TTS/directive buffer only; background sub-agents keep running unless STOP_TASK.&#10;• Main speaks; sub-agents report.&#10;• ToolRunner enforces auth, capability, confirmation, timeout, and audit." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#F8FAFC;strokeColor=#64748B;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="rules" value="CROSS-CUTTING RULES&#10;• Binary WS frames = audio only. Files/images use upload_file -&gt; file_id -&gt; chat.attachments.&#10;• Typed chat defaults to voice when tts-capable; respond_via computed from client_state.&#10;• Server may request client audio behavior with client_control, but client owns the hardware and confirms with client_state.&#10;• Interrupt cancels Main/TTS/directive buffer only; background sub-agents keep running unless STOP_TASK.&#10;• Main speaks; sub-agents report.&#10;• ToolRunner enforces auth, capability, confirmation, timeout, and audit." style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#F8FAFC;strokeColor=#64748B;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="2360" y="540" width="500" height="330" as="geometry" />
         </mxCell>
         <mxCell id="flow1" value="UPLOAD FLOW&#10;user selects image/file -&gt; POST /upload/v1/file -&gt; file_id -&gt; chat.attachments[] -&gt; Supervisor summarizes attachment -&gt; Main decides answer/delegate" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#EFF6FF;strokeColor=#2563EB;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="160" y="980" width="760" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="flow2" value="AUDIO CONTROL FLOW&#10;Main/TTS starts -&gt; Transport sends audio_start + PCM -&gt; client plays -&gt; interrupt/client_control stop/duck -&gt; client_state confirms -&gt; Supervisor adapts" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#ECFDF5;strokeColor=#0F766E;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="flow2" value="AUDIO CONTROL FLOW&#10;Main/TTS starts -&gt; client_control stop_capture -&gt; audio_start + PCM -&gt; client plays -&gt; audio_end -&gt; start_capture after delay -&gt; client_state confirms" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#ECFDF5;strokeColor=#0F766E;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="1120" y="980" width="760" height="120" as="geometry" />
         </mxCell>
         <mxCell id="flow3" value="TASK COORDINATION FLOW&#10;SubAgentWorker report(...) -&gt; SignalBus -&gt; TaskBoard -&gt; Main active_tasks block -&gt; ANSWER_TO / STOP_TASK / new DELEGATE" style="rounded=1;whiteSpace=wrap;html=1;arcSize=6;fontSize=11;fontColor=#111827;strokeWidth=2;align=left;spacingLeft=10;spacingTop=8;fillColor=#FFF7ED;strokeColor=#C2410C;fontStyle=1;" vertex="1" parent="1">

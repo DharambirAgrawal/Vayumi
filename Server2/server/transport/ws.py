@@ -1,65 +1,73 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
 from server.auth import AuthError, verify_token
 from server.logger import get_logger
-from server.orchestrator.supervisor import Supervisor
-from server.transport.client_control import ClientControlSession, send_interrupt_controls
+from server.tools.runner import ToolEventEmitter, ToolRunner
+from server.transport.client_control import send_client_control, send_interrupt_controls
+from server.transport.outbound import send_json
 from server.transport.protocol import (
     AudioEndMessage,
     AudioStartMessage,
-    CaptionMessage,
-    CaptionPayload,
     ChatMessage,
     ClientStateMessage,
     EchoMessage,
     EchoPayload,
     ErrorMessage,
     ErrorPayload,
+    EventMessage,
+    EventPayload,
+    HelloMessage,
     InterruptMessage,
     ModeMessage,
     PingMessage,
     PongMessage,
     PongPayload,
-    ServerMessage,
     WelcomeMessage,
     WelcomePayload,
     parse_client_message,
-    serialize_server_message,
 )
-from server.voice.interrupt import InterruptController
-from server.voice.turn import run_voice_turn
+from server.transport.session_registry import UserSession, enforce_session_singleton
+from server.transport.turn_coordinator import (
+    defer_voice_utterance,
+    drain_pending_voice,
+    persist_interrupted_assistant,
+    session_busy,
+    start_voice_turn,
+)
+from server.voice.respond_via import compute_respond_via
 
-if TYPE_CHECKING:
+if True:
     from server.config import Settings
     from server.engine.pool import EnginePool
-    from server.voice.stt.groq import GroqWhisper
-    from server.voice.tts.kokoro import KokoroTTS
 
 log = get_logger("transport.ws")
 
 
-@dataclass
-class _VoiceCapture:
-    active: bool = False
-    sample_rate: int = 16000
-    chunks: list[bytes] = field(default_factory=list)
+def make_tool_event_emitter(session: UserSession) -> ToolEventEmitter:
+    async def emit(kind: str, task_id: str, summary: str) -> None:
+        ws = session.websocket
+        if ws is None or ws.client_state != WebSocketState.CONNECTED:
+            return
+        if kind not in ("tool_started", "tool_done"):
+            return
+        msg = EventMessage(
+            payload=EventPayload(
+                kind=kind,  # type: ignore[arg-type]
+                task_id=task_id,
+                summary=summary,
+            ),
+        )
+        await send_json(ws, msg)
+
+    return emit  # type: ignore[return-value]
 
 
-@dataclass
-class _WsSession:
-    user_id: str
-    session_id: str
-    supervisor: Supervisor
-    interrupt: InterruptController = field(default_factory=InterruptController)
-    capture: _VoiceCapture = field(default_factory=_VoiceCapture)
-    client_control: ClientControlSession = field(default_factory=ClientControlSession)
-    turn_task: asyncio.Task[None] | None = None
+def _tool_runner(websocket: WebSocket) -> ToolRunner | None:
+    return getattr(websocket.app.state, "tool_runner", None)
 
 
 async def ws_endpoint(websocket: WebSocket) -> None:
@@ -88,35 +96,37 @@ async def ws_endpoint(websocket: WebSocket) -> None:
         session_id=token_payload.session_id,
     )
 
-    welcome = WelcomeMessage(
-        payload=WelcomePayload(session_id=token_payload.session_id),
-    )
-    await send_json(websocket, welcome)
-
-    session = _WsSession(
-        user_id=token_payload.user_id,
-        session_id=token_payload.session_id,
-        supervisor=Supervisor(
-            user_id=token_payload.user_id,
-            session_id=token_payload.session_id,
-        ),
-    )
-    await session.supervisor.ensure_session()
+    session_holder: dict = {"session": None}
 
     try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(_inbound_loop(websocket, session))
+            tg.create_task(
+                _inbound_loop(
+                    websocket,
+                    token_payload.user_id,
+                    token_payload.session_id,
+                    settings,
+                    session_holder,
+                )
+            )
     except* WebSocketDisconnect:
         log.info("ws.disconnected", user_id=token_payload.user_id)
     except* Exception as eg:
         for exc in eg.exceptions:
             log.error("ws.error", error=str(exc), user_id=token_payload.user_id)
     finally:
-        if session.turn_task and not session.turn_task.done():
+        session = session_holder.get("session")
+        if session and session.turn_task and not session.turn_task.done():
             session.turn_task.cancel()
 
 
-async def _inbound_loop(websocket: WebSocket, session: _WsSession) -> None:
+async def _inbound_loop(
+    websocket: WebSocket,
+    user_id: str,
+    jwt_session_id: str,
+    settings: Settings,
+    session_holder: dict,
+) -> None:
     while True:
         message = await websocket.receive()
         msg_type = message.get("type", "")
@@ -126,12 +136,59 @@ async def _inbound_loop(websocket: WebSocket, session: _WsSession) -> None:
 
         if msg_type == "websocket.receive":
             if "text" in message and message["text"] is not None:
-                await _handle_text(websocket, message["text"], session)
+                raw = message["text"]
+                if session_holder["session"] is None:
+                    try:
+                        msg = parse_client_message(raw)
+                    except Exception as e:
+                        err = ErrorMessage(
+                            payload=ErrorPayload(code=4400, message=f"Invalid message: {e}")
+                        )
+                        await send_json(websocket, err)
+                        await websocket.close(code=4400, reason="expected hello")
+                        return
+                    if not isinstance(msg, HelloMessage):
+                        err = ErrorMessage(
+                            payload=ErrorPayload(
+                                code=4400, message="First message must be hello"
+                            )
+                        )
+                        await send_json(websocket, err)
+                        await websocket.close(code=4400, reason="expected hello")
+                        return
+                    session, resumed = await enforce_session_singleton(
+                        user_id=user_id,
+                        session_id=jwt_session_id,
+                        new_ws=websocket,
+                        hello_session_id=msg.payload.session_id,
+                        close_code=settings.session_singleton_close_code,
+                    )
+                    session.capabilities = dict(msg.payload.capabilities)
+                    session_holder["session"] = session
+                    welcome = WelcomeMessage(
+                        payload=WelcomePayload(
+                            session_id=session.session_id,
+                            resumed=resumed,
+                            task_board_snapshot=session.task_board_snapshot()
+                            if resumed
+                            else None,
+                        ),
+                    )
+                    await send_json(websocket, welcome)
+                    continue
+
+                await _handle_text(websocket, raw, session_holder["session"], settings)
+
             elif "bytes" in message and message["bytes"] is not None:
+                session = session_holder["session"]
+                if session is None:
+                    continue
                 await _handle_binary(websocket, message["bytes"], session)
 
 
-async def _handle_text(websocket: WebSocket, raw: str, session: _WsSession) -> None:
+async def _handle_text(
+    websocket: WebSocket, raw: str, session: UserSession, settings: Settings
+) -> None:
     try:
         msg = parse_client_message(raw)
     except Exception as e:
@@ -141,35 +198,34 @@ async def _handle_text(websocket: WebSocket, raw: str, session: _WsSession) -> N
         return
 
     if isinstance(msg, ChatMessage):
-        await _handle_chat(websocket, msg, session)
+        await _handle_chat(websocket, msg, session, settings)
 
     elif isinstance(msg, PingMessage):
         pong = PongMessage(payload=PongPayload(t=msg.payload.t))
         await send_json(websocket, pong)
 
     elif isinstance(msg, AudioStartMessage):
-        session.capture = _VoiceCapture(active=True, sample_rate=msg.payload.sample_rate)
         session.interrupt.begin_listening()
-        log.debug("ws.audio_capture_started", user_id=session.user_id)
+        session.voice_capture_active = True
+        session.voice_chunks = []
 
     elif isinstance(msg, AudioEndMessage):
-        await _handle_audio_end(websocket, session)
+        await _handle_audio_end(websocket, msg, session, settings)
 
     elif isinstance(msg, InterruptMessage):
-        await send_interrupt_controls(
-            websocket,
-            turn_id=session.interrupt.turn_id or None,
-            reason=f"interrupt:{msg.payload.source}",
-        )
-        await session.interrupt.handle_interrupt(msg.payload.source)
-        if session.turn_task and not session.turn_task.done():
-            session.turn_task.cancel()
+        await _handle_interrupt(websocket, msg, session)
 
     elif isinstance(msg, ClientStateMessage):
         session.client_control.handle_client_state(msg.payload)
 
     elif isinstance(msg, ModeMessage):
         session.client_control.set_mode(msg.payload.mode)
+
+    elif isinstance(msg, HelloMessage):
+        echo = EchoMessage(
+            payload=EchoPayload(kind="hello", payload=msg.model_dump().get("payload", {})),
+        )
+        await send_json(websocket, echo)
 
     else:
         echo = EchoMessage(
@@ -178,83 +234,238 @@ async def _handle_text(websocket: WebSocket, raw: str, session: _WsSession) -> N
         await send_json(websocket, echo)
 
 
-async def _handle_binary(websocket: WebSocket, data: bytes, session: _WsSession) -> None:
-    if session.capture.active:
-        session.capture.chunks.append(data)
-        log.debug("ws.binary_buffered", size=len(data), user_id=session.user_id)
-        return
+async def _handle_interrupt(
+    websocket: WebSocket, msg: InterruptMessage, session: UserSession
+) -> None:
+    from server.voice.delivery import deliver_interrupted_partial
 
-    log.debug("ws.binary_ignored", size=len(data), user_id=session.user_id)
-
-
-async def _handle_audio_end(websocket: WebSocket, session: _WsSession) -> None:
-    if not session.capture.active:
-        return
-
-    pcm_chunks = list(session.capture.chunks)
-    session.capture = _VoiceCapture()
-    session.interrupt.begin_listening()
-
+    partial = session.accumulated_partial
+    await send_interrupt_controls(
+        websocket,
+        turn_id=session.interrupt.turn_id or None,
+        reason=f"interrupt:{msg.payload.source}",
+    )
+    await session.interrupt.handle_interrupt(msg.payload.source)
     if session.turn_task and not session.turn_task.done():
         session.turn_task.cancel()
+    if session.queued_chat_task and not session.queued_chat_task.done():
+        session.queued_chat_task.cancel()
+        session.queued_chat_text = None
+        session.queued_chat_task = None
+    if partial and session.interrupt.turn_id:
+        await deliver_interrupted_partial(
+            websocket,
+            turn_id=session.interrupt.turn_id,
+            partial_text=partial,
+        )
+        await persist_interrupted_assistant(session, partial)
+    await send_client_control(
+        websocket, "start_capture", "interrupted", turn_id=session.interrupt.turn_id
+    )
+    session.accumulated_partial = ""
 
-    voice = websocket.app.state.voice
-    stt: GroqWhisper = voice["stt"]
-    tts: KokoroTTS = voice["tts"]
-    engine_pool: EnginePool = websocket.app.state.engine_pool
 
-    session.turn_task = asyncio.create_task(
-        run_voice_turn(
-            websocket=websocket,
-            engine_pool=engine_pool,
-            stt=stt,
-            tts=tts,
-            interrupt=session.interrupt,
-            pcm_chunks=pcm_chunks,
+async def _handle_binary(websocket: WebSocket, data: bytes, session: UserSession) -> None:
+    if not session.voice_capture_active:
+        log.debug("ws.binary_ignored", size=len(data), user_id=session.user_id)
+        return
+    if session_busy(session):
+        return
+    session.voice_chunks.append(data)
+
+
+async def _handle_audio_end(
+    websocket: WebSocket,
+    msg: AudioEndMessage,
+    session: UserSession,
+    settings: Settings,
+) -> None:
+    from server.voice.transcript import voice_pcm_is_viable
+
+    if not session.voice_capture_active:
+        return
+
+    pcm_chunks = list(session.voice_chunks)
+    session.voice_capture_active = False
+    session.voice_chunks = []
+    session.interrupt.begin_listening()
+
+    if msg.payload.discard or not voice_pcm_is_viable(pcm_chunks):
+        log.debug(
+            "audio_end.skipped",
             user_id=session.user_id,
-            session_id=session.session_id,
-            supervisor=session.supervisor,
-        ),
-        name=f"voice-turn-{session.user_id}",
+            discard=msg.payload.discard,
+            bytes=sum(len(c) for c in pcm_chunks),
+        )
+        session.pending_voice_chunks = None
+        return
+
+    if session.turn_task and not session.turn_task.done():
+        defer_voice_utterance(session, pcm_chunks)
+        return
+
+    await start_voice_turn(websocket, session, settings, pcm_chunks)
+
+
+async def _handle_chat(
+    websocket: WebSocket, msg: ChatMessage, session: UserSession, settings: Settings
+) -> None:
+    decision = compute_respond_via(
+        capabilities_tts=session.capabilities.get("tts", True),
+        client_state=session.client_control,
+        input_kind="chat",
+    )
+
+    if session_busy(session) and decision.interrupt_policy == "queue":
+        if session.queued_chat_task and not session.queued_chat_task.done():
+            session.queued_chat_task.cancel()
+        session.queued_chat_text = msg.payload.text
+        engine_pool: EnginePool = websocket.app.state.engine_pool
+        session.queued_chat_task = asyncio.create_task(
+            _wait_and_run_queued_chat(websocket, session, settings, engine_pool),
+            name=f"queued-chat-{session.user_id}",
+        )
+        return
+
+    engine_pool = websocket.app.state.engine_pool
+    session.turn_task = asyncio.create_task(
+        _run_chat_turn(websocket, session, msg.payload.text, settings, engine_pool),
+        name=f"chat-turn-{session.user_id}",
     )
     session.interrupt.attach_turn_task(session.turn_task)
 
 
-async def _handle_chat(websocket: WebSocket, msg: ChatMessage, session: _WsSession) -> None:
-    engine_pool: EnginePool = websocket.app.state.engine_pool
+async def _wait_and_run_queued_chat(
+    websocket: WebSocket,
+    session: UserSession,
+    settings: Settings,
+    engine_pool: EnginePool,
+) -> None:
+    while session_busy(session):
+        await asyncio.sleep(0.05)
+    text = session.queued_chat_text
+    session.queued_chat_text = None
+    session.queued_chat_task = None
+    if not text:
+        return
+    await _run_chat_turn(websocket, session, text, settings, engine_pool)
 
-    async def on_token(token: str) -> None:
-        await send_json(
-            websocket,
-            CaptionMessage(payload=CaptionPayload(text=token, partial=True)),
+
+async def _run_chat_turn(
+    websocket: WebSocket,
+    session: UserSession,
+    text: str,
+    settings: Settings,
+    engine_pool: EnginePool,
+) -> None:
+    import uuid
+
+    from server.voice.captions import make_streaming_caption_handler
+    from server.voice.delivery import deliver_interrupted_partial, deliver_turn_output
+    from server.voice.streaming_tts import StreamingTtsPipeline, make_on_token_with_streaming_tts
+
+    turn_id = str(uuid.uuid4())
+    session.interrupt.begin_thinking(turn_id)
+    session.accumulated_partial = ""
+    session.turn_llm_persisted = False
+
+    decision = compute_respond_via(
+        capabilities_tts=session.capabilities.get("tts", True),
+        client_state=session.client_control,
+        input_kind="chat",
+    )
+
+    voice = websocket.app.state.voice
+    use_streaming_tts = decision.respond_via == "voice_and_chat"
+    pipeline: StreamingTtsPipeline | None = None
+    if use_streaming_tts:
+        pipeline = StreamingTtsPipeline(
+            websocket=websocket,
+            turn_id=turn_id,
+            interrupt=session.interrupt,
+            tts=voice["tts"],
+            emit_sentence_captions=True,
         )
+        await pipeline.start()
+
+    def _accumulate_partial(token: str) -> None:
+        session.accumulated_partial += token
+
+    on_token = make_on_token_with_streaming_tts(
+        base_on_token=make_streaming_caption_handler(
+            websocket=websocket,
+            turn_id=turn_id,
+            interrupt=session.interrupt,
+            accumulate=_accumulate_partial,
+            emit_partial_captions=pipeline is None,
+        ),
+        pipeline=pipeline,
+    )
+
+    from server.voice.status_caption import send_status_caption
+
+    async def on_status_caption(status: str) -> None:
+        await send_status_caption(websocket, turn_id=turn_id, text=status)
 
     try:
+        tool_runner = _tool_runner(websocket)
         output = await session.supervisor.run_turn(
-            msg.payload.text,
+            text,
             engine_pool=engine_pool,
             on_token=on_token,
+            input_kind="chat",
+            computed_respond_via=decision.respond_via,
+            turn_id=turn_id,
+            tool_runner=tool_runner,
+            on_tool_event=make_tool_event_emitter(session),
+            on_status_caption=on_status_caption,
         )
+        session.turn_llm_persisted = True
+        delay = _suppression_delay_ms(session, settings)
+        if pipeline is not None:
+            await pipeline.flush()
+            await pipeline.finish(delay)
+        await deliver_turn_output(
+            websocket,
+            turn_id=output.turn_id,
+            assistant_text=output.assistant_text,
+            respond_via=output.respond_via,
+            interrupt=session.interrupt,
+            tts=None,
+            suppression_delay_ms=delay,
+            stream_captions_during_llm=True,
+            tts_streamed_during_llm=pipeline is not None,
+        )
+    except asyncio.CancelledError:
+        if pipeline is not None:
+            await pipeline.cancel()
+        if session.accumulated_partial:
+            await deliver_interrupted_partial(
+                websocket,
+                turn_id=turn_id,
+                partial_text=session.accumulated_partial,
+            )
+            await persist_interrupted_assistant(session, session.accumulated_partial)
+        raise
     except Exception as exc:
         log.error("ws.chat_completion_failed", user_id=session.user_id, error=str(exc))
         err = ErrorMessage(payload=ErrorPayload(code=4500, message="Completion failed"))
         await send_json(websocket, err)
-        return
+    finally:
+        session.interrupt.finish_turn()
+        session.accumulated_partial = ""
+        from server.transport.chat_queue import drain_queued_chat
 
-    await send_json(
-        websocket,
-        CaptionMessage(payload=CaptionPayload(text=output.assistant_text, partial=False)),
-    )
-
-
-async def send_json(websocket: WebSocket, message: ServerMessage) -> None:
-    if websocket.client_state == WebSocketState.CONNECTED:
-        await websocket.send_text(serialize_server_message(message))
+        await drain_queued_chat(
+            session, websocket, engine_pool, run_chat_turn=_run_chat_turn
+        )
+        await drain_pending_voice(websocket, session, settings)
 
 
-async def send_audio_frame(websocket: WebSocket, pcm: bytes) -> None:
-    if websocket.client_state == WebSocketState.CONNECTED:
-        await websocket.send_bytes(pcm)
+def _suppression_delay_ms(session: UserSession, settings: Settings) -> int:
+    if session.capabilities.get("aec"):
+        return settings.aec_client_suppression_delay_ms
+    return settings.self_echo_suppression_delay_ms
 
 
 async def _close_auth_failed(websocket: WebSocket, *, code: int, reason: str) -> None:

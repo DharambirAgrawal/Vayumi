@@ -6,12 +6,12 @@ from typing import Literal
 from starlette.websockets import WebSocket
 
 from server.logger import get_logger
+from server.transport.outbound import send_json
 from server.transport.protocol import (
     ClientControlCommand,
     ClientControlMessage,
     ClientControlPayload,
     ClientStatePayload,
-    serialize_server_message,
 )
 
 log = get_logger("transport.client_control")
@@ -36,7 +36,7 @@ class ClientControlSession:
         self.capture = state.capture
         self.visible = state.visible
         self.route = state.route
-        log.info(
+        log.debug(
             "client_state.updated",
             playback=self.playback,
             capture=self.capture,
@@ -59,7 +59,7 @@ async def send_client_control(
     message = ClientControlMessage(
         payload=ClientControlPayload(command=command, reason=reason, turn_id=turn_id),
     )
-    await _send_json(websocket, message)
+    await send_json(websocket, message)
 
 
 async def send_interrupt_controls(
@@ -80,8 +80,3 @@ async def send_tts_play_control(
     await send_client_control(websocket, "play", "tts_start", turn_id=turn_id)
 
 
-async def _send_json(websocket: WebSocket, message: ClientControlMessage) -> None:
-    from starlette.websockets import WebSocketState
-
-    if websocket.client_state == WebSocketState.CONNECTED:
-        await websocket.send_text(serialize_server_message(message))

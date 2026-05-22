@@ -245,4 +245,153 @@ This log tracks updates pushed to GitHub for Server2. Each entry should be small
 - `ruff check server/ tests/` — all checks passed
 
 **Follow-ups:**
-- Step 6: Tool plane (registry, runner, web_search, tool_search)
+- Step 6: v1.7 contract backfill (session singleton, respond_via, echo suppression)
+
+---
+
+## 2026-05-21 - v1.7 doc backfill + step renumber
+
+**Scope:** docs
+
+**Why:** Align documentation with PLAN.md v1.7 (session singleton, respond_via, echo suppression, chat_message) and insert a backfill step before tools.
+
+**Key changes:**
+- Added Step 06 spec for the v1.7 contract backfill.
+- Renumbered tool plane to Step 07 and shifted later steps.
+- Updated roadmap, tracker, and diagram references to reflect new contracts and step numbers.
+- Updated agent prompt to summarize Rules 11–13.
+
+**Files/areas:**
+- `doc/step-06.md`, `doc/step-07.md`
+- `doc/roadmap.md`, `doc/tracker.md`, `PLAN.md`
+- `orchestrator_diagram_v3.drawio`, `agent-prompt.md`
+
+**Plan/diagram references:**
+- PLAN.md v1.7 (§5, §7.5, §7.11, §8)
+- Diagram pages 03 (connect/auth), 05 (chat turn), 10 (interrupt)
+
+**Tests/verification:**
+- N/A (documentation update)
+
+**Follow-ups:**
+- Implement Step 06 backfill, then continue with Step 07 tool plane.
+
+---
+
+## 2026-05-21 - Full doc consistency audit (v1.7)
+
+**Scope:** docs
+
+**Why:** Cross-check all step files, tracker, roadmap, agent prompt, PLAN.md §3.4, and `orchestrator_diagram_v3.drawio` against PLAN.md v1.7 so session singleton, respond_via, echo suppression, and chat_message are aligned with no gaps.
+
+**Key changes:**
+- Fixed PLAN.md §3.4 Supervisor wording (per `user_id`, not per WebSocket).
+- step-01/03/04/05: v1.7 deliverable notes, acceptance criteria, and session-singleton / echo-suppression tests.
+- roadmap.md: repaired corrupted Step 2 section; Step 8/10 v1.7 notifier notes.
+- tracker.md: v1.7 contract matrix; deliverable ownership by step.
+- Created `doc/step-08.md` (sub-agent) and `doc/step-10.md` (notifier) stubs with `compute_respond_via` requirements.
+- orchestrator_diagram_v3.drawio: page 03 singleton flow, page 10 FSM table + Rule 12/13 alignment.
+
+**Files/areas:**
+- `PLAN.md`, `doc/{step-01,03,04,05,08,10,roadmap,tracker,history}.md`, `agent-prompt.md`, `orchestrator_diagram_v3.drawio`
+
+**Tests/verification:** N/A (documentation only)
+
+---
+
+## 2026-05-21 - Step 6: v1.7 contract backfill
+
+**Scope:** transport | voice | orchestrator | web-client | tests
+
+**Why:** Align Steps 1–5 with PLAN.md v1.7 before adding the tool plane.
+
+**Key changes:**
+- Session singleton: `enforce_session_singleton()` in `session_registry.py`; `session_superseded` event + close code 4001; `welcome{resumed, task_board_snapshot}` after `hello`.
+- `compute_respond_via()` (Rule 13); typed chat defaults to `voice_and_chat` when TTS-capable.
+- `begin_tts_with_echo_suppression()` (Rule 12): `stop_capture` → TTS → `start_capture` after delay.
+- `chat_message` server event distinct from sentence-level `caption`.
+- Chat queue depth 1 while assistant is speaking.
+- Web client: `capabilities.tts`, `renderChatMessage`, stop/start capture, handover notice.
+
+**Files/areas:**
+- NEW: `server/transport/session_registry.py`, `server/transport/chat_queue.py`, `server/voice/respond_via.py`, `server/voice/echo_suppression.py`, `server/voice/delivery.py`, `server/voice/tts_stream.py`
+- CHANGED: `server/transport/{ws,protocol,client_control}.py`, `server/voice/{turn,interrupt}.py`, `server/orchestrator/{supervisor,directives}.py`, `server/config.py`, `web-client/client.js`, `.env.example`
+- NEW tests: `test_respond_via.py`, `test_session_singleton.py`; updated protocol/interrupt tests
+
+**Plan/diagram references:** PLAN.md §5.0, §5.5, Rules 11–13, §7.11; diagram pages 03, 05, 10
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 72 passed
+- `ruff check server/ tests/` — all checks passed
+
+**Follow-ups:**
+- Step 7: Tool plane
+
+---
+
+## 2026-05-21 - Step 6 completion: PLAN §5.5 streaming TTS
+
+**Scope:** voice | transport | orchestrator | tests | docs
+
+**Why:** Step 6 text delivery required interleaved LLM→TTS (first audio after first sentence), not batch TTS after full generation.
+
+**Key changes:**
+- `sentence_buffer.py` — `drain_complete_sentences()` from token stream.
+- `streaming_tts.py` — `StreamingTtsPipeline` queues sentences, emits `audio_start` once, PCM per sentence, `audio_end` + echo clear.
+- `ws.py` / `turn.py` wire pipeline into `on_token`; `delivery.py` skips batch TTS when `tts_streamed_during_llm`.
+- Runtime fixes retained: Kokoro model path, client `audio_start` without `clear_queue`, session_busy mic discard, `cache_prompt: false`, dev session UUID.
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 84 passed
+- `ruff check server/voice server/transport/ws.py server/orchestrator/supervisor.py` — clean
+
+**Manual check:** restart uvicorn + llama-server; hard-refresh client; long reply should hear first sentence before LLM finishes.
+
+---
+
+## 2026-05-21 - Tracker + history brought current through Step 6
+
+**Scope:** docs
+
+**Why:** Tracker detail sections stopped at Step 4 in the scroll order (Step 3 missing; file map and WS flow still described Step 1 echo).
+
+**Key changes:**
+- Added step index table (Steps 1–6 ✅, 7 ⬜) at top of `doc/tracker.md`.
+- Added **What Step 3 Built** section; clarified Steps 1–6 complete.
+- Replaced Step 1 echo WS diagram with current hello-first + singleton + `chat_message` flow.
+- Updated full-system diagram, audio flow, and file map for Step 5–6 modules.
+
+**Files/areas:** `doc/tracker.md`
+
+**Tests/verification:** N/A
+
+---
+
+## 2026-05-21 - Step 7 complete: Tool plane
+
+**Scope:** tools | orchestrator | transport | client | tests
+
+**Why:** Give Main cheap direct tools (search, memory, discovery) through one registry and runner before sub-agents in Step 8.
+
+**Key changes:**
+- `ToolRegistry` + `ToolRunner` — single execution path with capability gate, args validation, timeout, audit, and `tool_started`/`tool_done` events.
+- Main tools: `tool_search`, `web_search` (Tavily when `TAVILY_API_KEY` set, DuckDuckGo fallback), `memory_save`, `memory_recall`.
+- `[DELEGATE capability=main ...]` parsing; `tool_dispatch` runs multiple delegates in parallel; non-main capabilities return `not_capable` until Step 8.
+- Supervisor follow-up pass injects `[TOOL_RESULT ...]` (same pattern as RECALL); follow-up blocks recursive DELEGATE.
+- Boot: `init_tools()` on `app.state`; chat + voice turns pass `tool_runner` and event emitter to WebSocket activity feed.
+- 24 new unit tests (108 total); Phase 1 complete (7/7).
+
+**Files/areas:**
+- NEW: `server/tools/{registry,runner,tool_search,web_search,memory_save,memory_recall}.py`, `server/orchestrator/tool_dispatch.py`
+- NEW tests: `test_tools_*.py`, `test_directives_tools.py`, `test_supervisor_tools.py`, `test_tool_dispatch.py`
+- CHANGED: `server/orchestrator/{directives,supervisor}.py`, `server/{app,config}.py`, `server/transport/ws.py`, `server/voice/turn.py`, `prompts/main.txt`, `web-client/client.js`, `pyproject.toml`, `.env.example`
+- CHANGED: `PLAN.md`, `doc/{step-07,roadmap,tracker,history}.md`
+
+**Plan/diagram references:** PLAN.md §3.6, §7.10–§7.11, §8 Step 7, §10–§11; diagram page 08
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 108 passed
+- `ruff check server/ tests/` — all checks passed
+
+**Follow-ups:**
+- Step 8: Sub-agent worker + signal bus (reuse `ToolRunner` without changes)

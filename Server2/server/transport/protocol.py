@@ -39,7 +39,9 @@ class AudioStartMessage(BaseModel):
 
 
 class AudioEndPayload(BaseModel):
-    pass
+    """discard=true: client stopped capture for echo suppression, not a user utterance."""
+
+    discard: bool = False
 
 
 class AudioEndMessage(BaseModel):
@@ -69,7 +71,7 @@ class ClientStatePayload(BaseModel):
     playback: Literal["idle", "playing", "paused"]
     capture: Literal["idle", "recording"]
     visible: bool
-    route: Literal["speaker", "earpiece", "bluetooth"] | None = None
+    route: Literal["speaker", "earpiece", "bluetooth", "none"] | None = None
 
 
 class ClientStateMessage(BaseModel):
@@ -105,6 +107,8 @@ ClientMessage = Annotated[
 class WelcomePayload(BaseModel):
     session_id: str
     server_version: str = "0.1.0"
+    resumed: bool = False
+    task_board_snapshot: dict[str, object] | None = None
 
 
 class WelcomeMessage(BaseModel):
@@ -125,6 +129,7 @@ class EchoMessage(BaseModel):
 class CaptionPayload(BaseModel):
     text: str
     partial: bool
+    turn_id: str = ""
 
 
 class CaptionMessage(BaseModel):
@@ -145,6 +150,32 @@ class ServerAudioStartMessage(BaseModel):
 
 class ServerAudioEndPayload(BaseModel):
     turn_id: str
+    interrupted: bool = False
+    error: bool = False
+
+
+class UserMessagePayload(BaseModel):
+    """STT or server-confirmed user text for the chat thread (voice turns)."""
+
+    text: str
+    turn_id: str
+    source: Literal["voice", "chat"] = "voice"
+
+
+class UserMessage(BaseModel):
+    type: Literal["user_message"] = "user_message"
+    payload: UserMessagePayload
+
+
+class AssistantChatMessagePayload(BaseModel):
+    text: str
+    turn_id: str
+    final: bool = True
+
+
+class AssistantChatMessage(BaseModel):
+    type: Literal["chat_message"] = "chat_message"
+    payload: AssistantChatMessagePayload
 
 
 class ServerAudioEndMessage(BaseModel):
@@ -202,6 +233,7 @@ class EventPayload(BaseModel):
         "task_done",
         "task_error",
         "file_processing",
+        "session_superseded",
     ]
     task_id: str
     summary: str
@@ -216,6 +248,8 @@ ServerMessage = (
     WelcomeMessage
     | EchoMessage
     | CaptionMessage
+    | UserMessage
+    | AssistantChatMessage
     | ServerAudioStartMessage
     | ServerAudioEndMessage
     | ClientControlMessage

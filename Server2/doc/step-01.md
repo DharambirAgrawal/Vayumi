@@ -142,7 +142,8 @@ The WebSocket endpoint at `/ws/v1/session`. Behavior in step 1:
 - Read `token` from query string.
 - `verify_token(token)` — on failure, close with code `4401`.
 - Accept the connection.
-- Send a `Welcome { session_id, server_version }`.
+- Send a `Welcome { session_id, server_version }` (Step 6 backfill adds `resumed` and `task_board_snapshot` per PLAN.md §5.3).
+- **v1.7 deliverable (verified in Step 6):** `enforce_session_singleton(user_id, new_ws)` — registry maps `user_id → Supervisor`; a second connection for the same user supersedes the old socket (see acceptance test below).
 - Loop:
   - On JSON frame: parse → for `Chat`, send back `Echo { kind: "chat", payload: <same> }`. For `Ping`, send `Pong`.
   - On binary frame: send back the same bytes (proving binary path works).
@@ -204,6 +205,8 @@ Run these in order. All must pass.
 7. Click "Record 1s". The log shows `audio_start`, then a `binary frame received: 32000 bytes` line on the client side after the server echoes, then `audio_end`.
 8. Try connecting with an obviously invalid token (not `dev`) — connection closes with code `4401`.
 
+**Session singleton (PLAN.md §5.0 — implemented and verified in Step 6 backfill):** Open two browser tabs with the same token (`dev`). Connect tab A, then connect tab B for the same `user_id`. Tab A must receive `event { kind: "session_superseded", reason: "new_device" }` and close with WebSocket code **4001**. Tab B must receive `welcome { resumed: true, session_id, task_board_snapshot? }` (device handover reattaches the existing Supervisor). A brand-new `user_id` still gets `welcome { resumed: false }` on first connect. Sub-agents are unaffected because they bind to the Supervisor, not the socket.
+
 **Optional (if Server 1 is running):** Set `JWT_PUBLIC_KEY` and `SERVER1_REDIS_URL` in `.env`, restart, and repeat steps 5-8 with a real Server 1 token. This proves the prod auth path works too.
 
 If all 8 pass, mark step 1 ✅ in `PLAN.md` Section 8 and open `doc/step-02.md`.
@@ -231,7 +234,7 @@ If you find yourself wanting any of the above, write it down for the relevant la
 | JWT verification works in Server 1 but not Server 2 due to key-format mismatch | Dev mode uses a bypass so we are never blocked. When Server 1 is ready, the optional acceptance test uses a real token. If that fails, fix the PEM parsing then, not now. |
 | Dev auth bypass leaks into prod | Controlled by `APP_ENV` only. In prod, `JWT_PUBLIC_KEY` is required and the bypass code is never reached. No `SKIP_AUTH` flag to accidentally leave on. |
 | `MediaRecorder` produces opus-in-webm instead of PCM | We don't use `MediaRecorder`. We use `AudioWorkletNode` + `Float32Array → Int16` conversion + raw `WebSocket.send(buffer)`. The web client code shows exactly this. |
-| Browser blocks mic on `http://` non-localhost | Acceptance test specifies `localhost`. Production needs HTTPS — that's step 19. |
+| Browser blocks mic on `http://` non-localhost | Acceptance test specifies `localhost`. Production needs HTTPS — that's step 20. |
 | LanceDB corrupts on crash | LanceDB is append-only and versioned by design; restart re-opens cleanly. |
 | Postgres asyncpg pool exhaustion under reconnects | Use `min_size=2, max_size=10`. Verify by reconnecting the client 50 times in a manual stress test before closing the step. |
 

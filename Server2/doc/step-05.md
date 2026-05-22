@@ -27,7 +27,7 @@ server/memory/
 ├── facts.py                     NEW — versioned fact CRUD + LanceDB upsert
 ├── warm.py                      NEW — warm profile + dirty flag + Redis cache
 ├── session.py                   NEW — session rows + turn history
-└── retrieval.py                 NEW — stub (full semantic search in step 10)
+└── retrieval.py                 NEW — stub (full semantic search in step 11)
 server/orchestrator/
 ├── __init__.py                  NEW
 ├── directives.py                NEW — REMEMBER / RECALL parsing + execution
@@ -88,7 +88,7 @@ tests/unit/
 
 ### 6. Retrieval stub (`server/memory/retrieval.py`)
 
-- `retrieve(query, filters, k)` raises `NotImplementedError` (step 10).
+- `retrieve(query, filters, k)` raises `NotImplementedError` (step 11).
 
 ### 7. Directives (`server/orchestrator/directives.py`)
 
@@ -98,7 +98,7 @@ tests/unit/
 
 ### 8. Supervisor (`server/orchestrator/supervisor.py`)
 
-- `Supervisor(user_id, session_id)` — per WS connection.
+- `Supervisor(user_id, session_id)` — one instance per `user_id` (session singleton, PLAN.md §5.0). WebSocket reattaches via `attach_transport()`; not one Supervisor per socket.
 - `run_turn(user_text, engine_pool, on_token)` — warm + history + completion; post-process directives; optional follow-up completion when RECALL needs injection; persist user + assistant turns.
 
 ### 9. Integration
@@ -135,7 +135,7 @@ If all pass, mark Step 5 ✅ in tracking files and stub `doc/step-06.md` if miss
 ## Out of scope
 
 - Tool plane, sub-agents, signal bus, task board
-- Full LanceDB semantic `retrieve()` (step 10)
+- Full LanceDB semantic `retrieve()` (step 11)
 - Summarizer P2, `[DELEGATE]`, mid-stream directive pause (post-stream + follow-up only in this step)
 - File upload, MCP
 
@@ -151,4 +151,4 @@ If all pass, mark Step 5 ✅ in tracking files and stub `doc/step-06.md` if miss
 
 ## Notes for the next step
 
-Step 6 adds the tool plane (registry, runner, web_search).
+Step 6 backfills the v1.7 contracts (session singleton, respond_via, echo suppression, chat_message).

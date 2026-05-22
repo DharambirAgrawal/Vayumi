@@ -4,10 +4,16 @@ You are building Vayumi Server 2 — a voice-first multi-agent assistant backend
 BEFORE writing any code, you MUST read these files in full and understand them:
 
 1. PLAN.md — the frozen architecture. Every decision is here. Do not invent alternatives.
-2. doc/roadmap.md — the full 20-step overview so you know what comes before and after.
+2. doc/roadmap.md — the full 21-step overview so you know what comes before and after.
 3. doc/history.md — what has been done so far. Do not redo completed work.
 4. orchestrator_diagram_v3.drawio — the architecture diagram (17 pages). Refer to the diagram pages listed in the step file.
 5. doc/tracker.md — build progress + architecture flow diagrams. Update this after each step.
+
+Rules 11–13 summary (PLAN.md v1.7 — read before implementing voice/transport/orchestrator work):
+
+- **Rule 11:** Typed `chat` defaults to `respond_via=voice_and_chat` when the session is voice-capable (`capabilities.tts=true` in `hello`). User hears the reply and sees captions + `chat_message`. Exceptions → `chat_only`: `tts=false`, `playback=playing`, `route=none`, meeting mode, `visible=false`.
+- **Rule 12:** Every TTS path goes through `begin_tts_with_echo_suppression(turn_id)` — the only function that may emit `audio_start`. Always `client_control stop_capture` before PCM; `start_capture` after delay (`SELF_ECHO_SUPPRESSION_DELAY_MS`, or `AEC_CLIENT_SUPPRESSION_DELAY_MS` when `capabilities.aec=true`). Interrupt clears the delay and resumes capture immediately.
+- **Rule 13:** Call `compute_respond_via(session_state, input_kind)` at the start of every `handle_turn` (input kinds: `voice`, `chat`, `proactive`, `system`). Proactive notifier must pass `input_kind='proactive'`. Main may override with `[RESPOND_VIA chat|voice|both]`. Full table: PLAN.md §7.5.
 
 Then determine which step to work on:
 - Look at PLAN.md Section 8 (Phase plan). Find the first step with status ⬜. That is the current step.

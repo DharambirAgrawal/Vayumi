@@ -14,7 +14,7 @@ class MainPromptContext:
     warm_profile: str = ""
     history_lines: list[str] = field(default_factory=list)
     compressed_summary: str = ""
-    recall_context: str = ""
+    recall_context: str = ""  # recall blocks, tool results, and other injected context
 
 
 def build_main_prompt(context: MainPromptContext) -> str:

@@ -7,10 +7,22 @@ from typing import Any, Literal
 
 from server.logger import get_logger
 from server.memory import facts
+from server.memory.warm import affects_warm_profile
 
 log = get_logger("orchestrator.directives")
 
-DirectiveKind = Literal["remember", "recall", "recall_chain"]
+_RECALL_FOLLOWUP_HINT = (
+    "Answer the user's latest message now in plain prose. "
+    "If they asked for a story or explanation, provide it completely — "
+    "do not ask them to choose again unless recall results are truly empty."
+)
+
+DirectiveKind = Literal["remember", "recall", "recall_chain", "respond_via", "delegate"]
+
+RESPOND_VIA_RE = re.compile(
+    r"\[RESPOND_VIA\s+(?P<mode>chat|voice|both)\s*\]",
+    re.IGNORECASE,
+)
 
 REMEMBER_RE = re.compile(
     r'\[REMEMBER\s+key=(?P<key>[^\s\]]+)\s+value=(?P<value>.+?)\s+source=(?P<source>"[^"]+"|[^\s\]]+)\s*\]',
@@ -24,8 +36,12 @@ RECALL_RE = re.compile(
     r'\[RECALL\s+(?!chain\s)key=(?P<key>[^\s\]]+)\s*\]',
     re.IGNORECASE,
 )
+DELEGATE_HEAD_RE = re.compile(
+    r'\[DELEGATE\s+capability=(?P<capability>\w+)\s+goal="(?P<goal>[^"]*)"\s+payload=',
+    re.IGNORECASE,
+)
 DIRECTIVE_BLOCK_RE = re.compile(
-    r'\[(?:REMEMBER|RECALL)(?:\s+chain)?\s+[^\]]+\]',
+    r'\[(?:REMEMBER|RECALL|RESPOND_VIA|DELEGATE)(?:\s+chain)?\s+[^\]]+\]',
     re.IGNORECASE,
 )
 
@@ -48,6 +64,64 @@ class RecallResult:
     key: str
     chain: bool
     payload: str
+
+
+@dataclass(frozen=True)
+class DelegateDirective:
+    capability: str
+    goal: str
+    payload: dict[str, Any]
+
+
+def _extract_json_object(text: str, start: int) -> str | None:
+    if start >= len(text) or text[start] != "{":
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : idx + 1]
+    return None
+
+
+def parse_delegate_directives(text: str) -> list[DelegateDirective]:
+    found: list[DelegateDirective] = []
+    for match in DELEGATE_HEAD_RE.finditer(text):
+        payload_raw = _extract_json_object(text, match.end())
+        if payload_raw is None:
+            continue
+        try:
+            payload = json.loads(payload_raw)
+        except json.JSONDecodeError:
+            log.warning("directives.delegate_invalid_json", goal=match.group("goal"))
+            continue
+        if not isinstance(payload, dict):
+            continue
+        found.append(
+            DelegateDirective(
+                capability=match.group("capability"),
+                goal=match.group("goal"),
+                payload=payload,
+            )
+        )
+    return found
 
 
 def parse_directives(text: str) -> list[RememberDirective | RecallDirective]:
@@ -76,8 +150,60 @@ def parse_directives(text: str) -> list[RememberDirective | RecallDirective]:
     return found
 
 
+def parse_respond_via_override(text: str) -> Literal["chat", "voice", "both"] | None:
+    match = RESPOND_VIA_RE.search(text)
+    if not match:
+        return None
+    mode = match.group("mode").lower()
+    if mode in ("chat", "voice", "both"):
+        return mode  # type: ignore[return-value]
+    return None
+
+
+def filter_profile_directives(
+    directives: list[RememberDirective | RecallDirective],
+) -> list[RememberDirective | RecallDirective]:
+    """Drop REMEMBER/RECALL for keys outside the profile namespace."""
+    kept: list[RememberDirective | RecallDirective] = []
+    for directive in directives:
+        if not affects_warm_profile(directive.key):
+            log.debug("directives.skipped_non_profile_key", key=directive.key)
+            continue
+        kept.append(directive)
+    return kept
+
+
+TOOL_SEARCH_META_RE = re.compile(
+    r"^Found \d+ tool\(s\) for .+$",
+    re.IGNORECASE,
+)
+
+
+def strip_internal_tool_blocks(text: str) -> str:
+    """Remove injected tool traces — never user-visible."""
+    kept: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[TOOL_RESULT"):
+            continue
+        if TOOL_SEARCH_META_RE.match(stripped):
+            continue
+        if stripped in ("Here's a summary of the results:", "Here's a summary:"):
+            continue
+        kept.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+
+
 def strip_directives(text: str) -> str:
-    cleaned = DIRECTIVE_BLOCK_RE.sub("", text)
+    cleaned = text
+    for match in DELEGATE_HEAD_RE.finditer(text):
+        payload_raw = _extract_json_object(text, match.end())
+        if payload_raw is not None:
+            block = text[match.start() : match.end() + len(payload_raw)]
+            cleaned = cleaned.replace(block, "", 1)
+    cleaned = DIRECTIVE_BLOCK_RE.sub("", cleaned)
+    cleaned = RESPOND_VIA_RE.sub("", cleaned)
+    cleaned = strip_internal_tool_blocks(cleaned)
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
@@ -139,4 +265,5 @@ def format_recall_results(results: list[RecallResult]) -> str:
     for item in results:
         label = "chain" if item.chain else "key"
         lines.append(f"[RECALL_RESULT {label}={item.key}] {item.payload}")
-    return "\n".join(lines)
+    block = "\n".join(lines)
+    return f"{block}\n\n{_RECALL_FOLLOWUP_HINT}"
