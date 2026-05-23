@@ -32,22 +32,25 @@ class ToolRunner:
         *,
         user_id: str,
         on_event: ToolEventEmitter | None = None,
+        event_label_start: str | None = None,
     ) -> ToolResult:
-        entry = self._registry.get(tool_call.name)
+        entry = self._registry.get(tool_call.name, tool_call.capability)
         if entry is None:
+            known_elsewhere = any(
+                e.name == tool_call.name for e in self._registry.list_all()
+            )
+            if known_elsewhere:
+                return ToolResult(
+                    status="not_capable",
+                    summary=(
+                        f"Tool {tool_call.name} is not available for capability "
+                        f"{tool_call.capability}"
+                    ),
+                )
             return ToolResult(
                 status="error",
                 summary=f"Unknown tool: {tool_call.name}",
                 retryable=False,
-            )
-
-        if entry.capability != tool_call.capability:
-            return ToolResult(
-                status="not_capable",
-                summary=(
-                    f"Tool {tool_call.name} belongs to capability "
-                    f"{entry.capability}, not {tool_call.capability}"
-                ),
             )
 
         arg_error = validate_tool_args(entry.args_schema, tool_call.args)
@@ -71,9 +74,8 @@ class ToolRunner:
                     retryable=False,
                 )
 
-        started_summary = f"{tool_call.name} started"
-        if on_event is not None:
-            await on_event("tool_started", task_id, started_summary)
+        if on_event is not None and event_label_start:
+            await on_event("tool_started", task_id, event_label_start)
 
         started = time.perf_counter()
         try:
@@ -106,9 +108,8 @@ class ToolRunner:
             )
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        done_summary = f"{tool_call.name} {result.status} ({elapsed_ms}ms)"
-        if on_event is not None:
-            await on_event("tool_done", task_id, done_summary)
+        if on_event is not None and result.summary:
+            await on_event("tool_done", task_id, result.summary)
 
         log.info(
             "tools.execute_complete",

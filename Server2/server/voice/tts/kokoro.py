@@ -13,7 +13,7 @@ from server.voice.types import PcmFrame
 
 log = get_logger("voice.tts.kokoro")
 
-OUTPUT_SAMPLE_RATE = 16000
+OUTPUT_SAMPLE_RATE = 24000
 KOKORO_SAMPLE_RATE = 24000
 FRAME_MS = 20
 FRAME_SAMPLES = OUTPUT_SAMPLE_RATE * FRAME_MS // 1000
@@ -86,8 +86,7 @@ class KokoroTTS:
         audio = np.asarray(result.audio, dtype=np.float32)
         if audio.size == 0:
             return b""
-        resampled = _resample(audio, KOKORO_SAMPLE_RATE, OUTPUT_SAMPLE_RATE)
-        clipped = np.clip(resampled, -1.0, 1.0)
+        clipped = np.clip(audio, -1.0, 1.0)
         int16 = (clipped * 32767.0).astype(np.int16)
         return int16.tobytes()
 

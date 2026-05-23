@@ -7,6 +7,7 @@ from starlette.websockets import WebSocket
 
 from server.logger import get_logger
 from server.orchestrator.directives import strip_directives, strip_internal_tool_blocks
+from server.orchestrator.prose import sanitize_spoken_prose
 from server.transport.client_control import send_client_control, send_tts_play_control
 from server.transport.outbound import send_audio_frame, send_json
 from server.transport.protocol import (
@@ -59,6 +60,14 @@ class StreamingTtsPipeline:
                 self._worker(),
                 name=f"streaming-tts-{self._turn_id}",
             )
+
+    async def enqueue_sentence(self, sentence: str) -> None:
+        """Speak a full sentence immediately (e.g. ack before tools finish)."""
+        clean = sanitize_spoken_prose(
+            strip_internal_tool_blocks(strip_directives(sentence)).strip()
+        )
+        if clean and not self._interrupt.tts_cancelled():
+            await self._queue.put(clean)
 
     async def feed(self, token: str) -> None:
         if not token or self._interrupt.tts_cancelled():
@@ -144,7 +153,9 @@ class StreamingTtsPipeline:
             item = await self._queue.get()
             if item is _SENTINEL:
                 return
-            sentence = str(item)
+            sentence = sanitize_spoken_prose(str(item))
+            if not sentence:
+                continue
             if self._interrupt.tts_cancelled():
                 continue
             try:

@@ -15,6 +15,15 @@ def test_finalize_keeps_distinct_follow_up() -> None:
     assert finalize_assistant_prose(text) == text
 
 
+def test_finalize_strips_raw_urls() -> None:
+    raw = (
+        "NVDA is around $219. "
+        "[https://investor.nvidia.com/stock-info/default.aspx]"
+    )
+    assert "http" not in finalize_assistant_prose(raw)
+    assert "$219" in finalize_assistant_prose(raw)
+
+
 def test_texts_largely_repeat_detects_paraphrase() -> None:
     a = "I'm doing well, thank you for asking!"
     b = "I'm doing well, thank you for asking! It's nice to hear from you."

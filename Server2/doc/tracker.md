@@ -19,7 +19,7 @@
 | `hello.capabilities.tts` | client declares speaker | Step 4 + Step 6 | ✅ |
 | Proactive respond_via | `build_synthetic_turn` + `input_kind='proactive'` | Step 10 | ⬜ not started |
 
-**Current build step:** Step 8 (sub-agent worker + signal bus).
+**Current build step:** Step 9 (capability bundles).
 
 ### Step index (quick reference)
 
@@ -32,7 +32,7 @@
 | 5 | Memory v1 | ✅ | [step-05.md](step-05.md) |
 | 6 | v1.7 backfill | ✅ | [step-06.md](step-06.md) |
 | 7 | Tool plane | ✅ | [step-07.md](step-07.md) |
-| 8 | Sub-agent worker | ⬜ | [step-08.md](step-08.md) |
+| 8 | Sub-agent worker | ✅ | [step-08.md](step-08.md) |
 | 9 | Capability bundles | ⬜ | [step-09.md](step-09.md) |
 | 10 | Proactive notifier | ⬜ | [step-10.md](step-10.md) |
 | 11–21 | Retrieval, summarizer, modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
@@ -67,7 +67,7 @@ Completed: 7 / 21    Phase 1: 7/7    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/
 
 ## Completed steps (detail sections)
 
-Sections below describe what each finished step added. **Steps 1–7 are complete**; Step 8 is next.
+Sections below describe what each finished step added. **Steps 1–8 are complete**; Step 9 is next.
 
 ---
 
@@ -114,6 +114,51 @@ Supervisor.run_turn (pass 2) with [TOOL_RESULT ...] injected
      │
      ▼
 caption + chat_message (+ voice per respond_via)
+```
+
+---
+
+## What Step 8 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    SUB-AGENT PLANE (Step 8)                                     │
+│                                                                                 │
+│  server/subagents/                                                              │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ report.py — ReportSignal, [REPORT kind=STEP|NEEDS_INFO|DONE|ERROR]         │  │
+│  │ worker.py — SubAgentWorker.run / resume_with / pause (no transport)        │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  server/orchestrator/                                                           │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ signal_bus.py — publish → TaskBoard + PG audit + task_* WS events          │  │
+│  │ task_board.py — render_for_main(), snapshot() for welcome                  │  │
+│  │ supervisor.py — spawn_subagent, apply_answer_to_task, cancel_task          │  │
+│  │ directives.py — [ANSWER_TO], [STOP_TASK]                                   │  │
+│  │ tool_dispatch.py — research DELEGATE → spawn (main unchanged)            │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  engine/pool.py — assign_slot (1–3), submit_assigned, free_slot                │
+│  db/schema.sql — tasks, signals tables                                         │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Background task flow (Step 8)
+
+```
+Main [DELEGATE capability=research ...]
+     │
+     ▼
+spawn_subagent → asyncio task + P1 slot
+     │
+     ├── event task_step (Path A — activity feed only)
+     │
+     ▼
+SubAgentWorker → ToolRunner (capability tools) → report(STEP|DONE|NEEDS_INFO)
+     │
+     ▼
+SignalBus → TaskBoard → (optional) Main reads board on status question
 ```
 
 ---
@@ -601,7 +646,7 @@ Server2/
 │   ├── step-05.md              ✅ memory v1
 │   ├── step-06.md              ✅ v1.7 backfill
 │   ├── step-07.md              ✅ tool plane
-│   ├── step-08.md              ⬜ pending (sub-agent worker)
+│   ├── step-08.md              ✅ complete (sub-agent worker)
 │   ├── step-09.md              ⬜ pending (capability bundles)
 │   ├── step-10.md              ⬜ pending (proactive notifier)
 │   ├── tracker.md              ✅ this file — progress + architecture flows
@@ -673,7 +718,7 @@ Server2/
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
-    └── unit/                   ✅ 108 tests (through Step 7)
+    └── unit/                   ✅ 131 tests (through Step 8)
         ├── test_protocol.py
         ├── test_respond_via.py
         ├── test_session_singleton.py

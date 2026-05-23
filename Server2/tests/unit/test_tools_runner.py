@@ -90,6 +90,7 @@ async def test_runner_emits_events() -> None:
         ToolCall(name="ping", args={}, capability="main"),
         user_id="u1",
         on_event=on_event,
+        event_label_start="running ping",
     )
     assert events[0][0] == "tool_started"
     assert events[1][0] == "tool_done"

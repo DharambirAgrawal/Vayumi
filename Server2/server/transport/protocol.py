@@ -138,7 +138,7 @@ class CaptionMessage(BaseModel):
 
 
 class ServerAudioStartPayload(BaseModel):
-    sample_rate: int = 16000
+    sample_rate: int = 24000
     format: str = "pcm_s16le"
     turn_id: str
 

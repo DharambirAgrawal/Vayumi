@@ -395,3 +395,58 @@ This log tracks updates pushed to GitHub for Server2. Each entry should be small
 
 **Follow-ups:**
 - Step 8: Sub-agent worker + signal bus (reuse `ToolRunner` without changes)
+
+---
+
+## 2026-05-22 - Step 8 complete: Sub-agent worker + signal bus
+
+**Scope:** orchestrator | subagents | engine | transport | client | tests
+
+**Why:** Run long background work in parallel without blocking Main — Path A task pills, pause/resume, and structured task board for Main context.
+
+**Key changes:**
+- `ReportSignal` + `[REPORT kind=...]` parsing; `SubAgentWorker` loop on P1 slots with `submit_assigned` / `free_slot`.
+- `SignalBus.publish` + `TaskBoard.upsert_from_signal` / `render_for_main()`; Postgres `tasks` + `signals` tables.
+- `spawn_subagent`, `apply_answer_to_task`, `cancel_task`; `[ANSWER_TO]` / `[STOP_TASK]` directives.
+- `DELEGATE capability=research|...` spawns background worker; `main` still uses Step 7 `tool_dispatch`.
+- WebSocket `task_step` / `task_done` / `task_error` events; `welcome{task_board_snapshot}` always populated.
+- Engine pool: `assign_slot` (slots 1–3 for sub-agents), `hold_slot` across worker steps.
+
+**Files/areas:**
+- NEW: `server/subagents/{report,worker}.py`, `server/orchestrator/{signal_bus,task_board}.py`, `prompts/sub/research.txt`
+- NEW tests: `test_{subagent_worker,signal_bus,task_board,directives_subagent,supervisor_subagent}.py`
+- CHANGED: `server/orchestrator/{supervisor,directives,tool_dispatch}.py`, `server/engine/{pool,prompt}.py`, `server/db/schema.sql`, `server/transport/{ws,session_registry}.py`, `server/voice/turn.py`, `prompts/main.txt`, `web-client/{client.js,style.css}`
+
+**Plan/diagram references:** PLAN.md §7.7, §7.11, §8 Step 8; diagram pages 07, 15, 16
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 131 passed
+- `ruff check server/ tests/` — all checks passed
+
+**Follow-ups:**
+- Step 9: Capability bundles (per-capability tool cards, `summarize_url`, full sub prompts)
+
+---
+
+## 2026-05-22 - Deep search + Scrapling fetch tools (research)
+
+**Scope:** tools | orchestrator | subagents | tests
+
+**Why:** Research sub-agents need full article text (not just Tavily snippets) with fast static fetch and optional browser fallback.
+
+**Key changes:**
+- `deep_search` — Tavily/DDG discover URLs, then static Scrapling fetch + trafilatura extract per page; snippet fallback on block.
+- `fetch_url` — single-URL read with same fetch ladder.
+- Registry keyed by `(capability, name)`; research tools: `deep_search`, `fetch_url`, `memory_recall`.
+- Sub-agent prompts inject warm profile; `RESEARCH_TOOLS` updated in `tool_dispatch`.
+- Deps: `scrapling[fetchers]`, `trafilatura`.
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 150 passed
+- `ruff check server/ tests/` — clean
+
+## 2026-05-22 - requirements sync (fetch tools)
+
+**Scope:** deploy
+
+- `requirements.txt` aligned with `pyproject.toml` (`tavily-python`, `trafilatura`, `scrapling[fetchers]`, `spacy`).

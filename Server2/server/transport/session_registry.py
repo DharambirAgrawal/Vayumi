@@ -33,6 +33,7 @@ class UserSession:
     voice_chunks: list[bytes] = field(default_factory=list)
     pending_voice_chunks: list[bytes] | None = None
     turn_llm_persisted: bool = False
+    pending_background_tasks: list[str] = field(default_factory=list)
 
     def attach_transport(self, websocket: WebSocket) -> None:
         self.websocket = websocket
@@ -41,7 +42,7 @@ class UserSession:
         self.websocket = None
 
     def task_board_snapshot(self) -> dict[str, object]:
-        return {"tasks": [], "running": 0, "paused": 0}
+        return self.supervisor.task_board.snapshot()
 
 
 _registry: dict[str, UserSession] = {}

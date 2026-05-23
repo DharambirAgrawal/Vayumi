@@ -73,20 +73,25 @@ class ToolCall(BaseModel):
 
 class ToolRegistry:
     def __init__(self) -> None:
-        self._entries: dict[str, ToolEntry] = {}
+        self._entries: dict[tuple[str, str], ToolEntry] = {}
 
     def register(self, entry: ToolEntry) -> None:
         if not entry.name.strip():
             raise ValueError("tool name is required")
-        if entry.name in self._entries:
-            raise ValueError(f"duplicate tool name: {entry.name}")
+        key = (entry.capability, entry.name)
+        if key in self._entries:
+            raise ValueError(
+                f"duplicate tool: capability={entry.capability} name={entry.name}"
+            )
         if not entry.args_schema:
             raise ValueError(f"tool {entry.name} requires args_schema")
-        self._entries[entry.name] = entry
+        self._entries[key] = entry
         log.debug("tools.registered", tool=entry.name, capability=entry.capability)
 
-    def get(self, name: str) -> ToolEntry | None:
-        return self._entries.get(name)
+    def get(self, name: str, capability: str | None = None) -> ToolEntry | None:
+        if capability is not None:
+            return self._entries.get((capability, name))
+        return self._entries.get(("main", name))
 
     def list_all(self) -> list[ToolEntry]:
         return list(self._entries.values())
@@ -160,15 +165,34 @@ def render_tool_result_for_prompt(name: str, result: ToolResult) -> str:
     """Compact text block injected into the follow-up Main completion."""
     if result.status == "ok":
         data_preview = result.data
-        if "results" in data_preview and isinstance(data_preview["results"], list):
+        if "articles" in data_preview and isinstance(data_preview["articles"], list):
+            lines = [result.summary]
+            for idx, row in enumerate(data_preview["articles"][:5], start=1):
+                if not isinstance(row, dict):
+                    continue
+                title = row.get("title", "")
+                url = row.get("url", "")
+                status = row.get("status", "")
+                text = row.get("text", row.get("snippet", ""))
+                if isinstance(text, str) and len(text) > 2000:
+                    text = text[:2000] + "…"
+                lines.append(f"\n--- Article {idx} ({status}) {title} ---\n{url}\n{text}")
+            body = "\n".join(lines)
+        elif "text" in data_preview and isinstance(data_preview["text"], str):
+            title = data_preview.get("title", "")
+            url = data_preview.get("url", "")
+            text = data_preview["text"]
+            if len(text) > 4000:
+                text = text[:4000] + "…"
+            body = f"{title}\n{url}\n\n{text}"
+        elif "results" in data_preview and isinstance(data_preview["results"], list):
             lines = []
             for idx, row in enumerate(data_preview["results"][:8], start=1):
                 if not isinstance(row, dict):
                     continue
                 title = row.get("title", "")
                 snippet = row.get("snippet", "")
-                url = row.get("url", "")
-                lines.append(f"{idx}. {title} — {snippet} ({url})")
+                lines.append(f"{idx}. {title} — {snippet}")
             body = "\n".join(lines) if lines else str(data_preview)
         else:
             body = str(data_preview)

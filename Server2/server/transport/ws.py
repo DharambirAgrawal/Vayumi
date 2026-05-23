@@ -47,12 +47,27 @@ if True:
 log = get_logger("transport.ws")
 
 
+_ACTIVITY_EVENT_KINDS = frozenset(
+    {
+        "tool_started",
+        "tool_done",
+        "task_step",
+        "task_done",
+        "task_error",
+    }
+)
+
+
 def make_tool_event_emitter(session: UserSession) -> ToolEventEmitter:
+    return make_activity_event_emitter(session)  # type: ignore[return-value]
+
+
+def make_activity_event_emitter(session: UserSession) -> ToolEventEmitter:
     async def emit(kind: str, task_id: str, summary: str) -> None:
         ws = session.websocket
         if ws is None or ws.client_state != WebSocketState.CONNECTED:
             return
-        if kind not in ("tool_started", "tool_done"):
+        if kind not in _ACTIVITY_EVENT_KINDS:
             return
         msg = EventMessage(
             payload=EventPayload(
@@ -62,6 +77,18 @@ def make_tool_event_emitter(session: UserSession) -> ToolEventEmitter:
             ),
         )
         await send_json(ws, msg)
+        if kind == "task_done" and summary.strip().lower() not in {
+            "cancelled",
+            "canceled",
+        }:
+            from server.orchestrator.background_notify import schedule_background_delivery
+
+            schedule_background_delivery(
+                session,
+                task_id,
+                engine_pool=ws.app.state.engine_pool,
+                settings=ws.app.state.settings,
+            )
 
     return emit  # type: ignore[return-value]
 
@@ -169,10 +196,11 @@ async def _inbound_loop(
                         payload=WelcomePayload(
                             session_id=session.session_id,
                             resumed=resumed,
-                            task_board_snapshot=session.task_board_snapshot()
-                            if resumed
-                            else None,
+                            task_board_snapshot=session.task_board_snapshot(),
                         ),
+                    )
+                    session.supervisor.attach_task_events(
+                        make_activity_event_emitter(session)
                     )
                     await send_json(websocket, welcome)
                     continue
@@ -402,13 +430,15 @@ async def _run_chat_turn(
         pipeline=pipeline,
     )
 
-    from server.voice.status_caption import send_status_caption
+    from server.voice.status_caption import make_status_caption_handler
 
-    async def on_status_caption(status: str) -> None:
-        await send_status_caption(websocket, turn_id=turn_id, text=status)
+    on_status_caption = make_status_caption_handler(
+        websocket, turn_id=turn_id, pipeline=pipeline
+    )
 
     try:
         tool_runner = _tool_runner(websocket)
+        activity_emitter = make_activity_event_emitter(session)
         output = await session.supervisor.run_turn(
             text,
             engine_pool=engine_pool,
@@ -417,7 +447,8 @@ async def _run_chat_turn(
             computed_respond_via=decision.respond_via,
             turn_id=turn_id,
             tool_runner=tool_runner,
-            on_tool_event=make_tool_event_emitter(session),
+            on_tool_event=activity_emitter,
+            on_task_event=activity_emitter,
             on_status_caption=on_status_caption,
         )
         session.turn_llm_persisted = True
@@ -454,6 +485,13 @@ async def _run_chat_turn(
     finally:
         session.interrupt.finish_turn()
         session.accumulated_partial = ""
+        from server.orchestrator.background_notify import (
+            drain_pending_background_deliveries,
+        )
+
+        await drain_pending_background_deliveries(
+            session, engine_pool=engine_pool, settings=settings
+        )
         from server.transport.chat_queue import drain_queued_chat
 
         await drain_queued_chat(

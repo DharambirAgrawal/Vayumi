@@ -10,13 +10,22 @@ async def _noop_tool(*, user_id: str) -> ToolResult:
     return ToolResult(status="ok", summary="ok")
 
 
-def test_registry_unique_names() -> None:
+def test_registry_unique_per_capability_name() -> None:
     registry = ToolRegistry()
     registry.register(
         ToolEntry(
-            name="alpha",
+            name="memory_recall",
             capability="main",
-            description="first",
+            description="main recall",
+            args_schema={"type": "object", "properties": {}},
+            fn=_noop_tool,
+        )
+    )
+    registry.register(
+        ToolEntry(
+            name="memory_recall",
+            capability="research",
+            description="research recall",
             args_schema={"type": "object", "properties": {}},
             fn=_noop_tool,
         )
@@ -24,7 +33,7 @@ def test_registry_unique_names() -> None:
     with pytest.raises(ValueError, match="duplicate"):
         registry.register(
             ToolEntry(
-                name="alpha",
+                name="memory_recall",
                 capability="main",
                 description="dup",
                 args_schema={"type": "object", "properties": {}},
@@ -46,7 +55,8 @@ def test_resolve_for_capability_main_only() -> None:
     main_tools = registry.resolve_for_capability("main")
     names = {entry.name for entry in main_tools}
     assert names == {"tool_search", "web_search", "memory_save", "memory_recall"}
-    assert registry.resolve_for_capability("research") == []
+    research = {e.name for e in registry.resolve_for_capability("research")}
+    assert research == {"memory_recall", "fetch_url", "deep_search"}
 
 
 def test_registry_search_filters() -> None:

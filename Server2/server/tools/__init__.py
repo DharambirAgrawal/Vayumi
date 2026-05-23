@@ -3,7 +3,9 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING
 
+from server.tools import deep_search as deep_search_mod
 from server.tools import web_search as web_search_mod
+from server.tools.fetch_url import fetch_url
 from server.tools.memory_recall import memory_recall
 from server.tools.memory_save import memory_save
 from server.tools.registry import ToolEntry, ToolRegistry, ToolResult
@@ -14,14 +16,30 @@ if TYPE_CHECKING:
     from server.config import Settings
 
 
+def _tool_settings_partial(settings: Settings) -> dict[str, object]:
+    return {
+        "tavily_api_key": settings.tavily_api_key,
+        "groq_api_key": settings.groq_api_key,
+        "allow_dynamic_fallback": True,
+        "static_timeout_s": float(settings.deep_search_static_timeout_s),
+        "dynamic_timeout_ms": settings.deep_search_dynamic_timeout_ms,
+        "min_extract_chars": settings.deep_search_min_extract_chars,
+        "max_article_chars": settings.deep_search_max_chars_per_article,
+    }
+
+
 def build_tool_registry(settings: Settings) -> ToolRegistry:
     registry = ToolRegistry()
+    tool_partial = partial(_tool_search_bound, registry=registry)
 
     registry.register(
         ToolEntry(
             name="tool_search",
             capability="main",
-            description="Discover registered tools by keyword (compact cards only).",
+            description=(
+                "List registered tools and when to use each (discovery only — "
+                "does not fetch web pages or news)."
+            ),
             args_schema={
                 "type": "object",
                 "required": ["query"],
@@ -30,7 +48,7 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
                     "capability": {"type": "string"},
                 },
             },
-            fn=partial(_tool_search_bound, registry=registry),
+            fn=tool_partial,
             cost_hint="cheap",
             timeout_s=10,
         )
@@ -40,7 +58,10 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
         ToolEntry(
             name="web_search",
             capability="main",
-            description="Search the web (Tavily when configured, DuckDuckGo fallback).",
+            description=(
+                "Quick web search: short snippets and headlines (seconds). "
+                "Use for stocks, news, weather — not for reading full articles."
+            ),
             args_schema={
                 "type": "object",
                 "required": ["query"],
@@ -96,6 +117,75 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
             fn=memory_recall,
             cost_hint="cheap",
             timeout_s=15,
+        )
+    )
+
+    research_shared = _tool_settings_partial(settings)
+
+    registry.register(
+        ToolEntry(
+            name="memory_recall",
+            capability="research",
+            description="Read a stored user fact by key (for background research).",
+            args_schema={
+                "type": "object",
+                "required": ["key"],
+                "properties": {
+                    "key": {"type": "string"},
+                    "chain": {"type": "boolean"},
+                },
+            },
+            fn=memory_recall,
+            cost_hint="cheap",
+            timeout_s=15,
+        )
+    )
+
+    registry.register(
+        ToolEntry(
+            name="fetch_url",
+            capability="research",
+            description="Fetch and extract readable text from one URL (static first).",
+            args_schema={
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                    "url": {"type": "string"},
+                    "dynamic": {"type": "boolean"},
+                    "allow_dynamic_fallback": {"type": "boolean"},
+                },
+            },
+            fn=partial(fetch_url, **research_shared),
+            cost_hint="heavy",
+            timeout_s=90,
+        )
+    )
+
+    registry.register(
+        ToolEntry(
+            name="deep_search",
+            capability="research",
+            description=(
+                "Deep research: search then fetch and extract full article text from pages. "
+                "Use when the user wants depth, sources, or full reads — slower than web_search."
+            ),
+            args_schema={
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_urls": {"type": "integer"},
+                    "search_depth": {
+                        "type": "string",
+                        "enum": ["basic", "advanced"],
+                    },
+                    "dynamic": {"type": "boolean"},
+                    "allow_dynamic_fallback": {"type": "boolean"},
+                },
+            },
+            fn=partial(deep_search_mod.deep_search, **research_shared),
+            cost_hint="heavy",
+            timeout_s=120,
         )
     )
 

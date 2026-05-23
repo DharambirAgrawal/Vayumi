@@ -43,6 +43,11 @@ class Settings(BaseSettings):
 
     # ── Tools (optional; web_search falls back to DuckDuckGo without key) ──
     tavily_api_key: str | None = None
+    deep_search_max_urls: int = 3
+    deep_search_max_chars_per_article: int = 6000
+    deep_search_static_timeout_s: int = 20
+    deep_search_dynamic_timeout_ms: int = 30_000
+    deep_search_min_extract_chars: int = 400
 
     @field_validator("app_env")
     @classmethod
