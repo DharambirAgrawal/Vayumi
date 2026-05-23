@@ -33,7 +33,6 @@ from server.transport.protocol import (
 from server.transport.session_registry import UserSession, enforce_session_singleton
 from server.transport.turn_coordinator import (
     defer_voice_utterance,
-    drain_pending_voice,
     persist_interrupted_assistant,
     session_busy,
     start_voice_turn,
@@ -77,18 +76,6 @@ def make_activity_event_emitter(session: UserSession) -> ToolEventEmitter:
             ),
         )
         await send_json(ws, msg)
-        if kind == "task_done" and summary.strip().lower() not in {
-            "cancelled",
-            "canceled",
-        }:
-            from server.orchestrator.background_notify import schedule_background_delivery
-
-            schedule_background_delivery(
-                session,
-                task_id,
-                engine_pool=ws.app.state.engine_pool,
-                settings=ws.app.state.settings,
-            )
 
     return emit  # type: ignore[return-value]
 
@@ -386,124 +373,16 @@ async def _run_chat_turn(
     settings: Settings,
     engine_pool: EnginePool,
 ) -> None:
-    import uuid
+    from server.transport.turn_coordinator import run_supervisor_text_turn
 
-    from server.voice.captions import make_streaming_caption_handler
-    from server.voice.delivery import deliver_interrupted_partial, deliver_turn_output
-    from server.voice.streaming_tts import StreamingTtsPipeline, make_on_token_with_streaming_tts
-
-    turn_id = str(uuid.uuid4())
-    session.interrupt.begin_thinking(turn_id)
-    session.accumulated_partial = ""
-    session.turn_llm_persisted = False
-
-    decision = compute_respond_via(
-        capabilities_tts=session.capabilities.get("tts", True),
-        client_state=session.client_control,
+    await run_supervisor_text_turn(
+        websocket,
+        session,
+        text,
+        settings,
+        engine_pool,
         input_kind="chat",
     )
-
-    voice = websocket.app.state.voice
-    use_streaming_tts = decision.respond_via == "voice_and_chat"
-    pipeline: StreamingTtsPipeline | None = None
-    if use_streaming_tts:
-        pipeline = StreamingTtsPipeline(
-            websocket=websocket,
-            turn_id=turn_id,
-            interrupt=session.interrupt,
-            tts=voice["tts"],
-            emit_sentence_captions=True,
-        )
-        await pipeline.start()
-
-    def _accumulate_partial(token: str) -> None:
-        session.accumulated_partial += token
-
-    on_token = make_on_token_with_streaming_tts(
-        base_on_token=make_streaming_caption_handler(
-            websocket=websocket,
-            turn_id=turn_id,
-            interrupt=session.interrupt,
-            accumulate=_accumulate_partial,
-            emit_partial_captions=pipeline is None,
-        ),
-        pipeline=pipeline,
-    )
-
-    from server.voice.status_caption import make_status_caption_handler
-
-    on_status_caption = make_status_caption_handler(
-        websocket, turn_id=turn_id, pipeline=pipeline
-    )
-
-    try:
-        tool_runner = _tool_runner(websocket)
-        activity_emitter = make_activity_event_emitter(session)
-        output = await session.supervisor.run_turn(
-            text,
-            engine_pool=engine_pool,
-            on_token=on_token,
-            input_kind="chat",
-            computed_respond_via=decision.respond_via,
-            turn_id=turn_id,
-            tool_runner=tool_runner,
-            on_tool_event=activity_emitter,
-            on_task_event=activity_emitter,
-            on_status_caption=on_status_caption,
-        )
-        session.turn_llm_persisted = True
-        delay = _suppression_delay_ms(session, settings)
-        if pipeline is not None:
-            await pipeline.flush()
-            await pipeline.finish(delay)
-        await deliver_turn_output(
-            websocket,
-            turn_id=output.turn_id,
-            assistant_text=output.assistant_text,
-            respond_via=output.respond_via,
-            interrupt=session.interrupt,
-            tts=None,
-            suppression_delay_ms=delay,
-            stream_captions_during_llm=True,
-            tts_streamed_during_llm=pipeline is not None,
-        )
-    except asyncio.CancelledError:
-        if pipeline is not None:
-            await pipeline.cancel()
-        if session.accumulated_partial:
-            await deliver_interrupted_partial(
-                websocket,
-                turn_id=turn_id,
-                partial_text=session.accumulated_partial,
-            )
-            await persist_interrupted_assistant(session, session.accumulated_partial)
-        raise
-    except Exception as exc:
-        log.error("ws.chat_completion_failed", user_id=session.user_id, error=str(exc))
-        err = ErrorMessage(payload=ErrorPayload(code=4500, message="Completion failed"))
-        await send_json(websocket, err)
-    finally:
-        session.interrupt.finish_turn()
-        session.accumulated_partial = ""
-        from server.orchestrator.background_notify import (
-            drain_pending_background_deliveries,
-        )
-
-        await drain_pending_background_deliveries(
-            session, engine_pool=engine_pool, settings=settings
-        )
-        from server.transport.chat_queue import drain_queued_chat
-
-        await drain_queued_chat(
-            session, websocket, engine_pool, run_chat_turn=_run_chat_turn
-        )
-        await drain_pending_voice(websocket, session, settings)
-
-
-def _suppression_delay_ms(session: UserSession, settings: Settings) -> int:
-    if session.capabilities.get("aec"):
-        return settings.aec_client_suppression_delay_ms
-    return settings.self_echo_suppression_delay_ms
 
 
 async def _close_auth_failed(websocket: WebSocket, *, code: int, reason: str) -> None:

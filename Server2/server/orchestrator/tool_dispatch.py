@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date
 
@@ -43,20 +44,34 @@ async def run_delegate_directives(
             limit=MAX_DELEGATES_PER_TURN,
         )
 
-    runs: list[DelegateRun] = []
+    if not batch:
+        return []
+
+    tasks: list[asyncio.Task[tuple[int, DelegateRun]]] = []
     for index, directive in enumerate(batch):
         label = event_label_start if index == 0 else None
-        runs.append(
-            await _run_one_delegate(
+
+        async def _run_one(idx: int, item: DelegateDirective, start_label: str | None) -> tuple[int, DelegateRun]:
+            result = await _run_one_delegate(
                 user_id=user_id,
                 turn_id=turn_id,
-                directive=directive,
+                directive=item,
                 runner=runner,
                 on_event=on_event,
-                event_label_start=label,
+                event_label_start=start_label,
+            )
+            return idx, result
+
+        tasks.append(
+            asyncio.create_task(
+                _run_one(index, directive, label),
+                name=f"main-tool-{turn_id[:8]}-{index}",
             )
         )
-    return runs
+
+    results = await asyncio.gather(*tasks, return_exceptions=False)
+    results.sort(key=lambda item: item[0])
+    return [item[1] for item in results]
 
 
 async def _run_one_delegate(

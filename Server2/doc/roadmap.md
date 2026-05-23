@@ -349,7 +349,7 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 10 — Proactive notifier ⬜
+### Step 10 — Proactive notifier ✅
 
 **File:** [`doc/step-10.md`](step-10.md)  
 **Estimated effort:** 1–2 days  

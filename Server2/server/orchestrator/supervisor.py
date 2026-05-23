@@ -87,6 +87,7 @@ class Supervisor:
         self.signal_bus = SignalBus(user_id=user_id, task_board=self.task_board)
         self._workers: dict[str, SubAgentWorker] = {}
         self._worker_tasks: dict[str, asyncio.Task[None]] = {}
+        self._pending_task_answers: dict[str, tuple[str, Literal["reply", "amendment"]]] = {}
 
     async def ensure_session(self, client_meta: dict | None = None) -> None:
         sid = self.session_id
@@ -111,7 +112,10 @@ class Supervisor:
         on_tool_event: ToolEventEmitter | None = None,
         on_task_event: TaskEventEmitter | None = None,
         on_status_caption: Callable[[str], Awaitable[None]] | None = None,
+        allow_delegates: bool | None = None,
+        injected_context: str = "",
     ) -> TurnOutput:
+        proactive = turn_input.kind == "proactive"
         return await self.run_turn(
             turn_input.text,
             engine_pool=engine_pool,
@@ -123,6 +127,8 @@ class Supervisor:
             on_tool_event=on_tool_event,
             on_task_event=on_task_event,
             on_status_caption=on_status_caption,
+            allow_delegates=False if proactive else allow_delegates,
+            injected_context=injected_context,
         )
 
     async def run_turn(
@@ -138,6 +144,8 @@ class Supervisor:
         on_tool_event: ToolEventEmitter | None = None,
         on_task_event: TaskEventEmitter | None = None,
         on_status_caption: Callable[[str], Awaitable[None]] | None = None,
+        allow_delegates: bool | None = None,
+        injected_context: str = "",
     ) -> TurnOutput:
         tid = turn_id or str(uuid.uuid4())
         await self.ensure_session()
@@ -153,18 +161,52 @@ class Supervisor:
                 respond_via=computed_respond_via,
             )
 
+        delegates_allowed = True if allow_delegates is None else allow_delegates
+
         warm = await build_warm_profile(self.user_id)
         history = await recent_turns(self.session_id, limit=8)
         summary = await compressed_history(self.session_id)
         await append_turn(self.session_id, self.user_id, "user", user_text)
 
         task_board_block = self.task_board.render_for_main()
-        completed_inject = self.task_board.format_completed_injection(user_text)
-        if completed_inject:
-            task_board_block = (
-                f"{task_board_block}\n\n{completed_inject}"
-                if task_board_block
-                else completed_inject
+        if delegates_allowed:
+            completed_inject = self.task_board.format_completed_injection(user_text)
+            if completed_inject:
+                task_board_block = (
+                    f"{task_board_block}\n\n{completed_inject}"
+                    if task_board_block
+                    else completed_inject
+                )
+
+        if not delegates_allowed:
+            raw_text = await self._complete(
+                user_text=user_text,
+                warm_profile=warm,
+                history=history,
+                compressed_summary=summary,
+                injected_context=injected_context,
+                task_board_block=task_board_block,
+                engine_pool=engine_pool,
+                on_token=on_token,
+                allow_delegates=False,
+            )
+            override = parse_respond_via_override(raw_text)
+            respond_via = apply_respond_via_override(override, computed_respond_via)
+            visible = finalize_assistant_prose(strip_directives(raw_text))
+            await append_turn(self.session_id, self.user_id, "assistant", visible)
+            log.info(
+                "supervisor.turn_complete",
+                user_id=self.user_id,
+                session_id=self.session_id,
+                respond_via=respond_via,
+                input_kind=input_kind,
+                proactive=True,
+            )
+            return TurnOutput(
+                assistant_text=visible,
+                raw_text=raw_text,
+                turn_id=tid,
+                respond_via=respond_via,
             )
 
         early_tool_tasks: list[asyncio.Task[list[DelegateRun]]] = []
@@ -217,7 +259,13 @@ class Supervisor:
                 on_status_caption=on_status_caption,
                 on_delegates_ready=_kick_early_tools,
             )
-            plan_on_token = plan_handler.on_token
+
+            async def _plan_on_token(token: str) -> None:
+                await plan_handler.on_token(token)
+                if on_token is not None:
+                    await on_token(token)
+
+            plan_on_token = _plan_on_token
         raw_text = await self._complete(
             user_text=user_text,
             warm_profile=warm,
@@ -435,42 +483,94 @@ class Supervisor:
         if existing is not None:
             return existing.task_id
         task_id = str(uuid.uuid4())
-        slot_id = await engine_pool.assign_slot(task_id, "subagent")
-        warm = await build_warm_profile(self.user_id)
-        worker = SubAgentWorker(
+        await self.signal_bus.publish_task_created(
             task_id=task_id,
-            user_id=self.user_id,
-            session_id=self.session_id,
+            capability=capability,
+            goal=goal,
+            payload=payload,
+        )
+        self._schedule_worker_start(
+            task_id=task_id,
             capability=capability,
             goal=goal,
             payload=payload,
             engine_pool=engine_pool,
             tool_runner=tool_runner,
-            signal_bus=self.signal_bus,
-            slot_id=slot_id,
-            warm_profile=warm,
-        )
-        self._workers[task_id] = worker
-
-        async def _run() -> None:
-            try:
-                await worker.run()
-            finally:
-                self._workers.pop(task_id, None)
-                self._worker_tasks.pop(task_id, None)
-
-        self._worker_tasks[task_id] = asyncio.create_task(
-            _run(),
-            name=f"subagent-{task_id[:8]}",
+            initial_answer=None,
         )
         log.info(
             "supervisor.spawn_subagent",
             user_id=self.user_id,
             task_id=task_id,
             capability=capability,
-            slot_id=slot_id,
         )
         return task_id
+
+    def _schedule_worker_start(
+        self,
+        *,
+        task_id: str,
+        capability: str,
+        goal: str,
+        payload: dict[str, Any],
+        engine_pool: EnginePool,
+        tool_runner: ToolRunner,
+        initial_answer: tuple[str, Literal["reply", "amendment"]] | None,
+    ) -> None:
+        existing = self._worker_tasks.get(task_id)
+        if existing is not None and not existing.done():
+            if initial_answer is not None:
+                self._pending_task_answers[task_id] = initial_answer
+            return
+
+        async def _run_with_slot() -> None:
+            worker: SubAgentWorker | None = None
+            slot_assigned = False
+            slot_id: int | None = None
+            try:
+                slot_id = await engine_pool.assign_slot(task_id, "subagent")
+                slot_assigned = True
+                warm = await build_warm_profile(self.user_id)
+                worker = SubAgentWorker(
+                    task_id=task_id,
+                    user_id=self.user_id,
+                    session_id=self.session_id,
+                    capability=capability,
+                    goal=goal,
+                    payload=payload,
+                    engine_pool=engine_pool,
+                    tool_runner=tool_runner,
+                    signal_bus=self.signal_bus,
+                    slot_id=slot_id,
+                    warm_profile=warm,
+                )
+                self._workers[task_id] = worker
+                pending_answer = self._pending_task_answers.pop(task_id, None)
+                answer = pending_answer or initial_answer
+                if answer is not None:
+                    await worker.resume_with(answer[0], mode=answer[1])
+                log.info(
+                    "supervisor.subagent_slot_ready",
+                    user_id=self.user_id,
+                    task_id=task_id,
+                    capability=capability,
+                    slot_id=slot_id,
+                )
+                await worker.run()
+            except asyncio.CancelledError:
+                if worker is not None:
+                    worker.cancel()
+                raise
+            finally:
+                if worker is None and slot_assigned:
+                    await engine_pool.free_slot(task_id)
+                self._workers.pop(task_id, None)
+                self._worker_tasks.pop(task_id, None)
+
+        self._worker_tasks[task_id] = asyncio.create_task(
+            _run_with_slot(),
+            name=f"subagent-{task_id[:8]}",
+        )
 
     async def apply_answer_to_task(
         self,
@@ -487,36 +587,30 @@ class Supervisor:
             if row is None or row.status not in ("paused", "waiting_user"):
                 log.warning("supervisor.answer_unknown_task", task_id=task_id)
                 return False
-            warm = await build_warm_profile(self.user_id)
-            worker = SubAgentWorker(
+            self._schedule_worker_start(
                 task_id=task_id,
-                user_id=self.user_id,
-                session_id=self.session_id,
                 capability=row.capability,
                 goal=row.goal,
                 payload=row.payload,
                 engine_pool=engine_pool,
                 tool_runner=tool_runner,
-                signal_bus=self.signal_bus,
-                slot_id=await engine_pool.assign_slot(task_id, "subagent"),
-                warm_profile=warm,
+                initial_answer=(answer, mode),
             )
-            self._workers[task_id] = worker
+        else:
+            await worker.resume_with(answer, mode=mode)
+            if task_id not in self._worker_tasks or self._worker_tasks[task_id].done():
 
-        await worker.resume_with(answer, mode=mode)
-        if task_id not in self._worker_tasks or self._worker_tasks[task_id].done():
+                async def _run() -> None:
+                    try:
+                        await worker.run()
+                    finally:
+                        self._workers.pop(task_id, None)
+                        self._worker_tasks.pop(task_id, None)
 
-            async def _run() -> None:
-                try:
-                    await worker.run()
-                finally:
-                    self._workers.pop(task_id, None)
-                    self._worker_tasks.pop(task_id, None)
-
-            self._worker_tasks[task_id] = asyncio.create_task(
-                _run(),
-                name=f"subagent-resume-{task_id[:8]}",
-            )
+                self._worker_tasks[task_id] = asyncio.create_task(
+                    _run(),
+                    name=f"subagent-resume-{task_id[:8]}",
+                )
         row = self.task_board.get(task_id)
         if row is not None and row.status == "paused":
             row.status = "running"
@@ -526,6 +620,7 @@ class Supervisor:
     async def cancel_task(self, task_id: str, *, engine_pool: EnginePool) -> bool:
         worker = self._workers.pop(task_id, None)
         task = self._worker_tasks.pop(task_id, None)
+        self._pending_task_answers.pop(task_id, None)
         if task is not None and not task.done():
             if worker is not None:
                 worker.cancel()

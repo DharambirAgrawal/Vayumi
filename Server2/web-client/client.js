@@ -247,6 +247,9 @@
         }
         renderEvent(msg.payload);
         break;
+      case "notification":
+        renderNotification(msg.payload);
+        break;
       case "error":
         debugLine("Server error: " + msg.payload.message, "error");
         break;
@@ -374,6 +377,25 @@
       setConversationStatus(event.summary);
     }
     renderTaskBoard(activityEvents);
+  }
+
+  function renderNotification(payload) {
+    if (!payload || !payload.text) return;
+    const toast = document.createElement("div");
+    toast.className = "notification-toast";
+    toast.innerHTML =
+      '<span class="notification-label">Update</span>' +
+      payload.text.replace(/</g, "&lt;");
+    document.body.appendChild(toast);
+    requestAnimationFrame(function () {
+      toast.classList.add("visible");
+    });
+    setTimeout(function () {
+      toast.classList.remove("visible");
+      setTimeout(function () {
+        toast.remove();
+      }, 300);
+    }, 8000);
   }
 
   function renderTaskBoard(events) {

@@ -31,12 +31,20 @@ class Settings(BaseSettings):
     # ── Voice (code defaults; env only overrides) ─────────
     stt_backend: str = "groq"
     groq_api_key: str | None = None
+    stt_local_model: str = "base.en"
+    stt_local_device: str = "cpu"
+    stt_local_compute_type: str = "int8"
     kokoro_model_dir: str = "./models/tts"
     kokoro_voice: str = "af_heart"
     self_echo_suppression_delay_ms: int = 1200
     aec_client_suppression_delay_ms: int = 300
     session_singleton_close_code: int = 4001
     session_linger_seconds: int = 60
+
+    # ── Proactive notifier (Step 10) ─────────────────────
+    notifier_tick_seconds: float = 3.0
+    notifier_min_interval_seconds: float = 45.0
+    notifier_importance_threshold: float = 0.5
 
     # ── Embeddings (optional path for future ONNX export) ──
     bge_model_path: str = "./models/bge-small-en-v1.5.onnx"

@@ -49,6 +49,7 @@ RULES YOU MUST FOLLOW:
 13. Dont fake anything, always see architecture carefully, need to be connected and tested with different cases the real cases not the fake one
 14. If you remove anything wrong remove permanently dont make anything legacy ad leave there oaky 
 
+
 ENVIRONMENT:
 - Python 3.11 (`pyproject.toml`: `requires-python = ">=3.11,<3.12"`). Not 3.12.
 - Activate the project venv at `Server2/venv` (`source venv/bin/activate`) and install with `pip install -e .` (or use `uv` if you prefer).

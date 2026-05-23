@@ -4,8 +4,11 @@ from pathlib import Path
 
 from server.config import Settings
 from server.logger import get_logger
+from server.voice.stt.base import STTBackend
 from server.voice.stt.groq import GroqWhisper
+from server.voice.stt.local import LocalFasterWhisper
 from server.voice.tts.kokoro import KokoroTTS
+from server.voice.vad.silero import SileroVAD
 
 log = get_logger("voice.boot")
 
@@ -61,12 +64,18 @@ def validate_voice_settings(settings: Settings) -> None:
     _ensure_spacy_model(auto_download=settings.is_dev)
 
 
-def create_stt_backend(settings: Settings) -> GroqWhisper:
-    if settings.stt_backend != "groq":
-        raise ValueError(f"Unsupported STT_BACKEND for step 3: {settings.stt_backend}")
-    if not settings.groq_api_key:
-        raise ValueError("GROQ_API_KEY is required when STT_BACKEND=groq")
-    return GroqWhisper(api_key=settings.groq_api_key)
+def create_stt_backend(settings: Settings) -> STTBackend:
+    if settings.stt_backend == "groq":
+        if not settings.groq_api_key:
+            raise ValueError("GROQ_API_KEY is required when STT_BACKEND=groq")
+        return GroqWhisper(api_key=settings.groq_api_key)
+    if settings.stt_backend == "local":
+        return LocalFasterWhisper(
+            model=settings.stt_local_model,
+            device=settings.stt_local_device,
+            compute_type=settings.stt_local_compute_type,
+        )
+    raise ValueError(f"Unsupported STT_BACKEND: {settings.stt_backend}")
 
 
 def create_tts_backend(settings: Settings) -> KokoroTTS:
@@ -80,9 +89,23 @@ async def init_voice_plane(settings: Settings) -> dict[str, object]:
     validate_voice_settings(settings)
     stt = create_stt_backend(settings)
     tts = create_tts_backend(settings)
+    await _prewarm_tts(tts, strict=not settings.is_dev)
+    vad = SileroVAD()
     log.info(
         "voice_plane.ready",
         stt_backend=settings.stt_backend,
         kokoro_voice=settings.kokoro_voice,
     )
-    return {"stt": stt, "tts": tts}
+    return {"stt": stt, "tts": tts, "vad": vad}
+
+
+async def _prewarm_tts(tts: KokoroTTS, *, strict: bool) -> None:
+    try:
+        async for frame in tts.synthesize_stream("Hello"):
+            if frame.pcm:
+                break
+        log.info("voice.tts_prewarm_ready")
+    except Exception as exc:
+        log.warning("voice.tts_prewarm_failed", error=str(exc))
+        if strict:
+            raise

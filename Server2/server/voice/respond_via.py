@@ -43,6 +43,12 @@ def compute_respond_via(
         return RespondViaDecision(respond_via="voice_and_chat", interrupt_policy="queue")
 
     # proactive (notifier)
+    if not capabilities_tts:
+        return RespondViaDecision(respond_via="chat_only", interrupt_policy="queue")
+    if client_state.playback == "playing":
+        return RespondViaDecision(respond_via="chat_only", interrupt_policy="queue")
+    if client_state.route == "none":
+        return RespondViaDecision(respond_via="chat_only", interrupt_policy="queue")
     if not client_state.visible:
         return RespondViaDecision(respond_via="chat_only", interrupt_policy="queue")
     if client_state.capture == "recording":

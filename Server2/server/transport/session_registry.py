@@ -33,7 +33,9 @@ class UserSession:
     voice_chunks: list[bytes] = field(default_factory=list)
     pending_voice_chunks: list[bytes] | None = None
     turn_llm_persisted: bool = False
-    pending_background_tasks: list[str] = field(default_factory=list)
+    surfaced_signal_keys: set[str] = field(default_factory=set)
+    last_proactive_at: float | None = None
+    notifier_inflight: bool = False
 
     def attach_transport(self, websocket: WebSocket) -> None:
         self.websocket = websocket
@@ -50,6 +52,10 @@ _registry: dict[str, UserSession] = {}
 
 def get_user_session(user_id: str) -> UserSession | None:
     return _registry.get(user_id)
+
+
+def iter_user_sessions() -> list[UserSession]:
+    return list(_registry.values())
 
 
 async def enforce_session_singleton(

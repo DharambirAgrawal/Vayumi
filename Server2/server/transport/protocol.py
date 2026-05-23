@@ -244,6 +244,16 @@ class EventMessage(BaseModel):
     payload: EventPayload
 
 
+class NotificationPayload(BaseModel):
+    task_id: str
+    text: str
+
+
+class NotificationMessage(BaseModel):
+    type: Literal["notification"] = "notification"
+    payload: NotificationPayload
+
+
 ServerMessage = (
     WelcomeMessage
     | EchoMessage
@@ -254,6 +264,7 @@ ServerMessage = (
     | ServerAudioEndMessage
     | ClientControlMessage
     | EventMessage
+    | NotificationMessage
     | PongMessage
     | ErrorMessage
 )

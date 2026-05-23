@@ -15,7 +15,7 @@ from server.voice.captions import make_streaming_caption_handler
 from server.voice.delivery import deliver_turn_output, deliver_user_message
 from server.voice.respond_via import compute_respond_via
 from server.voice.streaming_tts import StreamingTtsPipeline, make_on_token_with_streaming_tts
-from server.voice.stt.groq import GroqWhisper
+from server.voice.stt.base import STTBackend
 from server.voice.transcript import is_meaningful_transcript, voice_pcm_is_viable
 from server.voice.tts.kokoro import KokoroTTS
 from server.voice.types import TranscriptEvent
@@ -27,7 +27,7 @@ async def run_voice_turn(
     *,
     websocket: WebSocket,
     engine_pool: EnginePool,
-    stt: GroqWhisper,
+    stt: STTBackend,
     tts: KokoroTTS,
     user_session: UserSession,
     pcm_chunks: list[bytes],

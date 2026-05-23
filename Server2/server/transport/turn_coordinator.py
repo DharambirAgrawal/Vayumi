@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+import uuid
+from typing import TYPE_CHECKING, Literal
 
 from starlette.websockets import WebSocket
 
 from server.logger import get_logger
 from server.transport.session_registry import UserSession
+from server.voice.respond_via import InputKind, RespondVia, compute_respond_via
 
 if TYPE_CHECKING:
     from server.config import Settings
@@ -58,11 +60,11 @@ async def start_voice_turn(
     settings: Settings,
     pcm_chunks: list[bytes],
 ) -> None:
-    from server.voice.stt.groq import GroqWhisper
+    from server.voice.stt.base import STTBackend
     from server.voice.turn import run_voice_turn
 
     voice = websocket.app.state.voice
-    stt: GroqWhisper = voice["stt"]
+    stt: STTBackend = voice["stt"]
     engine_pool: EnginePool = websocket.app.state.engine_pool
     delay = (
         settings.aec_client_suppression_delay_ms
@@ -106,3 +108,166 @@ async def drain_pending_voice(
         )
         return
     await start_voice_turn(websocket, session, settings, chunks)
+
+
+def suppression_delay_ms(session: UserSession, settings: Settings) -> int:
+    if session.capabilities.get("aec"):
+        return settings.aec_client_suppression_delay_ms
+    return settings.self_echo_suppression_delay_ms
+
+
+async def run_supervisor_text_turn(
+    websocket: WebSocket,
+    session: UserSession,
+    text: str,
+    settings: Settings,
+    engine_pool: EnginePool,
+    *,
+    input_kind: InputKind = "chat",
+    computed_respond_via: RespondVia | None = None,
+    turn_id: str | None = None,
+    allow_delegates: bool | None = None,
+    injected_context: str = "",
+    interrupt_policy: Literal["replace", "queue"] | None = None,
+) -> None:
+    """Shared chat/proactive turn delivery with streaming TTS and echo suppression."""
+    from server.transport.ws import make_activity_event_emitter
+    from server.voice.captions import make_streaming_caption_handler
+    from server.voice.delivery import deliver_interrupted_partial, deliver_turn_output
+    from server.voice.status_caption import make_status_caption_handler
+    from server.voice.streaming_tts import StreamingTtsPipeline, make_on_token_with_streaming_tts
+
+    tid = turn_id or str(uuid.uuid4())
+    session.interrupt.begin_thinking(tid)
+    session.accumulated_partial = ""
+    session.turn_llm_persisted = False
+
+    if computed_respond_via is None:
+        decision = compute_respond_via(
+            capabilities_tts=session.capabilities.get("tts", True),
+            client_state=session.client_control,
+            input_kind=input_kind,
+        )
+        respond_via = decision.respond_via
+        policy = decision.interrupt_policy
+    else:
+        respond_via = computed_respond_via
+        policy = interrupt_policy or "queue"
+
+    if (
+        session_busy(session)
+        and policy == "queue"
+        and input_kind != "proactive"
+    ):
+        log.debug(
+            "supervisor_text_turn.deferred_busy",
+            user_id=session.user_id,
+            input_kind=input_kind,
+        )
+        return
+
+    voice = websocket.app.state.voice
+    use_streaming_tts = respond_via == "voice_and_chat"
+    pipeline: StreamingTtsPipeline | None = None
+    if use_streaming_tts:
+        pipeline = StreamingTtsPipeline(
+            websocket=websocket,
+            turn_id=tid,
+            interrupt=session.interrupt,
+            tts=voice["tts"],
+            emit_sentence_captions=True,
+        )
+        await pipeline.start()
+
+    def _accumulate_partial(token: str) -> None:
+        session.accumulated_partial += token
+
+    on_token = make_on_token_with_streaming_tts(
+        base_on_token=make_streaming_caption_handler(
+            websocket=websocket,
+            turn_id=tid,
+            interrupt=session.interrupt,
+            accumulate=_accumulate_partial,
+            emit_partial_captions=pipeline is None,
+        ),
+        pipeline=pipeline,
+    )
+    on_status_caption = make_status_caption_handler(
+        websocket, turn_id=tid, pipeline=pipeline
+    )
+
+    try:
+        tool_runner = getattr(websocket.app.state, "tool_runner", None)
+        activity_emitter = make_activity_event_emitter(session)
+        output = await session.supervisor.run_turn(
+            text,
+            engine_pool=engine_pool,
+            on_token=on_token,
+            input_kind=input_kind,
+            computed_respond_via=respond_via,
+            turn_id=tid,
+            tool_runner=tool_runner,
+            on_tool_event=activity_emitter,
+            on_task_event=activity_emitter,
+            on_status_caption=on_status_caption,
+            allow_delegates=allow_delegates,
+            injected_context=injected_context,
+        )
+        session.turn_llm_persisted = True
+        delay = suppression_delay_ms(session, settings)
+        if pipeline is not None:
+            await pipeline.flush()
+            await pipeline.finish(delay)
+        await deliver_turn_output(
+            websocket,
+            turn_id=output.turn_id,
+            assistant_text=output.assistant_text,
+            respond_via=output.respond_via,
+            interrupt=session.interrupt,
+            tts=None,
+            suppression_delay_ms=delay,
+            stream_captions_during_llm=True,
+            tts_streamed_during_llm=pipeline is not None,
+        )
+    except asyncio.CancelledError:
+        if pipeline is not None:
+            await pipeline.cancel()
+        if session.accumulated_partial:
+            await deliver_interrupted_partial(
+                websocket,
+                turn_id=tid,
+                partial_text=session.accumulated_partial,
+            )
+            await persist_interrupted_assistant(session, session.accumulated_partial)
+        raise
+    except Exception as exc:
+        from server.transport.outbound import send_json
+        from server.transport.protocol import ErrorMessage, ErrorPayload
+
+        log.error(
+            "supervisor_text_turn.failed",
+            user_id=session.user_id,
+            input_kind=input_kind,
+            error=str(exc),
+        )
+        err = ErrorMessage(payload=ErrorPayload(code=4500, message="Completion failed"))
+        await send_json(websocket, err)
+    finally:
+        session.interrupt.finish_turn()
+        session.accumulated_partial = ""
+        if input_kind == "chat":
+            from server.transport.chat_queue import drain_queued_chat
+
+            async def _run_chat_turn(ws, sess, chat_text, st, pool):
+                await run_supervisor_text_turn(
+                    ws, sess, chat_text, st, pool, input_kind="chat"
+                )
+
+            await drain_queued_chat(
+                session,
+                websocket,
+                engine_pool,
+                run_chat_turn=_run_chat_turn,
+            )
+            await drain_pending_voice(websocket, session, settings)
+

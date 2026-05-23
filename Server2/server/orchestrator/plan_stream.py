@@ -69,11 +69,16 @@ class PlanStreamHandler:
             self.ack_sent = True
 
     async def _maybe_notify_delegates(self) -> None:
-        if self._on_delegates_ready is None or not self.ack_sent:
+        if self._on_delegates_ready is None:
             return
         count = len(parse_delegate_directives(self._buffer))
         if count <= self._complete_delegate_blocks:
             return
+        if not self.ack_sent and self._on_status is not None:
+            head = self._prose_before_delegate(self._buffer).strip()
+            words = head.split()
+            if len(words) >= 6 and len(head) >= 20:
+                return
         self._complete_delegate_blocks = count
         await self._on_delegates_ready(self._buffer)
 

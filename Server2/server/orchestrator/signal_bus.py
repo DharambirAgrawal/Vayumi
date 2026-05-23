@@ -11,6 +11,8 @@ from server.subagents.report import ReportSignal
 
 log = get_logger("orchestrator.signal_bus")
 
+NOTIFIABLE_KINDS = frozenset({"DONE", "NEEDS_INFO", "ERROR"})
+
 TaskEventKind = Literal["task_step", "task_done", "task_error"]
 TaskEventEmitter = Callable[[TaskEventKind, str, str], Awaitable[None]]
 
@@ -68,6 +70,9 @@ class SignalBus:
         goal: str,
         payload: dict,
     ) -> TaskRow:
+        existing = self.task_board.get(task_id)
+        if existing is not None:
+            return existing
         row = self.task_board.register_task(
             task_id=task_id,
             capability=capability,
@@ -84,6 +89,15 @@ class SignalBus:
         items = list(self._pending)
         self._pending.clear()
         return items
+
+    def notifiable_pending(self) -> list[ReportSignal]:
+        return [signal for signal in self._pending if signal.kind in NOTIFIABLE_KINDS]
+
+    def drop_pending(self, signal: ReportSignal) -> None:
+        try:
+            self._pending.remove(signal)
+        except ValueError:
+            pass
 
     async def _persist_task_row(self, row: TaskRow) -> None:
         try:
