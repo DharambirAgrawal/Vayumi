@@ -56,7 +56,17 @@ def test_resolve_for_capability_main_only() -> None:
     names = {entry.name for entry in main_tools}
     assert names == {"tool_search", "web_search", "memory_save", "memory_recall"}
     research = {e.name for e in registry.resolve_for_capability("research")}
-    assert research == {"memory_recall", "fetch_url", "deep_search"}
+    assert research == {
+        "memory_recall",
+        "summarize_url",
+        "fetch_html",
+        "deep_search",
+        "tool_search",
+    }
+    productivity = {e.name for e in registry.resolve_for_capability("productivity")}
+    assert productivity == {"tool_search", "draft_document", "summarize_url"}
+    comms = {e.name for e in registry.resolve_for_capability("comms")}
+    assert comms == {"tool_search", "read_email", "send_email"}
 
 
 def test_registry_search_filters() -> None:

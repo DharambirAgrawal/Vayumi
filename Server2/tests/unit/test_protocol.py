@@ -226,7 +226,7 @@ class TestSerializeServerMessage:
         data = json.loads(raw)
         assert data["type"] == "audio_start"
         assert data["payload"]["turn_id"] == "turn-1"
-        assert data["payload"]["sample_rate"] == 16000
+        assert data["payload"]["sample_rate"] == 24000
 
     def test_server_audio_end(self) -> None:
         msg = ServerAudioEndMessage(payload=ServerAudioEndPayload(turn_id="turn-1"))

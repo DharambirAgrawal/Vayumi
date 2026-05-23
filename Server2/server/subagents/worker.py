@@ -4,11 +4,16 @@ import asyncio
 from typing import Any
 
 from server.engine.pool import CompletionPriority, CompletionRequest, EnginePool
-from server.engine.prompt import SubPromptContext, build_sub_prompt
+from server.engine.prompt import SubPromptContext, build_subagent_prompt
 from server.logger import get_logger
 from server.orchestrator.directives import DelegateDirective, parse_delegate_directives
 from server.orchestrator.signal_bus import SignalBus
-from server.orchestrator.tool_dispatch import RESEARCH_TOOLS, run_subagent_tool_delegate
+from server.orchestrator.tool_dispatch import run_subagent_tool_delegate
+from server.subagents.capabilities import (
+    CapabilityBundle,
+    load_capability,
+    render_tool_cards_for_bundle,
+)
 from server.subagents.report import ReportSignal, parse_report_directives, report
 from server.tools.registry import ToolResult
 from server.tools.runner import ToolRunner
@@ -16,7 +21,6 @@ from server.tools.runner import ToolRunner
 log = get_logger("subagents.worker")
 
 SUB_CAPABILITIES = frozenset({"research", "productivity", "comms", "data"})
-MAX_WORKER_STEPS = 12
 
 
 class SubAgentWorker:
@@ -40,7 +44,10 @@ class SubAgentWorker:
         self.task_id = task_id
         self.user_id = user_id
         self.session_id = session_id
-        self.capability = capability.lower()
+        cap = capability.lower()
+        if cap not in SUB_CAPABILITIES:
+            raise ValueError(f"unsupported sub-agent capability: {capability}")
+        self.capability = cap
         self.goal = goal
         self.payload = payload
         self.engine_pool = engine_pool
@@ -48,6 +55,11 @@ class SubAgentWorker:
         self.signal_bus = signal_bus
         self.slot_id = slot_id
         self.warm_profile = warm_profile
+        self._bundle: CapabilityBundle = load_capability(cap)
+        self._tool_cards = render_tool_cards_for_bundle(
+            tool_runner.registry,
+            self._bundle,
+        )
         self._transcript: list[str] = []
         self._cancelled = False
         self._paused = False
@@ -76,6 +88,7 @@ class SubAgentWorker:
         log.info("subagent.resume", task_id=self.task_id, mode=mode)
 
     async def run(self) -> None:
+        max_steps = self._bundle.max_steps
         try:
             await self.signal_bus.publish_task_created(
                 task_id=self.task_id,
@@ -86,7 +99,7 @@ class SubAgentWorker:
             if await self._run_seed_payload():
                 return
 
-            for step in range(MAX_WORKER_STEPS):
+            for step in range(max_steps):
                 if self._cancelled:
                     await self.signal_bus.publish(
                         report(
@@ -131,7 +144,7 @@ class SubAgentWorker:
                     self.task_id,
                     "ERROR",
                     "step limit reached",
-                    {"max_steps": MAX_WORKER_STEPS},
+                    {"max_steps": max_steps},
                 )
             )
         except asyncio.CancelledError:
@@ -159,7 +172,7 @@ class SubAgentWorker:
         Returns True if the worker reached a terminal DONE/ERROR report.
         """
         tool_name = self.payload.get("tool")
-        if not isinstance(tool_name, str) or tool_name not in RESEARCH_TOOLS:
+        if not isinstance(tool_name, str) or tool_name not in self._bundle.allowed_tools:
             return False
 
         await self.signal_bus.publish(
@@ -217,7 +230,8 @@ class SubAgentWorker:
         return False
 
     async def _model_step(self) -> str:
-        prompt = build_sub_prompt(
+        prompt = build_subagent_prompt(
+            self._bundle,
             SubPromptContext(
                 capability=self.capability,
                 task_id=self.task_id,
@@ -225,7 +239,8 @@ class SubAgentWorker:
                 payload=self.payload,
                 warm_profile=self.warm_profile,
                 transcript_lines=self._transcript[-16:],
-            )
+                tool_context=self._tool_cards,
+            ),
         )
         request = CompletionRequest(prompt=prompt, max_tokens=768, temperature=0.5)
         handle = await self.engine_pool.submit_assigned(
@@ -245,6 +260,16 @@ class SubAgentWorker:
         parts: list[str] = []
         for directive in directives:
             if directive.capability.lower() != self.capability:
+                continue
+            tool_name = directive.payload.get("tool")
+            if (
+                isinstance(tool_name, str)
+                and tool_name not in self._bundle.allowed_tools
+            ):
+                parts.append(
+                    f"[TOOL_RESULT tool={tool_name} status=not_capable] "
+                    f"Tool not in {self.capability} bundle"
+                )
                 continue
             run = await run_subagent_tool_delegate(
                 user_id=self.user_id,

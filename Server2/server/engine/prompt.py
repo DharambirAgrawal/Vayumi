@@ -4,6 +4,10 @@ import json
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from server.subagents.capabilities.bundle import CapabilityBundle
 
 PROMPT_DIR = Path("prompts")
 MAIN_PROMPT_PATH = PROMPT_DIR / "main.txt"
@@ -66,26 +70,36 @@ def build_main_prompt(context: MainPromptContext) -> str:
     return "\n\n".join(sections) + "\n"
 
 
-def build_sub_prompt(context: SubPromptContext) -> str:
-    path = SUB_PROMPT_DIR / f"{context.capability}.txt"
-    if not path.is_file():
-        path = SUB_PROMPT_DIR / "research.txt"
-    system_prompt = _load_prompt(path).strip()
+def build_subagent_prompt(
+    bundle: CapabilityBundle,
+    context: SubPromptContext,
+) -> str:
+    """Assemble a sub-agent prompt from capability bundle + task context."""
+    system_prompt = _load_prompt(bundle.prompt_path).strip()
     sections: list[str] = [
         system_prompt,
         f"Task id: {context.task_id}",
+        f"Capability: {bundle.name}",
         f"Goal: {context.goal.strip()}",
     ]
     if context.warm_profile.strip():
         sections.append(context.warm_profile.strip())
     if context.payload:
         sections.append(f"Payload: {json.dumps(context.payload, ensure_ascii=False)}")
-    if context.transcript_lines:
-        sections.append("Transcript:\n" + "\n".join(context.transcript_lines))
     if context.tool_context.strip():
         sections.append(context.tool_context.strip())
+    if context.transcript_lines:
+        sections.append("Transcript:\n" + "\n".join(context.transcript_lines))
     sections.append("Worker:")
     return "\n\n".join(sections) + "\n"
+
+
+def build_sub_prompt(context: SubPromptContext) -> str:
+    """Legacy entry: load bundle by name and build prompt (tests / simple callers)."""
+    from server.subagents.capabilities import load_capability
+
+    bundle = load_capability(context.capability)
+    return build_subagent_prompt(bundle, context)
 
 
 @lru_cache(maxsize=16)

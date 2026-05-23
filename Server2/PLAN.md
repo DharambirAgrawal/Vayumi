@@ -930,7 +930,7 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 | # | Step | Status |
 |---|---|---|
 | 8 | Sub-agent worker + signal bus + `report()` schema + task pause/resume via `[ANSWER_TO task_id=...]` | ✅ |
-| 9 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) + tool access gates | ⬜ |
+| 9 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) + tool access gates | ✅ |
 | 10 | Proactive notifier + synthetic turn pipeline + respond_via decision per Rule 13 | ⬜ |
 | 11 | LanceDB retrieval tool + memory_recall on-demand | ⬜ |
 | 12 | Summarizer (P2) + automatic compression at 20k tokens | ⬜ |

@@ -331,7 +331,7 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 9 — Capability bundles ⬜
+### Step 9 — Capability bundles ✅
 
 **File:** [`doc/step-09.md`](step-09.md)  
 **Estimated effort:** 2 days  

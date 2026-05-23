@@ -445,6 +445,38 @@ This log tracks updates pushed to GitHub for Server2. Each entry should be small
 - `python -m pytest tests/unit -q` — 150 passed
 - `ruff check server/ tests/` — clean
 
+## 2026-05-23 - Step 9 complete: Capability bundles
+
+**Scope:** subagents | tools | orchestrator | tests
+
+**Why:** Give each sub-agent domain a declarative bundle (prompt + allowed tools) so the model only sees what it may call, with PLAN-named fetch tools and clean registry structure.
+
+**Key changes:**
+- `CapabilityBundle` + `load_capability()` + `render_tool_cards()` under `server/subagents/capabilities/`.
+- Manifests for `research`, `productivity`, `comms`; worker injects tool cards via `build_subagent_prompt()`.
+- `summarize_url` (trafilatura article text) and `fetch_html` (raw HTML); removed `fetch_url`.
+- Kept `deep_search` (search + per-link fetch via `page_fetch`).
+- Productivity/comms stub tools with real `user_action_required` / confirmation shapes.
+- `tool_dispatch` gates sub-agent tools from bundle `allowed_tools`.
+
+**Files/areas:**
+- NEW: `server/subagents/capabilities/{bundle,research,productivity,comms}/`
+- NEW: `server/tools/{summarize_url,fetch_html,productivity_draft,comms_email}.py`
+- DELETED: `server/tools/fetch_url.py`
+- CHANGED: `server/tools/__init__.py`, `server/subagents/worker.py`, `server/orchestrator/tool_dispatch.py`, `server/engine/prompt.py`, `prompts/sub/*.txt`
+- NEW tests: `test_capabilities.py`, `test_summarize_url.py`, `test_fetch_html.py`, `test_capability_gates.py`
+
+**Plan/diagram references:** PLAN.md §7.5, §7.11, §8 Step 9; diagram page 08
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 160 passed
+- `ruff check server/tools/__init__.py server/subagents/ server/orchestrator/tool_dispatch.py` — clean
+
+**Follow-ups:**
+- Step 10: Proactive notifier
+
+---
+
 ## 2026-05-22 - requirements sync (fetch tools)
 
 **Scope:** deploy

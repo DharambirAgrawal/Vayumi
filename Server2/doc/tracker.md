@@ -3,7 +3,7 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-05-21 — Step 7 complete (Phase 1 done)
+> **Last updated:** 2026-05-23 — Step 9 complete
 
 ---
 
@@ -19,7 +19,7 @@
 | `hello.capabilities.tts` | client declares speaker | Step 4 + Step 6 | ✅ |
 | Proactive respond_via | `build_synthetic_turn` + `input_kind='proactive'` | Step 10 | ⬜ not started |
 
-**Current build step:** Step 9 (capability bundles).
+**Current build step:** Step 10 (proactive notifier).
 
 ### Step index (quick reference)
 
@@ -33,7 +33,7 @@
 | 6 | v1.7 backfill | ✅ | [step-06.md](step-06.md) |
 | 7 | Tool plane | ✅ | [step-07.md](step-07.md) |
 | 8 | Sub-agent worker | ✅ | [step-08.md](step-08.md) |
-| 9 | Capability bundles | ⬜ | [step-09.md](step-09.md) |
+| 9 | Capability bundles | ✅ | [step-09.md](step-09.md) |
 | 10 | Proactive notifier | ⬜ | [step-10.md](step-10.md) |
 | 11–21 | Retrieval, summarizer, modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
 
@@ -46,7 +46,7 @@ PHASE 1 — SPINE                                            PHASE 2 — MULTI-A
 ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┬─────────┐
 │ Step 1  │ Step 2  │ Step 3  │ Step 4  │ Step 5  │ Step 6  │ Step 7  │  │ Step 8  │ Step 9  │ Step 10 │ Step 11 │ Step 12 │
 │Scaffold │ Engine  │ Voice   │ Client  │ Memory  │Backfill │ Tools   │  │SubAgent │Capabil. │Notifier │Retrieval│Summariz.│
-│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  │  ⬜     │  ⬜     │  ⬜     │  ⬜     │  ⬜     │
+│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  │  ✅     │  ✅     │  ⬜     │  ⬜     │  ⬜     │
 └─────────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘
                │         │         │         │         │         │            │         │         │         │         │
                ▼         ▼         ▼         ▼         ▼         ▼            ▼         ▼         ▼         ▼         ▼
@@ -60,14 +60,36 @@ PHASE 3 — MODES & POLISH                         PHASE 4 — CLIENTS & DEPLOY
 
 Legend: ✅ done   🔄 in progress   ⬜ not started   ❌ blocked
 
-Completed: 7 / 21    Phase 1: 7/7    Phase 2: 0/5    Phase 3: 0/5    Phase 4: 0/4
+Completed: 9 / 21    Phase 1: 7/7    Phase 2: 2/5    Phase 3: 0/5    Phase 4: 0/4
 ```
 
 ---
 
 ## Completed steps (detail sections)
 
-Sections below describe what each finished step added. **Steps 1–8 are complete**; Step 9 is next.
+Sections below describe what each finished step added. **Steps 1–9 are complete**; Step 10 is next.
+
+---
+
+## What Step 9 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    CAPABILITY BUNDLES (Step 9)                                  │
+│                                                                                 │
+│  server/subagents/capabilities/                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ bundle.py — CapabilityBundle                                              │  │
+│  │ load_capability() / render_tool_cards() / resolve_tool_entries()          │  │
+│  │ research | productivity | comms manifests (allowed_tools + prompt paths)  │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  server/tools/ summarize_url (extract) · fetch_html (raw) · deep_search       │
+│  worker.py — injects tool cards into build_subagent_prompt()                  │
+│  tool_dispatch.py — bundle-gated run_subagent_tool_delegate()                   │
+│  prompts/sub/{research,productivity,comms}.txt                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -647,7 +669,7 @@ Server2/
 │   ├── step-06.md              ✅ v1.7 backfill
 │   ├── step-07.md              ✅ tool plane
 │   ├── step-08.md              ✅ complete (sub-agent worker)
-│   ├── step-09.md              ⬜ pending (capability bundles)
+│   ├── step-09.md              ✅ capability bundles
 │   ├── step-10.md              ⬜ pending (proactive notifier)
 │   ├── tracker.md              ✅ this file — progress + architecture flows
 │   ├── roadmap.md              ✅ full 21-step overview
@@ -681,16 +703,23 @@ Server2/
 │   ├── orchestrator/
 │   │   ├── __init__.py         ✅
 │   │   ├── directives.py       ✅ REMEMBER / RECALL / DELEGATE / RESPOND_VIA
-│   │   ├── tool_dispatch.py    ✅ parallel main DELEGATE execution
-│   │   └── supervisor.py       ✅ handle_turn + tools follow-up pass
+│   │   ├── tool_dispatch.py    ✅ bundle-gated sub-agent tool dispatch
+│   │   └── supervisor.py       ✅ handle_turn + spawn sub-agents
+│   ├── subagents/
+│   │   ├── worker.py           ✅ CapabilityBundle + tool cards in prompt
+│   │   ├── report.py           ✅
+│   │   └── capabilities/       ✅ research, productivity, comms manifests
 │   ├── tools/
-│   │   ├── __init__.py         ✅ registry bootstrap
+│   │   ├── __init__.py         ✅ multi-capability registry
 │   │   ├── registry.py         ✅ ToolEntry / ToolResult / ToolRegistry
 │   │   ├── runner.py           ✅ ToolRunner + confirmation stubs
 │   │   ├── tool_search.py      ✅ discovery
 │   │   ├── web_search.py       ✅ Tavily + DDG fallback
-│   │   ├── memory_save.py      ✅ fact write tool
-│   │   └── memory_recall.py    ✅ fact read tool
+│   │   ├── deep_search.py      ✅ search + per-link fetch
+│   │   ├── summarize_url.py    ✅ trafilatura extract
+│   │   ├── fetch_html.py       ✅ raw HTML
+│   │   ├── memory_save.py      ✅
+│   │   └── memory_recall.py    ✅
 │   ├── voice/
 │   │   ├── stt/groq.py         ✅ Groq Whisper STT
 │   │   ├── tts/kokoro.py         ✅ Kokoro streaming TTS
@@ -718,7 +747,7 @@ Server2/
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
-    └── unit/                   ✅ 131 tests (through Step 8)
+    └── unit/                   ✅ 160 tests (through Step 9)
         ├── test_protocol.py
         ├── test_respond_via.py
         ├── test_session_singleton.py
