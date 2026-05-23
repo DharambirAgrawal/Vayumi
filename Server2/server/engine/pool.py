@@ -132,6 +132,7 @@ class _CompletionJob:
     priority: CompletionPriority
     slot_hint: int | None
     handle: CompletionHandle
+    hold_slot: bool = False
 
 
 @dataclass(order=True)
@@ -157,6 +158,7 @@ class EnginePool:
         self._queue: asyncio.PriorityQueue[_QueueItem] = asyncio.PriorityQueue()
         self._sequence = 0
         self._busy_slots: set[int] = set()
+        self._task_slots: dict[str, int] = {}
         self._slot_condition = asyncio.Condition()
         self._dispatcher_task: asyncio.Task[None] | None = None
         self._job_tasks: set[asyncio.Task[None]] = set()
@@ -207,6 +209,33 @@ class EnginePool:
         await self._queue.put(_QueueItem(int(priority), self._sequence, job))
         return handle
 
+    async def submit_assigned(
+        self,
+        task_id: str,
+        request: CompletionRequest,
+        priority: CompletionPriority = CompletionPriority.P1_SUBAGENT,
+    ) -> CompletionHandle:
+        """Run a completion on a task's reserved slot without releasing it after."""
+        slot_id = self._task_slots.get(task_id)
+        if slot_id is None:
+            raise RuntimeError(f"No slot assigned for task_id={task_id}")
+        if self._closed:
+            raise RuntimeError("EnginePool is closed")
+        if self._dispatcher_task is None:
+            self.start()
+
+        handle = CompletionHandle(request)
+        job = _CompletionJob(
+            request=request,
+            priority=priority,
+            slot_hint=slot_id,
+            handle=handle,
+            hold_slot=True,
+        )
+        self._sequence += 1
+        await self._queue.put(_QueueItem(int(priority), self._sequence, job))
+        return handle
+
     async def cancel(self, handle: CompletionHandle) -> None:
         handle.cancelled = True
         await handle.finish()
@@ -223,6 +252,41 @@ class EnginePool:
             self._busy_slots.discard(slot_id)
             self._slot_condition.notify_all()
         log.debug("engine_slot.released", slot_id=slot_id)
+
+    async def assign_slot(self, task_id: str, role: str = "subagent") -> int:
+        """Reserve a slot and track it by task_id until free_slot(task_id). Slot 0 = Main only."""
+        async with self._slot_condition:
+            while True:
+                if role == "main":
+                    candidates = [0]
+                else:
+                    candidates = list(range(1, self.parallel_slots)) + [
+                        s
+                        for s in range(self.parallel_slots)
+                        if s != 0
+                    ]
+                for slot_id in candidates:
+                    if slot_id not in self._busy_slots:
+                        self._busy_slots.add(slot_id)
+                        self._task_slots[task_id] = slot_id
+                        self._slot_condition.notify_all()
+                        log.debug(
+                            "engine_slot.assigned",
+                            task_id=task_id,
+                            slot_id=slot_id,
+                            role=role,
+                        )
+                        return slot_id
+                await self._slot_condition.wait()
+
+    async def free_slot(self, task_id: str) -> None:
+        slot_id = self._task_slots.pop(task_id, None)
+        if slot_id is not None:
+            await self.release_slot(slot_id)
+            log.debug("engine_slot.freed", task_id=task_id, slot_id=slot_id)
+
+    def slot_for_task(self, task_id: str) -> int | None:
+        return self._task_slots.get(task_id)
 
     async def _dispatcher(self) -> None:
         while True:
@@ -256,7 +320,8 @@ class EnginePool:
             await job.handle.fail(exc)
             log.error("engine_job.failed", handle_id=job.handle.id, slot_id=slot_id, error=str(exc))
         finally:
-            await self.release_slot(slot_id)
+            if not job.hold_slot:
+                await self.release_slot(slot_id)
             await job.handle.finish()
             log.debug("engine_job.finished", handle_id=job.handle.id, slot_id=slot_id)
 
@@ -265,14 +330,19 @@ class EnginePool:
             while True:
                 slot_id = self._available_slot(slot_hint)
                 if slot_id is not None:
-                    self._busy_slots.add(slot_id)
+                    if slot_id not in self._busy_slots:
+                        self._busy_slots.add(slot_id)
                     return slot_id
                 await self._slot_condition.wait()
 
     def _available_slot(self, slot_hint: int | None) -> int | None:
         if slot_hint is not None:
             self._validate_slot(slot_hint)
-            return slot_hint if slot_hint not in self._busy_slots else None
+            if slot_hint not in self._busy_slots:
+                return slot_hint
+            if slot_hint in self._task_slots.values():
+                return slot_hint
+            return None
 
         for slot_id in range(self.parallel_slots):
             if slot_id not in self._busy_slots:

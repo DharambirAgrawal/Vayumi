@@ -17,7 +17,15 @@ _RECALL_FOLLOWUP_HINT = (
     "do not ask them to choose again unless recall results are truly empty."
 )
 
-DirectiveKind = Literal["remember", "recall", "recall_chain", "respond_via", "delegate"]
+DirectiveKind = Literal[
+    "remember",
+    "recall",
+    "recall_chain",
+    "respond_via",
+    "delegate",
+    "answer_to",
+    "stop_task",
+]
 
 RESPOND_VIA_RE = re.compile(
     r"\[RESPOND_VIA\s+(?P<mode>chat|voice|both)\s*\]",
@@ -40,8 +48,16 @@ DELEGATE_HEAD_RE = re.compile(
     r'\[DELEGATE\s+capability=(?P<capability>\w+)\s+goal="(?P<goal>[^"]*)"\s+payload=',
     re.IGNORECASE,
 )
+ANSWER_TO_RE = re.compile(
+    r'\[ANSWER_TO\s+task_id=(?P<task_id>[^\s]+)\s+answer="(?P<answer>[^"]*)"\s+mode=(?P<mode>reply|amendment)\s*\]',
+    re.IGNORECASE,
+)
+STOP_TASK_RE = re.compile(
+    r"\[STOP_TASK\s+task_id=(?P<task_id>[^\s]+)\s*\]",
+    re.IGNORECASE,
+)
 DIRECTIVE_BLOCK_RE = re.compile(
-    r'\[(?:REMEMBER|RECALL|RESPOND_VIA|DELEGATE)(?:\s+chain)?\s+[^\]]+\]',
+    r'\[(?:REMEMBER|RECALL|RESPOND_VIA|DELEGATE|ANSWER_TO|STOP_TASK)(?:\s+chain)?\s+[^\]]+\]',
     re.IGNORECASE,
 )
 
@@ -73,6 +89,18 @@ class DelegateDirective:
     payload: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class AnswerToDirective:
+    task_id: str
+    answer: str
+    mode: Literal["reply", "amendment"] = "reply"
+
+
+@dataclass(frozen=True)
+class StopTaskDirective:
+    task_id: str
+
+
 def _extract_json_object(text: str, start: int) -> str | None:
     if start >= len(text) or text[start] != "{":
         return None
@@ -99,6 +127,24 @@ def _extract_json_object(text: str, start: int) -> str | None:
             if depth == 0:
                 return text[start : idx + 1]
     return None
+
+
+def parse_answer_to_directives(text: str) -> list[AnswerToDirective]:
+    return [
+        AnswerToDirective(
+            task_id=match.group("task_id"),
+            answer=match.group("answer"),
+            mode=match.group("mode").lower(),  # type: ignore[arg-type]
+        )
+        for match in ANSWER_TO_RE.finditer(text)
+    ]
+
+
+def parse_stop_task_directives(text: str) -> list[StopTaskDirective]:
+    return [
+        StopTaskDirective(task_id=match.group("task_id"))
+        for match in STOP_TASK_RE.finditer(text)
+    ]
 
 
 def parse_delegate_directives(text: str) -> list[DelegateDirective]:
@@ -194,6 +240,36 @@ def strip_internal_tool_blocks(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
+def plan_acknowledgment(text: str) -> str:
+    """
+    Spoken line(s) from the model's plan turn — prose before any [DELEGATE] / tool block.
+    Used as live status while tools run (not a template).
+    """
+    if not text.strip():
+        return ""
+    earliest = len(text)
+    for pattern in (
+        DELEGATE_HEAD_RE,
+        REMEMBER_RE,
+        RECALL_CHAIN_RE,
+        RECALL_RE,
+        ANSWER_TO_RE,
+        STOP_TASK_RE,
+        RESPOND_VIA_RE,
+    ):
+        match = pattern.search(text)
+        if match:
+            earliest = min(earliest, match.start())
+    head = text[:earliest].strip() if earliest < len(text) else text.strip()
+    head = strip_internal_tool_blocks(strip_directives(head))
+    head = re.sub(r"[\s\[\]!]+$", "", head).strip()
+    if not head:
+        return ""
+    if len(head) > 300:
+        head = head[:297].rsplit(" ", 1)[0] + "…"
+    return head
+
+
 def strip_directives(text: str) -> str:
     cleaned = text
     for match in DELEGATE_HEAD_RE.finditer(text):
@@ -201,9 +277,13 @@ def strip_directives(text: str) -> str:
         if payload_raw is not None:
             block = text[match.start() : match.end() + len(payload_raw)]
             cleaned = cleaned.replace(block, "", 1)
+    cleaned = ANSWER_TO_RE.sub("", cleaned)
+    cleaned = STOP_TASK_RE.sub("", cleaned)
     cleaned = DIRECTIVE_BLOCK_RE.sub("", cleaned)
     cleaned = RESPOND_VIA_RE.sub("", cleaned)
     cleaned = strip_internal_tool_blocks(cleaned)
+    cleaned = re.sub(r"^\s*[\]\[!]+\s*$", "", cleaned, flags=re.MULTILINE)
+    cleaned = re.sub(r"^\s*\]\s*", "", cleaned)
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 

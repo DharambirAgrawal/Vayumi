@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import date
 
 from server.logger import get_logger
 from server.orchestrator.directives import DelegateDirective
-from server.orchestrator.tool_intent import suggest_web_search_query
 from server.tools.registry import ToolCall, ToolResult, render_tool_result_for_prompt
 from server.tools.runner import ToolEventEmitter, ToolRunner
 
@@ -13,6 +13,15 @@ log = get_logger("orchestrator.tool_dispatch")
 
 MAX_DELEGATES_PER_TURN = 6
 MAIN_TOOLS = frozenset({"tool_search", "web_search", "memory_save", "memory_recall"})
+SUB_CAPABILITIES = frozenset({"research", "productivity", "comms", "data"})
+RESEARCH_TOOLS = frozenset({
+    "tool_search",
+    "web_search",
+    "deep_search",
+    "fetch_url",
+    "memory_recall",
+})
+RESEARCH_MAIN_SHARED = frozenset({"tool_search", "web_search"})
 
 
 @dataclass(frozen=True)
@@ -29,6 +38,7 @@ async def run_delegate_directives(
     directives: list[DelegateDirective],
     runner: ToolRunner,
     on_event: ToolEventEmitter | None = None,
+    event_label_start: str | None = None,
 ) -> list[DelegateRun]:
     """Execute DELEGATE directives for this turn (main tools only in Step 7)."""
     batch = directives[:MAX_DELEGATES_PER_TURN]
@@ -41,17 +51,20 @@ async def run_delegate_directives(
             limit=MAX_DELEGATES_PER_TURN,
         )
 
-    tasks = [
-        _run_one_delegate(
-            user_id=user_id,
-            turn_id=turn_id,
-            directive=directive,
-            runner=runner,
-            on_event=on_event,
+    runs: list[DelegateRun] = []
+    for index, directive in enumerate(batch):
+        label = event_label_start if index == 0 else None
+        runs.append(
+            await _run_one_delegate(
+                user_id=user_id,
+                turn_id=turn_id,
+                directive=directive,
+                runner=runner,
+                on_event=on_event,
+                event_label_start=label,
+            )
         )
-        for directive in batch
-    ]
-    return list(await asyncio.gather(*tasks))
+    return runs
 
 
 async def _run_one_delegate(
@@ -61,6 +74,7 @@ async def _run_one_delegate(
     directive: DelegateDirective,
     runner: ToolRunner,
     on_event: ToolEventEmitter | None,
+    event_label_start: str | None = None,
 ) -> DelegateRun:
     capability = directive.capability.lower()
 
@@ -103,6 +117,7 @@ async def _run_one_delegate(
         tool_call,
         user_id=user_id,
         on_event=on_event,
+        event_label_start=event_label_start,
     )
     return DelegateRun(directive=directive, tool_name=tool_name, result=result)
 
@@ -110,93 +125,127 @@ async def _run_one_delegate(
 def format_delegate_results(runs: list[DelegateRun]) -> str:
     if not runs:
         return ""
-    lines = []
-    for run in runs:
+    lines: list[str] = []
+    for index, run in enumerate(runs, start=1):
+        goal = run.directive.goal.strip() or f"part {index}"
+        lines.append(f"--- Immediate result {index}: {goal} ---")
         name = run.tool_name or run.directive.capability
         lines.append(render_tool_result_for_prompt(name, run.result))
-        if run.directive.goal:
-            lines.append(f"(goal: {run.directive.goal})")
-    block = "\n".join(lines)
-    hint = (
-        "Answer the user's latest message using the tool results above. "
-        "Summarize in plain prose only — never paste [TOOL_RESULT] lines or "
-        "'Found N tool(s)' metadata. If results are empty, say so; do not invent news. "
-        "Do not emit another [DELEGATE] block in this reply."
-    )
-    return f"{block}\n\n{hint}"
+    return "\n".join(lines)
 
 
-def coerce_delegates_for_live_web(
-    user_text: str,
-    directives: list[DelegateDirective],
-) -> list[DelegateDirective]:
-    """
-    News/stock/live queries must run web_search, not tool_search alone.
-    tool_search only lists tool names — it does not fetch headlines.
-    """
-    query = suggest_web_search_query(user_text)
-    if not query:
-        return directives
-
-    web = DelegateDirective(
-        capability="main",
-        goal="fetch live web results",
-        payload={
-            "tool": "web_search",
-            "args": {"query": query, "max_results": 8, "search_depth": "basic"},
-        },
-    )
-
-    if not directives:
-        return [web]
-
-    tools = [
-        d.payload.get("tool")
-        for d in directives
-        if isinstance(d.payload.get("tool"), str)
-    ]
-    if "web_search" in tools:
-        return directives
-
-    if tools == ["tool_search"] or set(tools) <= {"tool_search"}:
-        log.info("tool_dispatch.coerce_web_search", reason="tool_search_only")
-        return [web]
-
-    return [web, *directives]
-
-
-def web_search_succeeded(runs: list[DelegateRun]) -> bool:
-    for run in runs:
-        if run.tool_name == "web_search" and run.result.status == "ok":
-            data = run.result.data.get("results", [])
-            if isinstance(data, list) and len(data) > 0:
-                return True
-    return False
-
-
-def tool_status_message(
-    user_text: str,
-    directives: list[DelegateDirective],
+def build_follow_up_context(
+    *,
+    recall_block: str = "",
+    spawn_blocks: list[str],
+    delegate_runs: list[DelegateRun],
 ) -> str:
-    """Short user-facing line while tools run (PLAN: announce before execute)."""
+    """Merge quick tool results + background spawns for a multi-part user request."""
+    parts: list[str] = []
+    if recall_block.strip():
+        parts.append(recall_block.strip())
+
+    if delegate_runs:
+        parts.append("=== Answer now (immediate tool results) ===")
+        parts.append(format_delegate_results(delegate_runs))
+
+    if spawn_blocks:
+        parts.append("=== Background (still running — do not invent their results) ===")
+        parts.extend(spawn_blocks)
+
+    today = date.today().isoformat()
+    if delegate_runs and spawn_blocks:
+        parts.append(
+            f"Today is {today}. The user asked for multiple things. Cover every immediate "
+            "result section above (e.g. weather) in your own words. Add only ONE short "
+            "sentence that deep research has started — do NOT say you are still working, "
+            "do NOT promise to notify later (the server pushes results when done). "
+            "Do not repeat your plan opening line. No [DELEGATE]."
+        )
+    elif len(delegate_runs) > 1:
+        parts.append(
+            f"Today is {today}. The user asked for multiple topics — address each immediate "
+            "result section. Snippets only; do not invent prices or dates. No [DELEGATE]."
+        )
+    elif delegate_runs:
+        parts.append(
+            f"Today is {today}. Answer from the immediate results only — casual, 2–4 "
+            "sentences. Snippet numbers are source of truth. No [DELEGATE]."
+        )
+    elif spawn_blocks:
+        parts.append(
+            "Background research is running. Tell the user briefly that you started it and "
+            "they will hear the full summary when it finishes — do not promise vague "
+            "\"I'll use more resources\" without a DELEGATE. Keep it to 1–2 sentences. "
+            "No [DELEGATE]."
+        )
+
+    return "\n\n".join(parts)
+
+
+def split_delegate_directives(
+    directives: list[DelegateDirective],
+) -> tuple[list[DelegateDirective], list[DelegateDirective]]:
+    main: list[DelegateDirective] = []
+    subagent: list[DelegateDirective] = []
     for directive in directives:
-        tool = directive.payload.get("tool")
-        if tool == "web_search":
-            args = directive.payload.get("args", {})
-            query = user_text
-            if isinstance(args, dict) and isinstance(args.get("query"), str):
-                query = args["query"]
-            short = query.strip()[:72]
-            if len(query.strip()) > 72:
-                short += "…"
-            return f"Searching the web for {short}…"
-        if tool == "memory_recall":
-            return "Checking what I remember…"
-        if tool == "memory_save":
-            return "Saving that to memory…"
-        if tool == "tool_search":
-            return "Checking which tools I can use…"
-    return "Working on that…"
+        cap = directive.capability.lower()
+        if cap == "main":
+            main.append(directive)
+        elif cap in SUB_CAPABILITIES:
+            subagent.append(directive)
+    return main, subagent
+
+
+def format_subagent_spawn_block(task_id: str, capability: str, goal: str) -> str:
+    return (
+        f'[SUBAGENT_SPAWN task_id={task_id} capability={capability} goal="{goal}"] '
+        f"(background {capability} worker — results arrive later via notification)"
+    )
+
+
+async def run_subagent_tool_delegate(
+    *,
+    user_id: str,
+    task_id: str,
+    directive: DelegateDirective,
+    runner: ToolRunner,
+    on_event: ToolEventEmitter | None = None,
+    event_label_start: str | None = None,
+) -> DelegateRun:
+    """Execute a sub-agent capability tool via ToolRunner."""
+    capability = directive.capability.lower()
+    tool_name = directive.payload.get("tool")
+    allowed = RESEARCH_TOOLS if capability == "research" else frozenset()
+    if not isinstance(tool_name, str) or tool_name not in allowed:
+        return DelegateRun(
+            directive=directive,
+            tool_name=None,
+            result=ToolResult(
+                status="not_capable",
+                summary=f"Tool not allowed for capability {capability}",
+            ),
+        )
+    raw_args = directive.payload.get("args", {})
+    if not isinstance(raw_args, dict):
+        raw_args = {}
+    if capability == "research" and tool_name in RESEARCH_MAIN_SHARED:
+        exec_capability = "main"
+    else:
+        exec_capability = capability
+    tool_call = ToolCall(
+        name=tool_name,
+        args=raw_args,
+        capability=exec_capability,  # type: ignore[arg-type]
+    )
+    result = await runner.execute(
+        task_id,
+        tool_call,
+        user_id=user_id,
+        on_event=on_event,
+        event_label_start=event_label_start,
+    )
+    return DelegateRun(directive=directive, tool_name=tool_name, result=result)
 
 
 def compact_delegate_summary(runs: list[DelegateRun]) -> str:

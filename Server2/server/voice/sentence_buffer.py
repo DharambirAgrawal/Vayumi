@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+")
+SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+|(?<=—)\s+|(?<=\.\.\.)\s+")
 
 
 def drain_complete_sentences(buffer: str) -> tuple[list[str], str]:

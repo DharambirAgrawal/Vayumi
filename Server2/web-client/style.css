@@ -178,6 +178,17 @@ button.mic-active {
   min-height: 1.4em;
 }
 
+.bubble.status {
+  background: transparent;
+  border: 1px dashed var(--border);
+  opacity: 0.92;
+}
+
+.bubble.status .status-text {
+  color: var(--caption);
+  font-style: italic;
+}
+
 #captionText.empty {
   color: var(--muted);
   font-style: italic;
@@ -274,6 +285,21 @@ button.mic-active {
 .event-pill .kind {
   color: var(--accent);
   font-weight: 600;
+}
+
+.event-pill.task-step {
+  border-color: var(--caption);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.event-pill.task-done {
+  border-color: var(--green);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.event-pill.task-error {
+  border-color: var(--red);
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .audio-status {

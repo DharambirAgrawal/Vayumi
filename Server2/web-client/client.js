@@ -25,6 +25,7 @@
   let sessionMode = "conversation";
   let captionBuffer = "";
   let activityEvents = [];
+  let conversationStatusEl = null;
 
   let playbackCtx = null;
   let playbackGain = null;
@@ -267,6 +268,7 @@
 
   function renderChatMessage(payload) {
     if (!payload || !payload.text) return;
+    clearConversationStatus();
     appendChatBubble("assistant", payload.text, payload.final !== false);
     if (payload.final !== false) {
       captionBuffer = "";
@@ -277,7 +279,12 @@
 
   function renderCaption(text, partial) {
     if (partial) {
-      captionBuffer += text;
+      if (/…$|\.\.\.$/.test(text.trim()) || text.indexOf("Searching") === 0) {
+        captionBuffer = text.trim();
+        setConversationStatus(text.trim());
+      } else {
+        captionBuffer += text;
+      }
     } else if (text.trim()) {
       const prev = captionBuffer.trim();
       if (!prev) {
@@ -323,13 +330,49 @@
   }
 
   function toolEventLabel(kind, summary) {
-    if (kind === "tool_started") return "Tool · " + (summary || "started");
-    if (kind === "tool_done") return "Done · " + (summary || "finished");
-    return (kind || "event") + " · " + (summary || "");
+    if (summary && (kind === "tool_started" || kind === "tool_done")) {
+      return summary;
+    }
+    if (kind === "task_step") return summary || "Research in progress";
+    if (kind === "task_done") return summary || "Research finished";
+    if (kind === "task_error") return summary || "Research failed";
+    return summary || kind || "event";
+  }
+
+  function setConversationStatus(text) {
+    if (!text || !text.trim()) return;
+    if (!conversationStatusEl) {
+      conversationStatusEl = document.createElement("div");
+      conversationStatusEl.className = "bubble status";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = "Vayumi";
+      const body = document.createElement("p");
+      body.className = "status-text";
+      conversationStatusEl.appendChild(meta);
+      conversationStatusEl.appendChild(body);
+      chatThread.appendChild(conversationStatusEl);
+    }
+    conversationStatusEl.querySelector(".status-text").textContent = text.trim();
+    chatThread.scrollTop = chatThread.scrollHeight;
+  }
+
+  function clearConversationStatus() {
+    if (conversationStatusEl) {
+      conversationStatusEl.remove();
+      conversationStatusEl = null;
+    }
   }
 
   function renderEvent(event) {
     activityEvents.push(event);
+    if (
+      event.kind === "tool_started" &&
+      event.summary &&
+      event.summary.indexOf("Searching") >= 0
+    ) {
+      setConversationStatus(event.summary);
+    }
     renderTaskBoard(activityEvents);
   }
 
@@ -347,6 +390,12 @@
       pill.className = "event-pill";
       if (ev.kind === "tool_started" || ev.kind === "tool_done") {
         pill.classList.add(ev.kind === "tool_started" ? "tool-start" : "tool-done");
+      } else if (ev.kind === "task_step") {
+        pill.classList.add("task-step");
+      } else if (ev.kind === "task_done") {
+        pill.classList.add("task-done");
+      } else if (ev.kind === "task_error") {
+        pill.classList.add("task-error");
       }
       const label = toolEventLabel(ev.kind, ev.summary);
       pill.innerHTML =

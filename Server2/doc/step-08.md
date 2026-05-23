@@ -1,6 +1,6 @@
 # Step 08 — Sub-agent worker + signal bus
 
-**Status:** ⬜ pending  
+**Status:** ✅ complete  
 **Depends on:** step-07 ✅ (tool plane complete)  
 **Estimated effort:** 2–3 days  
 **Owner:** you  

@@ -11,11 +11,7 @@ from server.tools import build_tool_registry, build_tool_runner
 
 
 class _NoDelegateClient:
-    """Model forgets to DELEGATE — server should auto web_search."""
-
-    def __init__(self) -> None:
-        self.prompts: list[str] = []
-        self._pass = 0
+    """Model emits no DELEGATE — server must not auto-run tools."""
 
     def stream_completion(
         self,
@@ -32,19 +28,12 @@ class _NoDelegateClient:
         slot_id: int,
         request: CompletionRequest,
     ) -> AsyncIterator[str]:
-        del base_url, slot_id
-        self.prompts.append(request.prompt)
-        if self._pass == 0:
-            self._pass += 1
-            yield (
-                "I don't have access to real-time news. Would you like me to search?"
-            )
-            return
-        yield "Here is a brief summary of today's top headlines from the search."
+        del base_url, slot_id, request
+        yield "I don't have access to real-time news. Would you like me to search?"
 
 
 @pytest.mark.asyncio
-async def test_supervisor_auto_web_search_when_model_skips_delegate(
+async def test_supervisor_does_not_auto_web_search_without_delegate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from server.orchestrator import supervisor as sup_mod
@@ -89,32 +78,6 @@ async def test_supervisor_auto_web_search_when_model_skips_delegate(
             last_seen_at=datetime.now(timezone.utc),
         )
 
-    async def fake_web_search(
-        *,
-        user_id: str,
-        query: str,
-        max_results: int = 5,
-        tavily_api_key=None,
-    ):
-        del user_id, max_results, tavily_api_key
-        from server.tools.registry import ToolResult
-
-        return ToolResult(
-            status="ok",
-            summary="3 results",
-            data={
-                "results": [
-                    {
-                        "title": "World roundup",
-                        "url": "https://example.com/1",
-                        "snippet": "Summary",
-                        "source": "tavily",
-                    }
-                ],
-                "query": query,
-            },
-        )
-
     monkeypatch.setattr(sup_mod, "build_warm_profile", fake_warm)
     monkeypatch.setattr(sup_mod, "recent_turns", fake_history)
     monkeypatch.setattr(sup_mod, "compressed_history", fake_summary)
@@ -126,9 +89,6 @@ async def test_supervisor_auto_web_search_when_model_skips_delegate(
         redis_url="redis://localhost",
     )
     registry = build_tool_registry(settings)
-    entry = registry.get("web_search")
-    assert entry is not None
-    entry.fn = fake_web_search  # type: ignore[method-assign]
     runner = build_tool_runner(registry)
 
     client = _NoDelegateClient()
@@ -147,7 +107,7 @@ async def test_supervisor_auto_web_search_when_model_skips_delegate(
     supervisor = Supervisor(user_id="u1", session_id="s1")
     supervisor._ready = True
     try:
-        output = await supervisor.run_turn(
+        await supervisor.run_turn(
             "What is latest going on in the news",
             engine_pool=pool,
             tool_runner=runner,
@@ -156,7 +116,5 @@ async def test_supervisor_auto_web_search_when_model_skips_delegate(
     finally:
         await pool.close()
 
-    assert "tool_started" in events
-    assert "TOOL_RESULT" in client.prompts[1]
-    lower = output.assistant_text.lower()
-    assert "headlines" in lower or "summary" in lower
+    assert "tool_started" not in events
+    assert "tool_done" not in events

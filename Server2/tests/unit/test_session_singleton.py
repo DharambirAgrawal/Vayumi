@@ -76,3 +76,38 @@ async def test_first_connection_not_resumed(monkeypatch: pytest.MonkeyPatch) -> 
         hello_session_id=None,
     )
     assert resumed is False
+
+
+@pytest.mark.asyncio
+async def test_reconnect_new_session_id_persists_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.orchestrator import supervisor as sup_mod
+
+    calls: list[str] = []
+
+    async def track_session(
+        user_id: str, session_id: str, client_meta: dict | None
+    ) -> None:
+        calls.append(session_id)
+
+    monkeypatch.setattr(sup_mod, "load_or_create_session", track_session)
+
+    ws1 = _mock_ws()
+    ws2 = _mock_ws()
+    await enforce_session_singleton(
+        user_id="u3",
+        session_id="jwt-s",
+        new_ws=ws1,  # type: ignore[arg-type]
+        hello_session_id="client-a",
+    )
+    session, resumed = await enforce_session_singleton(
+        user_id="u3",
+        session_id="jwt-s",
+        new_ws=ws2,  # type: ignore[arg-type]
+        hello_session_id="client-b",
+    )
+
+    assert resumed is True
+    assert session.session_id == "client-b"
+    assert calls == ["client-a", "client-b"]

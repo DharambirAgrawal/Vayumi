@@ -18,9 +18,12 @@ dependencies = [
     "soundfile>=0.12",
     "silero-vad>=5.1",
     "pykokoro>=0.6",
+    "spacy>=3.7",
     "groq>=0.13",
     "sentence-transformers>=3.3",
     "tavily-python>=0.5",
+    "trafilatura>=1.12",
+    "scrapling[fetchers]>=0.4",
 ]
 
 [tool.uv]

@@ -117,12 +117,14 @@ async def run_voice_turn(
 
     try:
         tool_runner = getattr(websocket.app.state, "tool_runner", None)
-        from server.transport.ws import make_tool_event_emitter
-        from server.voice.status_caption import send_status_caption
+        from server.transport.ws import make_activity_event_emitter
+        from server.voice.status_caption import make_status_caption_handler
 
-        async def on_status_caption(status: str) -> None:
-            await send_status_caption(websocket, turn_id=turn_id, text=status)
+        on_status_caption = make_status_caption_handler(
+            websocket, turn_id=turn_id, pipeline=pipeline
+        )
 
+        activity_emitter = make_activity_event_emitter(user_session)
         output = await supervisor.handle_turn(
             TurnInput(kind="voice", text=transcript),
             engine_pool=engine_pool,
@@ -130,7 +132,8 @@ async def run_voice_turn(
             computed_respond_via=decision.respond_via,
             turn_id=turn_id,
             tool_runner=tool_runner,
-            on_tool_event=make_tool_event_emitter(user_session),
+            on_tool_event=activity_emitter,
+            on_task_event=activity_emitter,
             on_status_caption=on_status_caption,
         )
         user_session.turn_llm_persisted = True

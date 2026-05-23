@@ -47,3 +47,34 @@ CREATE TABLE IF NOT EXISTS turns (
 );
 
 CREATE INDEX IF NOT EXISTS turns_session_created_idx ON turns (session_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    task_id UUID PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    session_id TEXT,
+    capability TEXT NOT NULL,
+    goal TEXT NOT NULL,
+    status TEXT NOT NULL,
+    latest_step TEXT,
+    result_summary TEXT,
+    blocked_reason TEXT,
+    waiting_for TEXT,
+    payload JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS tasks_user_status_idx ON tasks (user_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS signals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id UUID NOT NULL REFERENCES tasks (task_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}',
+    importance DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS signals_task_created_idx ON signals (task_id, created_at DESC);

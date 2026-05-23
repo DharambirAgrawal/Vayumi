@@ -13,6 +13,7 @@ from server.transport.protocol import (
     UserMessage,
     UserMessagePayload,
 )
+from server.orchestrator.prose import sanitize_spoken_prose
 from server.voice.echo_suppression import begin_tts_with_echo_suppression
 from server.voice.interrupt import InterruptController
 from server.voice.respond_via import RespondVia
@@ -53,7 +54,7 @@ async def deliver_turn_output(
     tts_streamed_during_llm: bool = False,
 ) -> None:
     """§5.5: captions + optional TTS + canonical chat_message."""
-    text = assistant_text.strip()
+    text = sanitize_spoken_prose(assistant_text.strip())
 
     if text and not stream_captions_during_llm:
         await send_json(

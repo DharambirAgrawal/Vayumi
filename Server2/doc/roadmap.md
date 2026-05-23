@@ -291,7 +291,7 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 8 — Sub-agent worker + signal bus ⬜
+### Step 8 — Sub-agent worker + signal bus ✅
 
 **File:** `doc/step-08.md`  
 **Estimated effort:** 2–3 days  

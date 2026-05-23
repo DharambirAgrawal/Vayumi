@@ -1,30 +1,18 @@
 from __future__ import annotations
 
-from server.orchestrator.directives import DelegateDirective
-from server.orchestrator.tool_dispatch import tool_status_message
+from server.orchestrator.directives import plan_acknowledgment, strip_directives
 
 
-def test_tool_status_web_search() -> None:
-    msg = tool_status_message(
-        "What is latest going on in the news",
-        [
-            DelegateDirective(
-                capability="main",
-                goal="news",
-                payload={
-                    "tool": "web_search",
-                    "args": {"query": "world news today"},
-                },
-            )
-        ],
+def test_plan_acknowledgment_before_delegate() -> None:
+    raw = (
+        "I'll check the latest on NVIDIA for you.\n"
+        '[DELEGATE capability=main goal="nvidia stock" payload={"tool":"web_search","args":{"query":"nvidia"}}]'
     )
-    assert "Searching the web" in msg
-    assert "world news" in msg
+    assert plan_acknowledgment(raw) == "I'll check the latest on NVIDIA for you."
+    assert "DELEGATE" not in strip_directives(raw)
 
 
 def test_streaming_tts_strips_delegate_from_sentence() -> None:
-    from server.orchestrator.directives import strip_directives
-
     raw = (
         '[DELEGATE capability=main goal="x" payload={"tool":"web_search","args":{"query":"q"}}]\n'
         "Here is the answer."
