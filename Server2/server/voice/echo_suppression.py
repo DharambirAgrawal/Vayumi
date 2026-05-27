@@ -89,7 +89,7 @@ async def begin_tts_with_echo_suppression(
             )
         else:
             asyncio.create_task(
-                _schedule_start_capture(
+                schedule_start_capture(
                     websocket,
                     turn_id=turn_id,
                     delay_ms=suppression_delay_ms,
@@ -100,12 +100,13 @@ async def begin_tts_with_echo_suppression(
     return not interrupted
 
 
-async def _schedule_start_capture(
+async def schedule_start_capture(
     websocket: WebSocket,
     *,
     turn_id: str,
     delay_ms: int,
 ) -> None:
+    """Resume mic capture after echo suppression delay. Shared by all TTS paths."""
     await asyncio.sleep(delay_ms / 1000.0)
     from starlette.websockets import WebSocketState
 

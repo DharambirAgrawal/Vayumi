@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 import lancedb
+from lancedb.db import LanceDBConnection
 
 from server.logger import get_logger
 from server.memory.embeddings import embedding_dim
 
 log = get_logger("db.lancedb")
 
-_db: Any = None
+_db: LanceDBConnection | None = None
 FACTS_INDEX_TABLE = "facts_index"
 
 
-async def init_lancedb(lancedb_dir: str) -> Any:
+async def init_lancedb(lancedb_dir: str) -> LanceDBConnection:
     global _db
     os.makedirs(lancedb_dir, exist_ok=True)
     log.info("lancedb.connecting", dir=lancedb_dir)
@@ -49,7 +49,7 @@ async def close_lancedb() -> None:
     log.info("lancedb.closed")
 
 
-def get_lancedb() -> Any:
+def get_lancedb() -> LanceDBConnection:
     if _db is None:
         raise RuntimeError("LanceDB not initialized — call init_lancedb first")
     return _db
@@ -65,7 +65,8 @@ def upsert_fact_embedding(
 ) -> None:
     db = get_lancedb()
     table = db.open_table(FACTS_INDEX_TABLE)
-    table.delete(f'fact_id = "{fact_id}"')
+    safe_id = fact_id.replace('"', '\\"')
+    table.delete(f'fact_id = "{safe_id}"')
     table.add(
         [
             {

@@ -6,6 +6,7 @@ from datetime import date
 
 from server.logger import get_logger
 from server.orchestrator.directives import DelegateDirective
+from server.subagents.capabilities import execution_capability, load_capability
 from server.tools.registry import ToolCall, ToolResult, render_tool_result_for_prompt
 from server.tools.runner import ToolEventEmitter, ToolRunner
 
@@ -14,14 +15,6 @@ log = get_logger("orchestrator.tool_dispatch")
 MAX_DELEGATES_PER_TURN = 6
 MAIN_TOOLS = frozenset({"tool_search", "web_search", "memory_save", "memory_recall"})
 SUB_CAPABILITIES = frozenset({"research", "productivity", "comms", "data"})
-RESEARCH_TOOLS = frozenset({
-    "tool_search",
-    "web_search",
-    "deep_search",
-    "fetch_url",
-    "memory_recall",
-})
-RESEARCH_MAIN_SHARED = frozenset({"tool_search", "web_search"})
 
 
 @dataclass(frozen=True)
@@ -51,20 +44,36 @@ async def run_delegate_directives(
             limit=MAX_DELEGATES_PER_TURN,
         )
 
-    runs: list[DelegateRun] = []
+    if not batch:
+        return []
+
+    tasks: list[asyncio.Task[tuple[int, DelegateRun]]] = []
     for index, directive in enumerate(batch):
         label = event_label_start if index == 0 else None
-        runs.append(
-            await _run_one_delegate(
+
+        async def _run_one(
+            idx: int, item: DelegateDirective, start_label: str | None
+        ) -> tuple[int, DelegateRun]:
+            result = await _run_one_delegate(
                 user_id=user_id,
                 turn_id=turn_id,
-                directive=directive,
+                directive=item,
                 runner=runner,
                 on_event=on_event,
-                event_label_start=label,
+                event_label_start=start_label,
+            )
+            return idx, result
+
+        tasks.append(
+            asyncio.create_task(
+                _run_one(index, directive, label),
+                name=f"main-tool-{turn_id[:8]}-{index}",
             )
         )
-    return runs
+
+    results = await asyncio.gather(*tasks, return_exceptions=False)
+    results.sort(key=lambda item: item[0])
+    return [item[1] for item in results]
 
 
 async def _run_one_delegate(
@@ -213,26 +222,36 @@ async def run_subagent_tool_delegate(
     on_event: ToolEventEmitter | None = None,
     event_label_start: str | None = None,
 ) -> DelegateRun:
-    """Execute a sub-agent capability tool via ToolRunner."""
+    """Execute a sub-agent capability tool via ToolRunner (bundle-gated)."""
     capability = directive.capability.lower()
-    tool_name = directive.payload.get("tool")
-    allowed = RESEARCH_TOOLS if capability == "research" else frozenset()
-    if not isinstance(tool_name, str) or tool_name not in allowed:
+    try:
+        bundle = load_capability(capability)
+    except ValueError:
         return DelegateRun(
             directive=directive,
             tool_name=None,
             result=ToolResult(
                 status="not_capable",
-                summary=f"Tool not allowed for capability {capability}",
+                summary=f"Unknown capability {capability}",
             ),
         )
+
+    tool_name = directive.payload.get("tool")
+    if not isinstance(tool_name, str) or tool_name not in bundle.allowed_tools:
+        return DelegateRun(
+            directive=directive,
+            tool_name=None,
+            result=ToolResult(
+                status="not_capable",
+                summary=f"Tool {tool_name!r} is not in the {capability} capability bundle",
+            ),
+        )
+
     raw_args = directive.payload.get("args", {})
     if not isinstance(raw_args, dict):
         raw_args = {}
-    if capability == "research" and tool_name in RESEARCH_MAIN_SHARED:
-        exec_capability = "main"
-    else:
-        exec_capability = capability
+
+    exec_capability = execution_capability(bundle, tool_name)
     tool_call = ToolCall(
         name=tool_name,
         args=raw_args,

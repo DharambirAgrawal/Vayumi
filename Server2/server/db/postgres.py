@@ -13,13 +13,18 @@ _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 _pool: asyncpg.Pool | None = None
 
 
-async def init_postgres(database_url: str) -> asyncpg.Pool:
+async def init_postgres(
+    database_url: str,
+    *,
+    min_size: int = 2,
+    max_size: int = 10,
+) -> asyncpg.Pool:
     global _pool
     log.info("postgres.connecting", url=database_url.split("@")[-1])
     pool = await asyncpg.create_pool(
         database_url,
-        min_size=2,
-        max_size=10,
+        min_size=min_size,
+        max_size=max_size,
         statement_cache_size=0,
     )
     assert pool is not None

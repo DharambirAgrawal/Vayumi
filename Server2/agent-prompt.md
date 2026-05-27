@@ -46,6 +46,9 @@ RULES YOU MUST FOLLOW:
 11. Keep code clean: no commented-out code, no debug prints left behind, no unused imports. Use type hints. Follow the structlog logging pattern from PLAN.md.
 
 12. If something in the step file is ambiguous or seems wrong, ASK ME before implementing. Do not guess.
+13. Dont fake anything, always see architecture carefully, need to be connected and tested with different cases the real cases not the fake one
+14. If you remove anything wrong remove permanently dont make anything legacy ad leave there oaky 
+
 
 ENVIRONMENT:
 - Python 3.11 (`pyproject.toml`: `requires-python = ">=3.11,<3.12"`). Not 3.12.

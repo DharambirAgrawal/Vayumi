@@ -1,4 +1,8 @@
-from server.orchestrator.prose import finalize_assistant_prose, texts_largely_repeat
+from server.orchestrator.prose import (
+    finalize_assistant_prose,
+    sanitize_spoken_prose,
+    texts_largely_repeat,
+)
 
 
 def test_finalize_collapses_markdown_echo_block() -> None:
@@ -22,6 +26,10 @@ def test_finalize_strips_raw_urls() -> None:
     )
     assert "http" not in finalize_assistant_prose(raw)
     assert "$219" in finalize_assistant_prose(raw)
+
+
+def test_sanitize_collapses_trailing_bang_after_period() -> None:
+    assert sanitize_spoken_prose("Busy day.!") == "Busy day."
 
 
 def test_texts_largely_repeat_detects_paraphrase() -> None:

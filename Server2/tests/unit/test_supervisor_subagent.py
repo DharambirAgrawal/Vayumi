@@ -209,6 +209,13 @@ async def test_cancel_task_frees_slot(patched_memory: None) -> None:
     supervisor = Supervisor(user_id="u1", session_id="s1")
     supervisor._ready = True
 
+    async def wait_for_slot(task_id: str) -> int:
+        while True:
+            slot_id = pool.slot_for_task(task_id)
+            if slot_id is not None:
+                return slot_id
+            await asyncio.sleep(0.01)
+
     try:
         task_id = await supervisor.spawn_subagent(
             "research",
@@ -217,7 +224,7 @@ async def test_cancel_task_frees_slot(patched_memory: None) -> None:
             engine_pool=pool,
             tool_runner=runner,
         )
-        assert pool.slot_for_task(task_id) is not None
+        assert await asyncio.wait_for(wait_for_slot(task_id), timeout=1.0) is not None
         ok = await supervisor.cancel_task(task_id, engine_pool=pool)
         assert ok is True
         assert pool.slot_for_task(task_id) is None

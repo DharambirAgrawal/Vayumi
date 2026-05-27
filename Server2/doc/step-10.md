@@ -1,6 +1,6 @@
 # Step 10 — Proactive notifier + synthetic turns
 
-**Status:** ⬜ pending  
+**Status:** ✅ complete  
 **Depends on:** step-09  
 **Estimated effort:** 1–2 days  
 **Owner:** you  

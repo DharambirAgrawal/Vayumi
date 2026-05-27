@@ -1,7 +1,7 @@
 # Vayumi Server 2 — Master Plan
 
 **Version:** 1.7  
-**Status:** Architecture locked, Step 9 next (Steps 1-8 complete)  
+**Status:** Architecture locked, Step 11 next (Steps 1-10 complete)  
 **Last updated:** 2026-05-21  
 **Companion files:** `doc/step-06.md` (current), `doc/roadmap.md` (full step overview), `doc/tracker.md` (progress + flows), `agent-prompt.md` (reusable build prompt)  
 **Reference diagrams:** `orchestrator_diagram_v3.drawio` (17 pages — architecture), `doc/tracker.md` (build progress + architecture flows)  
@@ -930,8 +930,8 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 | # | Step | Status |
 |---|---|---|
 | 8 | Sub-agent worker + signal bus + `report()` schema + task pause/resume via `[ANSWER_TO task_id=...]` | ✅ |
-| 9 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) + tool access gates | ⬜ |
-| 10 | Proactive notifier + synthetic turn pipeline + respond_via decision per Rule 13 | ⬜ |
+| 9 | Capability bundles + per-capability prompts + 3 capabilities (research, productivity, comms) + tool access gates | ✅ |
+| 10 | Proactive notifier + synthetic turn pipeline + respond_via decision per Rule 13 | ✅ |
 | 11 | LanceDB retrieval tool + memory_recall on-demand | ⬜ |
 | 12 | Summarizer (P2) + automatic compression at 20k tokens | ⬜ |
 

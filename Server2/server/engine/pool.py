@@ -28,6 +28,10 @@ class CompletionRequest:
     temperature: float = 0.7
     stop: tuple[str, ...] = ()
     cache_prompt: bool = False
+    stream: bool = True
+    # When False, omit slot_id on the HTTP request so llama-server does not reuse
+    # a poisoned per-slot KV cache (Gemma may EOS with empty content on slot 0).
+    pin_slot: bool = True
 
 
 class CompletionClient(Protocol):
@@ -35,7 +39,7 @@ class CompletionClient(Protocol):
         self,
         *,
         base_url: str,
-        slot_id: int,
+        slot_id: int | None,
         request: CompletionRequest,
     ) -> AsyncIterator[str]:
         ...
@@ -46,18 +50,36 @@ class LlamaCompletionClient:
         self,
         *,
         base_url: str,
-        slot_id: int,
+        slot_id: int | None,
         request: CompletionRequest,
     ) -> AsyncIterator[str]:
         return self._stream_completion(base_url=base_url, slot_id=slot_id, request=request)
+
+    @staticmethod
+    def _completion_params(slot_id: int | None, request: CompletionRequest) -> dict[str, int]:
+        if request.pin_slot and slot_id is not None:
+            return {"slot_id": slot_id}
+        return {}
 
     async def _stream_completion(
         self,
         *,
         base_url: str,
-        slot_id: int,
+        slot_id: int | None,
         request: CompletionRequest,
     ) -> AsyncIterator[str]:
+        if not request.stream:
+            text = await self._fetch_completion_non_stream(
+                base_url=base_url,
+                slot_id=slot_id,
+                request=request,
+            )
+            if text:
+                yield text
+            return
+
+        emitted = False
+        sample = ""
         payload: dict[str, object] = {
             "prompt": request.prompt,
             "stream": True,
@@ -68,11 +90,12 @@ class LlamaCompletionClient:
         if request.stop:
             payload["stop"] = list(request.stop)
 
+        query = self._completion_params(slot_id, request)
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream(
                 "POST",
                 f"{base_url}/completion",
-                params={"slot_id": slot_id},
+                params=query,
                 json=payload,
                 headers={"Accept": "text/event-stream"},
             ) as response:
@@ -81,6 +104,9 @@ class LlamaCompletionClient:
                 async for chunk_text in response.aiter_text():
                     if not chunk_text:
                         continue
+                    if len(sample) < 800:
+                        remaining = 800 - len(sample)
+                        sample += chunk_text[:remaining]
                     buffer += chunk_text
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
@@ -88,13 +114,66 @@ class LlamaCompletionClient:
                         if not line:
                             continue
                         token = parse_completion_stream_line(line)
-                        if token is not None:
+                        if token:
+                            emitted = True
                             yield token
                 tail = buffer.strip()
                 if tail:
                     token = parse_completion_stream_line(tail)
-                    if token is not None:
+                    if token:
+                        emitted = True
                         yield token
+
+        if not emitted:
+            if sample:
+                log.warning(
+                    "engine.stream_empty",
+                    slot_id=slot_id,
+                    sample_len=len(sample),
+                    sample=sample.replace("\n", "\\n")[:200],
+                )
+            fallback = await self._fetch_completion_non_stream(
+                base_url=base_url,
+                slot_id=slot_id,
+                request=request,
+            )
+            if fallback:
+                log.warning(
+                    "engine.stream_empty_fallback",
+                    slot_id=slot_id,
+                    chars=len(fallback),
+                )
+                yield fallback
+
+    async def _fetch_completion_non_stream(
+        self,
+        *,
+        base_url: str,
+        slot_id: int | None,
+        request: CompletionRequest,
+    ) -> str:
+        payload: dict[str, object] = {
+            "prompt": request.prompt,
+            "stream": False,
+            "n_predict": request.max_tokens,
+            "temperature": request.temperature,
+            "cache_prompt": request.cache_prompt,
+        }
+        if request.stop:
+            payload["stop"] = list(request.stop)
+
+        query = self._completion_params(slot_id, request)
+        async with httpx.AsyncClient(timeout=None) as client:
+            response = await client.post(
+                f"{base_url}/completion",
+                params=query,
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, dict):
+                return extract_completion_text(data)
+        return ""
 
 
 class CompletionHandle:
@@ -260,11 +339,7 @@ class EnginePool:
                 if role == "main":
                     candidates = [0]
                 else:
-                    candidates = list(range(1, self.parallel_slots)) + [
-                        s
-                        for s in range(self.parallel_slots)
-                        if s != 0
-                    ]
+                    candidates = list(range(1, self.parallel_slots))
                 for slot_id in candidates:
                     if slot_id not in self._busy_slots:
                         self._busy_slots.add(slot_id)
@@ -397,6 +472,36 @@ async def release_slot(slot_id: int) -> None:
     await get_engine_pool().release_slot(slot_id)
 
 
+def extract_completion_text(data: dict[str, object]) -> str:
+    """Normalize llama-server / OpenAI-style completion JSON to plain text."""
+    content = data.get("content")
+    if isinstance(content, str) and content:
+        return content
+
+    text = data.get("text")
+    if isinstance(text, str) and text:
+        return text
+
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            if isinstance(first.get("text"), str) and first["text"]:
+                return str(first["text"])
+            message = first.get("message")
+            if isinstance(message, dict):
+                msg_content = message.get("content")
+                if isinstance(msg_content, str) and msg_content:
+                    return msg_content
+            delta = first.get("delta")
+            if isinstance(delta, dict):
+                delta_content = delta.get("content")
+                if isinstance(delta_content, str) and delta_content:
+                    return str(delta_content)
+
+    return ""
+
+
 def parse_completion_stream_line(line: str) -> str | None:
     raw = line.strip()
     if not raw:
@@ -409,20 +514,10 @@ def parse_completion_stream_line(line: str) -> str | None:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        return raw
+        return raw if raw else None
 
-    content = data.get("content")
-    if isinstance(content, str):
-        return content
+    if not isinstance(data, dict):
+        return None
 
-    choices = data.get("choices")
-    if isinstance(choices, list) and choices:
-        first = choices[0]
-        if isinstance(first, dict):
-            delta = first.get("delta")
-            if isinstance(delta, dict) and isinstance(delta.get("content"), str):
-                return str(delta["content"])
-            if isinstance(first.get("text"), str):
-                return str(first["text"])
-
-    return None
+    piece = extract_completion_text(data)
+    return piece if piece else None

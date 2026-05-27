@@ -6,7 +6,8 @@ from server.orchestrator.directives import plan_acknowledgment, strip_directives
 def test_plan_acknowledgment_before_delegate() -> None:
     raw = (
         "I'll check the latest on NVIDIA for you.\n"
-        '[DELEGATE capability=main goal="nvidia stock" payload={"tool":"web_search","args":{"query":"nvidia"}}]'
+        '[DELEGATE capability=main goal="nvidia stock" '
+        'payload={"tool":"web_search","args":{"query":"nvidia"}}]'
     )
     assert plan_acknowledgment(raw) == "I'll check the latest on NVIDIA for you."
     assert "DELEGATE" not in strip_directives(raw)

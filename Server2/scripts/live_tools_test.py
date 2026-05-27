@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from server.config import get_settings
 from server.tools import build_tool_registry, build_tool_runner
-from server.tools.fetch_url import fetch_url
+from server.tools.summarize_url import summarize_url
 from server.tools.page_fetch import fetch_page
 from server.tools.web_search import web_search
 from server.tools.deep_search import deep_search
@@ -35,8 +35,8 @@ def _preview(text: str, limit: int = 900) -> str:
     return t[:limit] + "\n… [truncated for display]"
 
 
-async def run_fetch_url_cases(settings) -> list[bool]:
-    _banner("1) fetch_url — real URLs (static first)")
+async def run_summarize_url_cases(settings) -> list[bool]:
+    _banner("1) summarize_url — real URLs (static first)")
     cases = [
         ("Wikipedia (static HTML)", "https://en.wikipedia.org/wiki/Mars", False),
         ("Example.com (minimal)", "https://example.com", False),
@@ -44,7 +44,7 @@ async def run_fetch_url_cases(settings) -> list[bool]:
     ok_all = True
     for label, url, dynamic in cases:
         t0 = time.perf_counter()
-        result = await fetch_url(
+        result = await summarize_url(
             user_id="live_test",
             url=url,
             dynamic=dynamic,
@@ -189,7 +189,7 @@ async def main() -> int:
     print("dynamic_fallback=True (static first, headless browser if thin)")
 
     results: list[tuple[str, bool]] = []
-    results.append(("fetch_url", await run_fetch_url_cases(settings)))
+    results.append(("summarize_url", await run_summarize_url_cases(settings)))
     results.append(("fetch_page", await run_fetch_page_ladder(settings)))
     results.append(("web_search", await run_web_search(settings)))
     results.append(("deep_search", await run_deep_search(settings)))

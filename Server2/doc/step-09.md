@@ -1,6 +1,6 @@
 # Step 09 — Capability bundles
 
-**Status:** ⬜ pending  
+**Status:** ✅ complete  
 **Depends on:** step-08  
 **Estimated effort:** 2 days  
 **Owner:** you  

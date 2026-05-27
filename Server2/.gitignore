@@ -7,12 +7,13 @@ build/
 *.egg
 .mypy_cache/
 .ruff_cache/
+.pytest_cache/
 
 # Virtual environments
 venv/
 .venv/
 
-# Environment
+# Environment (NEVER commit secrets)
 .env
 
 # Models and data (large, local-only)
@@ -31,7 +32,6 @@ data/
 Thumbs.db
 
 # Test / coverage
-.pytest_cache/
 htmlcov/
 .coverage
 

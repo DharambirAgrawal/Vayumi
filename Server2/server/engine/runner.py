@@ -3,10 +3,14 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
 from server.logger import get_logger
+
+if TYPE_CHECKING:
+    from server.config import Settings
 
 log = get_logger("engine.runner")
 
@@ -39,13 +43,13 @@ _process: asyncio.subprocess.Process | None = None
 _config: LlamaServerConfig | None = None
 
 
-def config_from_settings(settings: object) -> LlamaServerConfig:
+def config_from_settings(settings: Settings) -> LlamaServerConfig:
     return LlamaServerConfig(
-        server_bin=Path(str(getattr(settings, "llama_server_bin"))),
-        model_path=Path(str(getattr(settings, "llama_model_path"))),
-        port=int(getattr(settings, "llama_port")),
-        parallel_slots=int(getattr(settings, "llama_parallel_slots")),
-        ctx_per_slot=int(getattr(settings, "llama_ctx_per_slot")),
+        server_bin=Path(settings.llama_server_bin),
+        model_path=Path(settings.llama_model_path),
+        port=settings.llama_port,
+        parallel_slots=settings.llama_parallel_slots,
+        ctx_per_slot=settings.llama_ctx_per_slot,
     )
 
 

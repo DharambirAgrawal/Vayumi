@@ -8,6 +8,7 @@ from server.engine.pool import (
     CompletionPriority,
     CompletionRequest,
     EnginePool,
+    extract_completion_text,
     parse_completion_stream_line,
 )
 
@@ -82,3 +83,14 @@ def test_parse_completion_stream_line_handles_llama_content() -> None:
     assert parse_completion_stream_line('{"choices":[{"delta":{"content":"x"}}]}') == "x"
     assert parse_completion_stream_line("") is None
     assert parse_completion_stream_line("data: [DONE]") is None
+
+
+def test_parse_completion_stream_line_skips_empty_llama_token_chunks() -> None:
+    line = 'data: {"index":0,"content":"","tokens":[106],"stop":false}'
+    assert parse_completion_stream_line(line) is None
+
+
+def test_extract_completion_text_reads_top_level_fields() -> None:
+    assert extract_completion_text({"content": "hi"}) == "hi"
+    assert extract_completion_text({"text": "there"}) == "there"
+    assert extract_completion_text({"choices": [{"text": "ok"}]}) == "ok"

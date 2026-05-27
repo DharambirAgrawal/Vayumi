@@ -35,7 +35,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         port=settings.port,
     )
 
-    pool = await init_postgres(settings.database_url)
+    pool = await init_postgres(
+        settings.database_url,
+        min_size=settings.db_pool_min_size,
+        max_size=settings.db_pool_max_size,
+    )
 
     async with pool.acquire() as conn:
         await conn.execute(
@@ -78,11 +82,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.is_dev and not settings.jwt_public_key:
         log.info("app.dev_auth_bypass", msg="dev mode: auth bypass enabled")
 
+    from server.orchestrator.notifier import start_notifier, stop_notifier
+
     log.info("app.ready")
+    start_notifier(app)
 
     yield
 
     log.info("app.shutting_down")
+    await stop_notifier()
     voice = app.state.voice
     if voice is not None:
         await voice["tts"].close()
