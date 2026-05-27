@@ -18,6 +18,8 @@ from server.transport.turn_coordinator import run_supervisor_text_turn, session_
 from server.voice.respond_via import RespondViaDecision, compute_respond_via
 
 if TYPE_CHECKING:
+    from fastapi import FastAPI
+
     from server.config import Settings
     from server.engine.pool import EnginePool
 
@@ -94,6 +96,32 @@ def format_synthetic_user_text(signal: ReportSignal, row: TaskRow | None) -> str
     )
 
 
+def resolve_proactive_respond_via(
+    signal: ReportSignal,
+    session: UserSession,
+) -> RespondViaDecision:
+    """How to deliver a notifier synthetic turn (voice vs chat-only)."""
+    decision = compute_respond_via(
+        capabilities_tts=session.capabilities.get("tts", True),
+        client_state=session.client_control,
+        input_kind="proactive",
+    )
+    if signal.kind != "DONE":
+        return decision
+    if not session.capabilities.get("tts", True):
+        return decision
+    cc = session.client_control
+    if not cc.visible or cc.route == "none":
+        return decision
+    if cc.capture == "recording" or cc.mode == "meeting":
+        return decision
+    # Speak completed research even if the client still reports playback from a prior turn.
+    return RespondViaDecision(
+        respond_via="voice_and_chat",
+        interrupt_policy=decision.interrupt_policy,
+    )
+
+
 def format_proactive_injection(signal: ReportSignal, row: TaskRow | None) -> str:
     goal = row.goal if row is not None else signal.summary
     summary = (row.result_summary if row is not None else None) or signal.summary
@@ -109,10 +137,17 @@ def format_proactive_injection(signal: ReportSignal, row: TaskRow | None) -> str
         lines.append(f"waiting_for: {waiting.strip()}")
     if signal.payload.get("question") and isinstance(signal.payload["question"], str):
         lines.append(f"question: {signal.payload['question'].strip()}")
-    lines.append(
-        "Speak as Main in one short voice. Use structured fields only — no raw tool traces. "
-        "Do not emit [DELEGATE], [REMEMBER], or [RECALL]."
-    )
+    if signal.kind == "DONE":
+        lines.append(
+            "The background research finished. Give the user a complete spoken summary now "
+            "(latest flight number, date, and outcome when present). Do not say you are still "
+            "researching or will follow up later. Use the summary above — no URLs in speech."
+        )
+    else:
+        lines.append(
+            "Speak as Main in one short voice. Use structured fields only — no raw tool traces. "
+            "Do not emit [DELEGATE], [REMEMBER], or [RECALL]."
+        )
     return "\n".join(line for line in lines if line)
 
 
@@ -166,11 +201,7 @@ async def build_synthetic_turn(
         return
 
     row = session.supervisor.task_board.get(signal.task_id)
-    decision: RespondViaDecision = compute_respond_via(
-        capabilities_tts=session.capabilities.get("tts", True),
-        client_state=session.client_control,
-        input_kind="proactive",
-    )
+    decision = resolve_proactive_respond_via(signal, session)
 
     user_text = format_synthetic_user_text(signal, row)
     injected = format_proactive_injection(signal, row)
@@ -222,7 +253,7 @@ class ProactiveNotifier:
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
 
-    def start(self, app) -> None:
+    def start(self, app: FastAPI) -> None:
         if self._task is not None and not self._task.done():
             return
         self._stop.clear()
@@ -244,7 +275,7 @@ class ProactiveNotifier:
         self._task = None
         log.info("notifier.stopped")
 
-    async def _run_loop(self, app) -> None:
+    async def _run_loop(self, app: FastAPI) -> None:
         while not self._stop.is_set():
             try:
                 await self._tick(app)
@@ -261,7 +292,7 @@ class ProactiveNotifier:
             except TimeoutError:
                 continue
 
-    async def _tick(self, app) -> None:
+    async def _tick(self, app: FastAPI) -> None:
         engine_pool: EnginePool = app.state.engine_pool
         for session in iter_user_sessions():
             await self._tick_session(session, engine_pool)
@@ -298,7 +329,7 @@ class ProactiveNotifier:
 _notifier: ProactiveNotifier | None = None
 
 
-def start_notifier(app) -> None:
+def start_notifier(app: FastAPI) -> None:
     global _notifier
     settings: Settings = app.state.settings
     _notifier = ProactiveNotifier(settings)

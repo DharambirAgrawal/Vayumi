@@ -18,7 +18,7 @@ def test_find_running_same_goal() -> None:
 
 def test_format_completed_injection() -> None:
     board = TaskBoard(user_id="u1")
-    row = board.register_task(
+    board.register_task(
         task_id="t1",
         capability="research",
         goal="Nepal",

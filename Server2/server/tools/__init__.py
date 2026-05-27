@@ -304,7 +304,9 @@ async def _tool_search_bound(
     query: str,
     capability: str | None = None,
     registry: ToolRegistry,
+    **extra_args: object,
 ) -> ToolResult:
+    del extra_args  # model may pass web_search fields like max_results
     return await tool_search(
         user_id=user_id,
         query=query,

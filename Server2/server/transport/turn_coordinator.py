@@ -66,21 +66,14 @@ async def start_voice_turn(
     voice = websocket.app.state.voice
     stt: STTBackend = voice["stt"]
     engine_pool: EnginePool = websocket.app.state.engine_pool
-    delay = (
-        settings.aec_client_suppression_delay_ms
-        if session.capabilities.get("aec")
-        else settings.self_echo_suppression_delay_ms
-    )
 
     session.turn_task = asyncio.create_task(
         run_voice_turn(
             websocket=websocket,
             engine_pool=engine_pool,
             stt=stt,
-            tts=voice["tts"],
             user_session=session,
             pcm_chunks=pcm_chunks,
-            suppression_delay_ms=delay,
         ),
         name=f"voice-turn-{session.user_id}",
     )
@@ -138,9 +131,6 @@ async def run_supervisor_text_turn(
     from server.voice.streaming_tts import StreamingTtsPipeline, make_on_token_with_streaming_tts
 
     tid = turn_id or str(uuid.uuid4())
-    session.interrupt.begin_thinking(tid)
-    session.accumulated_partial = ""
-    session.turn_llm_persisted = False
 
     if computed_respond_via is None:
         decision = compute_respond_via(
@@ -154,6 +144,16 @@ async def run_supervisor_text_turn(
         respond_via = computed_respond_via
         policy = interrupt_policy or "queue"
 
+    log.info(
+        "turn.chat_start",
+        user_id=session.user_id,
+        session_id=session.session_id,
+        turn_id=tid,
+        input_kind=input_kind,
+        respond_via=respond_via,
+        policy=policy,
+    )
+
     if (
         session_busy(session)
         and policy == "queue"
@@ -165,6 +165,10 @@ async def run_supervisor_text_turn(
             input_kind=input_kind,
         )
         return
+
+    session.interrupt.begin_thinking(tid)
+    session.accumulated_partial = ""
+    session.turn_llm_persisted = False
 
     voice = websocket.app.state.voice
     use_streaming_tts = respond_via == "voice_and_chat"
@@ -188,7 +192,7 @@ async def run_supervisor_text_turn(
             turn_id=tid,
             interrupt=session.interrupt,
             accumulate=_accumulate_partial,
-            emit_partial_captions=pipeline is None,
+            emit_partial_captions=not use_streaming_tts,
         ),
         pipeline=pipeline,
     )
@@ -224,10 +228,18 @@ async def run_supervisor_text_turn(
             assistant_text=output.assistant_text,
             respond_via=output.respond_via,
             interrupt=session.interrupt,
-            tts=None,
+            tts=voice["tts"],
             suppression_delay_ms=delay,
             stream_captions_during_llm=True,
-            tts_streamed_during_llm=pipeline is not None,
+            streaming_pipeline=pipeline,
+        )
+        log.info(
+            "turn.chat_complete",
+            user_id=session.user_id,
+            session_id=session.session_id,
+            turn_id=tid,
+            respond_via=output.respond_via,
+            chars=len(output.assistant_text),
         )
     except asyncio.CancelledError:
         if pipeline is not None:
@@ -255,7 +267,7 @@ async def run_supervisor_text_turn(
     finally:
         session.interrupt.finish_turn()
         session.accumulated_partial = ""
-        if input_kind == "chat":
+        if input_kind in ("chat", "voice"):
             from server.transport.chat_queue import drain_queued_chat
 
             async def _run_chat_turn(ws, sess, chat_text, st, pool):

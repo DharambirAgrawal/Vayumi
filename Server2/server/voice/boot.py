@@ -6,7 +6,6 @@ from server.config import Settings
 from server.logger import get_logger
 from server.voice.stt.base import STTBackend
 from server.voice.stt.groq import GroqWhisper
-from server.voice.stt.local import LocalFasterWhisper
 from server.voice.tts.kokoro import KokoroTTS
 from server.voice.vad.silero import SileroVAD
 
@@ -70,6 +69,7 @@ def create_stt_backend(settings: Settings) -> STTBackend:
             raise ValueError("GROQ_API_KEY is required when STT_BACKEND=groq")
         return GroqWhisper(api_key=settings.groq_api_key)
     if settings.stt_backend == "local":
+        from server.voice.stt.local import LocalFasterWhisper
         return LocalFasterWhisper(
             model=settings.stt_local_model,
             device=settings.stt_local_device,

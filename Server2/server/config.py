@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     notifier_min_interval_seconds: float = 45.0
     notifier_importance_threshold: float = 0.5
 
+    # ── Database pool ────────────────────────────────────────
+    db_pool_min_size: int = 2
+    db_pool_max_size: int = 10
+
     # ── Embeddings (optional path for future ONNX export) ──
     bge_model_path: str = "./models/bge-small-en-v1.5.onnx"
 
@@ -97,5 +101,17 @@ class Settings(BaseSettings):
         return self.app_env == "dev"
 
 
+_settings: Settings | None = None
+
+
 def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]
+    global _settings
+    if _settings is None:
+        _settings = Settings()  # type: ignore[call-arg]
+    return _settings
+
+
+def reset_settings() -> None:
+    """Clear the cached singleton (used in tests)."""
+    global _settings
+    _settings = None

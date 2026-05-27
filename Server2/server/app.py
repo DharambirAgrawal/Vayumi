@@ -35,7 +35,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         port=settings.port,
     )
 
-    pool = await init_postgres(settings.database_url)
+    pool = await init_postgres(
+        settings.database_url,
+        min_size=settings.db_pool_min_size,
+        max_size=settings.db_pool_max_size,
+    )
 
     async with pool.acquire() as conn:
         await conn.execute(

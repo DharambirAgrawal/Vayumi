@@ -61,10 +61,15 @@ class PlanStreamHandler:
                 await self._on_status(first)
                 self.ack_sent = True
                 return
-        # Fallback: fire on word count if we have enough content
+        # Fallback: fire on word count only when delegate block is imminent
+        # (avoids ack without punctuation, then the same line again from TTS feed).
         clean = sanitize_spoken_prose(head.strip())
         words = clean.split()
-        if len(words) >= 6 and len(clean) >= 20:
+        if (
+            len(words) >= 6
+            and len(clean) >= 20
+            and re.search(r"\[DELEGATE\b", self._buffer, re.IGNORECASE)
+        ):
             await self._on_status(clean)
             self.ack_sent = True
 

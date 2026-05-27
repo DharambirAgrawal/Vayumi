@@ -21,6 +21,9 @@ def sanitize_spoken_prose(text: str) -> str:
     out = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", out)
     out = re.sub(r"\[https?://[^\]]+\]", "", out)
     out = re.sub(r"https?://\S+", "", out)
+    out = re.sub(r"\s+([,.!?;:])", r"\1", out)
+    out = re.sub(r"\.!+", ".", out)
+    out = re.sub(r"([.!?])\1+", r"\1", out)
     out = re.sub(r"[ \t]{2,}", " ", out)
     return out.strip()
 

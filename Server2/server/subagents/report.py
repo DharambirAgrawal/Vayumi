@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from server.logger import get_logger
+from server.orchestrator.directives import _extract_json_object
 
 log = get_logger("subagents.report")
 
@@ -50,34 +51,6 @@ def report(
         payload=payload or {},
         importance=importance,
     )
-
-
-def _extract_json_object(text: str, start: int) -> str | None:
-    if start >= len(text) or text[start] != "{":
-        return None
-    depth = 0
-    in_string = False
-    escape = False
-    for idx in range(start, len(text)):
-        ch = text[idx]
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : idx + 1]
-    return None
 
 
 def parse_report_directives(text: str, *, task_id: str) -> list[ReportSignal]:

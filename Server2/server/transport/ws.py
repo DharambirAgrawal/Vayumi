@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 
@@ -39,7 +40,7 @@ from server.transport.turn_coordinator import (
 )
 from server.voice.respond_via import compute_respond_via
 
-if True:
+if TYPE_CHECKING:
     from server.config import Settings
     from server.engine.pool import EnginePool
 
@@ -325,6 +326,12 @@ async def _handle_audio_end(
 async def _handle_chat(
     websocket: WebSocket, msg: ChatMessage, session: UserSession, settings: Settings
 ) -> None:
+    log.info(
+        "ws.chat_received",
+        user_id=session.user_id,
+        session_id=session.session_id,
+        chars=len(msg.payload.text or ""),
+    )
     decision = compute_respond_via(
         capabilities_tts=session.capabilities.get("tts", True),
         client_state=session.client_control,

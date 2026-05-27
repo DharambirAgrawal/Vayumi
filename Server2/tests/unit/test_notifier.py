@@ -9,6 +9,7 @@ from server.config import Settings
 from server.orchestrator.notifier import (
     maybe_surface_signal,
     pick_next_signal,
+    resolve_proactive_respond_via,
     signal_surface_key,
     user_is_idle,
 )
@@ -92,6 +93,18 @@ def test_proactive_visible_false_chat_only() -> None:
         client_state=cc,
         input_kind="proactive",
     )
+    assert decision.respond_via == "chat_only"
+
+
+def test_proactive_done_visible_while_playback_still_voice() -> None:
+    session = _session(visible=True, capture="idle", playback="playing")
+    decision = resolve_proactive_respond_via(_done_signal(), session)
+    assert decision.respond_via == "voice_and_chat"
+
+
+def test_proactive_done_backgrounded_chat_only() -> None:
+    session = _session(visible=False, capture="idle", playback="idle")
+    decision = resolve_proactive_respond_via(_done_signal(), session)
     assert decision.respond_via == "chat_only"
 
 

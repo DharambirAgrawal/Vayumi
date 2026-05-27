@@ -11,6 +11,9 @@ if TYPE_CHECKING:
 
 PROMPT_DIR = Path("prompts")
 MAIN_PROMPT_PATH = PROMPT_DIR / "main.txt"
+MAIN_CORE_PATH = PROMPT_DIR / "main_core.txt"
+MAIN_TOOLS_PATH = PROMPT_DIR / "main_tools.txt"
+GREETING_PROMPT_PATH = PROMPT_DIR / "greeting.txt"
 ACK_PROMPT_PATH = PROMPT_DIR / "ack.txt"
 SUB_PROMPT_DIR = PROMPT_DIR / "sub"
 
@@ -36,6 +39,11 @@ class SubPromptContext:
     tool_context: str = ""
 
 
+def build_greeting_prompt(*, user_text: str) -> str:
+    system_prompt = _load_prompt(GREETING_PROMPT_PATH).strip()
+    return f"{system_prompt}\n\nUser: {user_text.strip()}\nVayumi:\n"
+
+
 def build_ack_prompt(*, user_text: str, warm_profile: str = "") -> str:
     system_prompt = _load_prompt(ACK_PROMPT_PATH).strip()
     sections = [system_prompt]
@@ -45,8 +53,14 @@ def build_ack_prompt(*, user_text: str, warm_profile: str = "") -> str:
     return "\n\n".join(sections)
 
 
-def build_main_prompt(context: MainPromptContext) -> str:
-    system_prompt = _load_prompt(MAIN_PROMPT_PATH).strip()
+def build_main_prompt(
+    context: MainPromptContext,
+    *,
+    include_tools: bool = True,
+) -> str:
+    system_prompt = _load_prompt(MAIN_CORE_PATH).strip()
+    if include_tools:
+        system_prompt = f"{system_prompt}\n\n{_load_prompt(MAIN_TOOLS_PATH).strip()}"
     sections: list[str] = [system_prompt]
 
     if context.warm_profile.strip():

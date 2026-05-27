@@ -48,7 +48,27 @@ def setup_logging(log_level: str = "info", is_dev: bool = True) -> None:
     handler.setFormatter(formatter)
     root.addHandler(handler)
 
-    for noisy in ("uvicorn.access", "asyncpg", "lancedb"):
+    for noisy in (
+        "uvicorn.access",
+        "asyncpg",
+        "lancedb",
+        "httpx",
+        "httpcore",
+        "groq",
+        "groq._base_client",
+        "urllib3",
+        "trafilatura",
+        "trafilatura.readability_lxml",
+        "trafilatura.main_extractor",
+        "trafilatura.htmlprocessing",
+        "trafilatura.external",
+        "readability",
+        "scrapling",
+        "htmldate",
+        "htmldate.validators",
+        "courlan",
+        "justext",
+    ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 

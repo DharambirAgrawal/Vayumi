@@ -242,6 +242,13 @@ class SubAgentWorker:
                 tool_context=self._tool_cards,
             ),
         )
+        log.debug(
+            "subagent.llm_start",
+            task_id=self.task_id,
+            capability=self.capability,
+            slot_id=self.slot_id,
+            prompt_chars=len(prompt),
+        )
         request = CompletionRequest(prompt=prompt, max_tokens=768, temperature=0.5)
         handle = await self.engine_pool.submit_assigned(
             self.task_id,
@@ -251,6 +258,13 @@ class SubAgentWorker:
         full = ""
         async for token in handle:
             full += token
+        log.debug(
+            "subagent.llm_done",
+            task_id=self.task_id,
+            capability=self.capability,
+            slot_id=self.slot_id,
+            output_chars=len(full),
+        )
         return full
 
     async def _run_tool_delegates(self, raw: str) -> str:

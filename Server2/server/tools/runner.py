@@ -14,6 +14,14 @@ from server.tools.registry import ToolCall, ToolRegistry, ToolResult, validate_t
 log = get_logger("tools.runner")
 
 ToolEventKind = Literal["tool_started", "tool_done"]
+
+
+def _args_for_tool(schema: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    """Pass only schema-known keys so model-hallucinated extras do not break tools."""
+    allowed = set(schema.get("properties", {}))
+    if not allowed:
+        return dict(args)
+    return {key: value for key, value in args.items() if key in allowed}
 ToolEventEmitter = Callable[[ToolEventKind, str, str], Awaitable[None]]
 
 
@@ -34,6 +42,13 @@ class ToolRunner:
         on_event: ToolEventEmitter | None = None,
         event_label_start: str | None = None,
     ) -> ToolResult:
+        log.info(
+            "tools.execute_start",
+            tool=tool_call.name,
+            user_id=user_id,
+            task_id=task_id,
+            capability=tool_call.capability,
+        )
         entry = self._registry.get(tool_call.name, tool_call.capability)
         if entry is None:
             known_elsewhere = any(
@@ -79,8 +94,9 @@ class ToolRunner:
 
         started = time.perf_counter()
         try:
+            fn_args = _args_for_tool(entry.args_schema, tool_call.args)
             result = await asyncio.wait_for(
-                entry.fn(user_id=user_id, **tool_call.args),
+                entry.fn(user_id=user_id, **fn_args),
                 timeout=entry.timeout_s,
             )
             if not isinstance(result, ToolResult):

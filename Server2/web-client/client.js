@@ -90,11 +90,18 @@
   let clientStateTimer = null;
   let lastReportedState = "";
 
+  function isClientVisible() {
+    return (
+      document.visibilityState === "visible" ||
+      (typeof document.hasFocus === "function" && document.hasFocus())
+    );
+  }
+
   function reportClientState() {
     const snapshot = JSON.stringify({
       playback: clientState.playback,
       capture: clientState.capture,
-      visible: document.visibilityState === "visible",
+      visible: isClientVisible(),
       route: clientState.route,
     });
     if (snapshot === lastReportedState) {
@@ -181,6 +188,8 @@
   }
 
   function sendChat(text, attachments) {
+    clientState.visible = true;
+    reportClientState();
     const payload = { text: text };
     if (attachments && attachments.length) payload.attachments = attachments;
     sendJson("chat", payload);
@@ -221,14 +230,13 @@
         renderChatMessage(msg.payload);
         break;
       case "audio_start":
-        pendingAudioRate = msg.payload.sample_rate || 16000;
-        if (msg.payload.turn_id) {
-          stopPlayback();
-          if (playbackCtx && playbackCtx.state === "suspended") {
-            playbackCtx.resume();
-          }
-          setPlayback("playing");
+        pendingAudioRate = msg.payload.sample_rate || 24000;
+        stopPlayback();
+        ensurePlaybackContext(pendingAudioRate);
+        if (playbackCtx && playbackCtx.state === "suspended") {
+          playbackCtx.resume();
         }
+        setPlayback("playing");
         break;
       case "audio_end":
         if (msg.payload && msg.payload.error) {
@@ -236,6 +244,17 @@
           stopPlayback();
         }
         schedulePlaybackIdle();
+        if (!micRecording && clientState.capture !== "recording") {
+          setTimeout(function () {
+            if (
+              !micRecording &&
+              clientState.playback !== "playing" &&
+              clientState.capture !== "recording"
+            ) {
+              startMic();
+            }
+          }, 600);
+        }
         break;
       case "client_control":
         handleClientControl(msg.payload);
@@ -270,43 +289,52 @@
   }
 
   function renderChatMessage(payload) {
-    if (!payload || !payload.text) return;
+    if (!payload) return;
     clearConversationStatus();
-    appendChatBubble("assistant", payload.text, payload.final !== false);
+    const text = (payload.text || "").trim();
+    if (!text) {
+      if (payload.final !== false) {
+        appendChatBubble(
+          "assistant",
+          "I didn't get a reply — try again?",
+          true
+        );
+      }
+      return;
+    }
+    appendChatBubble("assistant", text, payload.final !== false);
     if (payload.final !== false) {
-      captionBuffer = "";
-      captionText.textContent = "Waiting for assistant…";
-      captionText.classList.add("empty");
+      captionBuffer = text;
+      captionText.textContent = text;
+      captionText.classList.remove("empty");
     }
   }
 
   function renderCaption(text, partial) {
+    const chunk = (text || "").trim();
     if (partial) {
-      if (/…$|\.\.\.$/.test(text.trim()) || text.indexOf("Searching") === 0) {
-        captionBuffer = text.trim();
-        setConversationStatus(text.trim());
-      } else {
-        captionBuffer += text;
+      if (/…$|\.\.\.$/.test(chunk) || chunk.indexOf("Searching") === 0) {
+        captionBuffer = chunk;
+        setConversationStatus(chunk);
+      } else if (chunk) {
+        captionBuffer += chunk;
       }
-    } else if (text.trim()) {
+    } else if (chunk) {
       const prev = captionBuffer.trim();
       if (!prev) {
-        captionBuffer = text;
-      } else if (prev === text.trim() || prev.endsWith(text.trim())) {
+        captionBuffer = chunk;
+      } else if (prev === chunk || prev.endsWith(chunk)) {
         captionBuffer = prev;
-      } else if (!prev.includes(text.trim())) {
-        captionBuffer = prev + " " + text.trim();
+      } else if (!prev.includes(chunk)) {
+        captionBuffer = prev + " " + chunk;
       }
     }
     if (captionBuffer.trim()) {
       captionText.textContent = captionBuffer;
       captionText.classList.remove("empty");
-    } else if (!partial && text.trim()) {
-      captionText.textContent = text;
+    } else if (!partial && chunk) {
+      captionText.textContent = chunk;
       captionText.classList.remove("empty");
-    } else if (!partial) {
-      captionText.textContent = "Waiting for assistant…";
-      captionText.classList.add("empty");
     }
   }
 
@@ -522,7 +550,19 @@
           break;
         }
         if (clientState.playback === "playing") {
-          debugLine("start_capture skipped (playback active)", "info");
+          debugLine("start_capture deferred (playback active)", "info");
+          (function tryResumeCapture(attempt) {
+            if (micRecording) return;
+            if (clientState.playback !== "playing") {
+              startMic();
+              return;
+            }
+            if (attempt < 20) {
+              setTimeout(function () {
+                tryResumeCapture(attempt + 1);
+              }, 250);
+            }
+          })(0);
           break;
         }
         startMic();

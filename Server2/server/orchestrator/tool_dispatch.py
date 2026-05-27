@@ -51,7 +51,9 @@ async def run_delegate_directives(
     for index, directive in enumerate(batch):
         label = event_label_start if index == 0 else None
 
-        async def _run_one(idx: int, item: DelegateDirective, start_label: str | None) -> tuple[int, DelegateRun]:
+        async def _run_one(
+            idx: int, item: DelegateDirective, start_label: str | None
+        ) -> tuple[int, DelegateRun]:
             result = await _run_one_delegate(
                 user_id=user_id,
                 turn_id=turn_id,

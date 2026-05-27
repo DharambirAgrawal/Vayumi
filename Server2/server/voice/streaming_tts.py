@@ -18,6 +18,7 @@ from server.transport.protocol import (
     ServerAudioStartMessage,
     ServerAudioStartPayload,
 )
+from server.voice.echo_suppression import schedule_start_capture
 from server.voice.interrupt import InterruptController
 from server.voice.sentence_buffer import drain_complete_sentences
 from server.voice.tts.kokoro import KokoroTTS
@@ -53,6 +54,13 @@ class StreamingTtsPipeline:
         self._audio_started = False
         self._error = False
         self._interrupted = False
+        self._last_emitted: str = ""
+        self._queued_sentences = 0
+
+    @property
+    def audio_delivered(self) -> bool:
+        """True once audio_start was sent and at least one PCM frame was streamed."""
+        return self._audio_started
 
     async def start(self) -> None:
         if self._worker_task is None:
@@ -66,8 +74,10 @@ class StreamingTtsPipeline:
         clean = sanitize_spoken_prose(
             strip_internal_tool_blocks(strip_directives(sentence)).strip()
         )
-        if clean and not self._interrupt.tts_cancelled():
-            await self._queue.put(clean)
+        if self._is_unspeakable(clean) or self._is_duplicate(clean):
+            return
+        self._queued_sentences += 1
+        await self._queue.put(clean)
 
     async def feed(self, token: str) -> None:
         if not token or self._interrupt.tts_cancelled():
@@ -75,15 +85,23 @@ class StreamingTtsPipeline:
         self._buffer += token
         sentences, self._buffer = drain_complete_sentences(self._buffer)
         for sentence in sentences:
-            clean = strip_internal_tool_blocks(strip_directives(sentence)).strip()
-            if clean:
-                await self._queue.put(clean)
+            clean = sanitize_spoken_prose(
+                strip_internal_tool_blocks(strip_directives(sentence)).strip()
+            )
+            if self._is_unspeakable(clean) or self._is_duplicate(clean):
+                continue
+            self._queued_sentences += 1
+            await self._queue.put(clean)
 
     async def flush(self) -> None:
-        tail = strip_internal_tool_blocks(strip_directives(self._buffer)).strip()
+        tail = sanitize_spoken_prose(
+            strip_internal_tool_blocks(strip_directives(self._buffer)).strip()
+        )
         self._buffer = ""
-        if tail and not self._interrupt.tts_cancelled():
-            await self._queue.put(tail)
+        if self._is_unspeakable(tail) or self._is_duplicate(tail):
+            return
+        self._queued_sentences += 1
+        await self._queue.put(tail)
 
     async def finish(self, suppression_delay_ms: int) -> bool:
         await self._queue.put(_SENTINEL)
@@ -92,6 +110,12 @@ class StreamingTtsPipeline:
             self._worker_task = None
 
         if not self._audio_started:
+            if self._queued_sentences:
+                log.warning(
+                    "streaming_tts.no_audio",
+                    turn_id=self._turn_id,
+                    queued=self._queued_sentences,
+                )
             return True
 
         if self._error:
@@ -132,7 +156,7 @@ class StreamingTtsPipeline:
             ),
         )
         asyncio.create_task(
-            _schedule_start_capture(
+            schedule_start_capture(
                 self._websocket,
                 turn_id=self._turn_id,
                 delay_ms=suppression_delay_ms,
@@ -154,7 +178,7 @@ class StreamingTtsPipeline:
             if item is _SENTINEL:
                 return
             sentence = sanitize_spoken_prose(str(item))
-            if not sentence:
+            if self._is_unspeakable(sentence) or self._is_duplicate(sentence):
                 continue
             if self._interrupt.tts_cancelled():
                 continue
@@ -173,6 +197,7 @@ class StreamingTtsPipeline:
                         ),
                     )
                 await self._synthesize_sentence(sentence)
+                self._mark_spoken(sentence)
             except asyncio.CancelledError:
                 self._interrupted = True
                 raise
@@ -184,6 +209,34 @@ class StreamingTtsPipeline:
                 )
                 self._error = True
                 return
+
+    def _is_unspeakable(self, sentence: str) -> bool:
+        if not sentence or self._interrupt.tts_cancelled():
+            return True
+        normalized = " ".join(sentence.split()).strip().lower()
+        if not normalized:
+            return True
+        return normalized in {"?", "!", ".", "...", "…"}
+
+    def _normalize_for_dedup(self, sentence: str) -> str:
+        normalized = " ".join(sentence.split()).strip().lower()
+        return normalized.rstrip(".,!?;:-—…")
+
+    def _is_duplicate(self, sentence: str) -> bool:
+        normalized = self._normalize_for_dedup(sentence)
+        if not normalized:
+            return True
+        if not self._last_emitted:
+            return False
+        if normalized == self._last_emitted:
+            return True
+        # Same phrase spoken once without terminal punctuation, again with "." 
+        return normalized.startswith(self._last_emitted) or self._last_emitted.startswith(
+            normalized
+        )
+
+    def _mark_spoken(self, sentence: str) -> None:
+        self._last_emitted = self._normalize_for_dedup(sentence)
 
     async def _begin_audio(self) -> None:
         await send_client_control(
@@ -205,20 +258,6 @@ class StreamingTtsPipeline:
             if self._interrupt.tts_cancelled():
                 break
             await send_audio_frame(self._websocket, frame.pcm)
-
-
-async def _schedule_start_capture(
-    websocket: WebSocket,
-    *,
-    turn_id: str,
-    delay_ms: int,
-) -> None:
-    await asyncio.sleep(delay_ms / 1000.0)
-    from starlette.websockets import WebSocketState
-
-    if websocket.client_state != WebSocketState.CONNECTED:
-        return
-    await send_client_control(websocket, "start_capture", "echo_clear", turn_id=turn_id)
 
 
 def make_on_token_with_streaming_tts(

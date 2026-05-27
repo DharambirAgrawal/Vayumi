@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from server.engine.pool import CompletionPriority, CompletionRequest, EnginePool
-from server.engine.prompt import MainPromptContext, build_main_prompt
+from server.engine.prompt import (
+    MainPromptContext,
+    build_greeting_prompt,
+    build_main_prompt,
+)
 from server.logger import get_logger
 from server.memory.session import (
     append_turn,
@@ -32,6 +37,7 @@ from server.orchestrator.directives import (
     plan_acknowledgment,
     strip_directives,
 )
+from server.orchestrator.plan_stream import PlanStreamHandler
 from server.orchestrator.prose import finalize_assistant_prose, scrub_follow_up_prose
 from server.orchestrator.signal_bus import SignalBus, TaskEventEmitter
 from server.orchestrator.task_board import TaskBoard
@@ -42,7 +48,6 @@ from server.orchestrator.tool_dispatch import (
     run_delegate_directives,
     split_delegate_directives,
 )
-from server.orchestrator.plan_stream import PlanStreamHandler
 from server.subagents.worker import SUB_CAPABILITIES, SubAgentWorker
 from server.tools.runner import ToolEventEmitter, ToolRunner
 from server.voice.respond_via import InputKind, RespondVia, apply_respond_via_override
@@ -50,6 +55,56 @@ from server.voice.respond_via import InputKind, RespondVia, apply_respond_via_ov
 log = get_logger("orchestrator.supervisor")
 
 TurnKind = Literal["voice", "chat", "proactive", "system"]
+
+_EMPTY_ASSISTANT_FALLBACK = (
+    "Sorry, I blanked for a second — could you say that again?"
+)
+
+_CASUAL_PHRASES = frozenset(
+    {
+        "hi",
+        "hey",
+        "hello",
+        "yo",
+        "sup",
+        "hiya",
+        "howdy",
+        "thanks",
+        "thank you",
+        "thx",
+        "how are you",
+        "how are you doing",
+        "what's up",
+        "whats up",
+        "good morning",
+        "good night",
+        "bye",
+        "goodbye",
+    }
+)
+
+
+def _normalize_casual_text(text: str) -> str:
+    normalized = text.strip().lower().rstrip("?!., ")
+    normalized = re.sub(r"\s+", " ", normalized)
+    replacements = (
+        (r"\bhow r u\b", "how are you"),
+        (r"\bhow are u\b", "how are you"),
+        (r"\bwhat'?s up\b", "whats up"),
+        (r"\bthank u\b", "thank you"),
+        (r"\bthx\b", "thanks"),
+    )
+    for pattern, replacement in replacements:
+        normalized = re.sub(pattern, replacement, normalized)
+    return normalized
+
+
+def _is_casual_message(text: str) -> bool:
+    """Short greetings/small talk — use greeting prompt (no tools / DELEGATE blocks)."""
+    normalized = _normalize_casual_text(text)
+    if not normalized or len(normalized) > 48:
+        return False
+    return normalized in _CASUAL_PHRASES
 
 
 def _history_for_tool_follow_up(history_lines: list[str]) -> list[str]:
@@ -162,6 +217,8 @@ class Supervisor:
             )
 
         delegates_allowed = True if allow_delegates is None else allow_delegates
+        if delegates_allowed and _is_casual_message(user_text):
+            delegates_allowed = False
 
         warm = await build_warm_profile(self.user_id)
         history = await recent_turns(self.session_id, limit=8)
@@ -193,14 +250,16 @@ class Supervisor:
             override = parse_respond_via_override(raw_text)
             respond_via = apply_respond_via_override(override, computed_respond_via)
             visible = finalize_assistant_prose(strip_directives(raw_text))
-            await append_turn(self.session_id, self.user_id, "assistant", visible)
+            visible = self._ensure_visible_reply(visible)
+            if visible.strip():
+                await append_turn(self.session_id, self.user_id, "assistant", visible)
             log.info(
                 "supervisor.turn_complete",
                 user_id=self.user_id,
                 session_id=self.session_id,
                 respond_via=respond_via,
                 input_kind=input_kind,
-                proactive=True,
+                proactive=input_kind == "proactive",
             )
             return TurnOutput(
                 assistant_text=visible,
@@ -419,7 +478,10 @@ class Supervisor:
         if not visible.strip():
             retry_context = ""
             if remembers:
-                retry_context = "The user asked you to remember something. Confirm in one short spoken sentence."
+                retry_context = (
+                    "The user asked you to remember something. "
+                    "Confirm in one short spoken sentence."
+                )
             elif spawn_blocks:
                 retry_context = (
                     "A background task was started (see SUBAGENT_SPAWN). "
@@ -445,11 +507,12 @@ class Supervisor:
                         )
                     )
                 )
-
         override = parse_respond_via_override(follow_up_text or raw_text)
         respond_via = apply_respond_via_override(override, computed_respond_via)
 
-        await append_turn(self.session_id, self.user_id, "assistant", visible)
+        visible = self._ensure_visible_reply(visible)
+        if visible.strip():
+            await append_turn(self.session_id, self.user_id, "assistant", visible)
 
         log.info(
             "supervisor.turn_complete",
@@ -655,6 +718,14 @@ class Supervisor:
                 tool_runner=tool_runner,
             )
 
+    @staticmethod
+    def _ensure_visible_reply(visible: str) -> str:
+        text = visible.strip()
+        if text:
+            return text
+        log.warning("supervisor.empty_assistant_fallback")
+        return _EMPTY_ASSISTANT_FALLBACK
+
     async def _complete(
         self,
         *,
@@ -667,36 +738,112 @@ class Supervisor:
         engine_pool: EnginePool,
         on_token: Callable[[str], Awaitable[None]] | None,
         allow_delegates: bool = True,
+        retry_on_empty: bool = True,
+        use_stream: bool = True,
+        temperature: float = 0.7,
+        include_tools: bool | None = None,
     ) -> str:
         history_lines = [f"{turn.role}: {turn.text}" for turn in history]
         if injected_context.strip() and "[TOOL_RESULT" in injected_context:
             history_lines = _history_for_tool_follow_up(history_lines)
         context = injected_context
-        if not allow_delegates and context:
+        if not allow_delegates:
+            no_delegate_instruction = (
+                "Do not use tools or emit [DELEGATE], [REMEMBER], or [RECALL] "
+                "in this reply. Answer directly in plain spoken prose."
+            )
             context = (
-                f"{context}\n\nDo not emit [DELEGATE], [REMEMBER], or [RECALL] in this reply."
+                f"{context}\n\n{no_delegate_instruction}"
+                if context
+                else no_delegate_instruction
             )
-        prompt = build_main_prompt(
-            MainPromptContext(
-                user_text=user_text,
-                warm_profile=warm_profile,
-                history_lines=history_lines,
-                compressed_summary=compressed_summary,
-                recall_context=context,
-                task_board_block=task_board_block,
+        casual = _is_casual_message(user_text)
+        use_greeting_prompt = casual and "[TOOL_RESULT" not in injected_context
+        if include_tools is None:
+            include_tools = allow_delegates and not casual
+        if use_greeting_prompt:
+            prompt = build_greeting_prompt(user_text=user_text)
+        else:
+            prompt = build_main_prompt(
+                MainPromptContext(
+                    user_text=user_text,
+                    warm_profile=warm_profile,
+                    history_lines=history_lines,
+                    compressed_summary=compressed_summary,
+                    recall_context=context,
+                    task_board_block=task_board_block,
+                ),
+                include_tools=include_tools,
             )
-        )
         request = CompletionRequest(
             prompt=prompt,
             stop=("\n\n```", "\n```\n"),
             max_tokens=300 if not allow_delegates else 512,
-            cache_prompt=True if not allow_delegates else False,
+            cache_prompt=False,
+            stream=use_stream,
+            temperature=temperature,
+            pin_slot=False,
         )
-        handle = await engine_pool.submit(request, CompletionPriority.P0_MAIN, slot_hint=0)
+        log.debug(
+            "llm.request",
+            user_id=self.user_id,
+            session_id=self.session_id,
+            allow_delegates=allow_delegates,
+            prompt_chars=len(prompt),
+            max_tokens=request.max_tokens,
+            stream=use_stream,
+            include_tools=include_tools,
+            casual=use_greeting_prompt,
+            pin_slot=False,
+        )
+        handle = await engine_pool.submit(
+            request, CompletionPriority.P0_MAIN, slot_hint=None
+        )
 
         full_text = ""
         async for token in handle:
             full_text += token
             if on_token is not None:
                 await on_token(token)
+        if not full_text.strip():
+            head = prompt[:200].replace("\n", "\\n")
+            tail = prompt[-200:].replace("\n", "\\n")
+            log.warning(
+                "llm.empty_response",
+                user_id=self.user_id,
+                session_id=self.session_id,
+                allow_delegates=allow_delegates,
+                prompt_chars=len(prompt),
+                prompt_head=head,
+                prompt_tail=tail,
+            )
+            if retry_on_empty:
+                retry_context = (
+                    "The previous model pass returned no visible text. "
+                    "Answer the user directly in one or two short spoken sentences."
+                )
+                if injected_context.strip():
+                    retry_context = f"{injected_context}\n\n{retry_context}"
+                return await self._complete(
+                    user_text=user_text,
+                    warm_profile=warm_profile,
+                    history=history,
+                    compressed_summary=compressed_summary,
+                    injected_context=retry_context,
+                    task_board_block=task_board_block,
+                    engine_pool=engine_pool,
+                    on_token=on_token,
+                    allow_delegates=False,
+                    retry_on_empty=False,
+                    use_stream=False,
+                    temperature=0.85,
+                    include_tools=False,
+                )
+        log.debug(
+            "llm.response",
+            user_id=self.user_id,
+            session_id=self.session_id,
+            allow_delegates=allow_delegates,
+            output_chars=len(full_text),
+        )
         return full_text
