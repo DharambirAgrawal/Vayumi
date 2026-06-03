@@ -50,7 +50,7 @@ Web client: http://localhost:8080 — WebSocket uses token `dev` when `JWT_PUBLI
 
 ## Optional: local Postgres + Redis via Docker
 
-Only if you prefer localhost instead of cloud URLs:
+Only if you prefer localhost instead of cloud URLs there:
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d
