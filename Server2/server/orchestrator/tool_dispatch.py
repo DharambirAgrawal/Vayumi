@@ -208,8 +208,7 @@ def split_delegate_directives(
 
 def format_subagent_spawn_block(task_id: str, capability: str, goal: str) -> str:
     return (
-        f'[SUBAGENT_SPAWN task_id={task_id} capability={capability} goal="{goal}"] '
-        f"(background {capability} worker — results arrive later via notification)"
+        f"Background research started for: {goal}. Results will arrive when done."
     )
 
 

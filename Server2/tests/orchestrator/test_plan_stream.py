@@ -4,7 +4,7 @@ from server.orchestrator.plan_stream import PlanStreamHandler
 
 
 @pytest.mark.asyncio
-async def test_emits_first_sentence_before_delegate() -> None:
+async def test_holds_ack_until_delegate_appears() -> None:
     captions: list[str] = []
 
     async def on_caption(text: str) -> None:
@@ -13,6 +13,9 @@ async def test_emits_first_sentence_before_delegate() -> None:
     handler = PlanStreamHandler(on_status_caption=on_caption)
     for ch in "I'll check Tesla for you. ":
         await handler.on_token(ch)
+    assert not captions
+    assert not handler.ack_sent
+
     await handler.on_token('[DELEGATE capability=main goal="x" payload={}]')
 
     assert handler.ack_sent

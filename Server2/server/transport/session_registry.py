@@ -35,6 +35,7 @@ class UserSession:
     turn_llm_persisted: bool = False
     surfaced_signal_keys: set[str] = field(default_factory=set)
     last_proactive_at: float | None = None
+    last_turn_completed_at: float | None = None
     notifier_inflight: bool = False
 
     def attach_transport(self, websocket: WebSocket) -> None:

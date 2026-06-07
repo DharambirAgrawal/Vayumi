@@ -87,6 +87,67 @@ class _SubagentSlowClient:
         yield '[REPORT kind=DONE summary="late" payload={}]'
 
 
+class _LeakyPlanClient:
+    def __init__(self) -> None:
+        self._pass = 0
+        self.prompts: list[str] = []
+
+    def stream_completion(
+        self,
+        *,
+        base_url: str,
+        slot_id: int,
+        request: CompletionRequest,
+    ) -> AsyncIterator[str]:
+        return self._stream(base_url, slot_id, request)
+
+    async def _stream(
+        self,
+        base_url: str,
+        slot_id: int,
+        request: CompletionRequest,
+    ) -> AsyncIterator[str]:
+        del base_url, slot_id
+        self.prompts.append(request.prompt)
+        if "Worker:" in request.prompt:
+            yield '[REPORT kind=DONE summary="clean research summary" payload={}]'
+            return
+        if self._pass == 0:
+            self._pass += 1
+            yield (
+                "I'm on it.\n"
+                "User: What's the latest on Tesla?\n"
+                "Vayumi:\n"
+                '[DELEGATE capability=research goal="AI chips" payload={}]'
+            )
+            return
+        yield "Background research is running."
+
+
+class _SocialObservationClient:
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def stream_completion(
+        self,
+        *,
+        base_url: str,
+        slot_id: int,
+        request: CompletionRequest,
+    ) -> AsyncIterator[str]:
+        return self._stream(base_url, slot_id, request)
+
+    async def _stream(
+        self,
+        base_url: str,
+        slot_id: int,
+        request: CompletionRequest,
+    ) -> AsyncIterator[str]:
+        del base_url, slot_id
+        self.prompts.append(request.prompt)
+        yield "Yeah, he sounds like someone with a good heart."
+
+
 @pytest.fixture
 def patched_memory(monkeypatch: pytest.MonkeyPatch):
     from server.orchestrator import supervisor as sup_mod
@@ -270,5 +331,89 @@ async def test_step_events_without_main_tts(patched_memory: None) -> None:
         await asyncio.wait_for(supervisor._worker_tasks[task_id], timeout=5.0)
         assert "task_done" in board_events
         assert tokens == []
+    finally:
+        await pool.close()
+
+
+@pytest.mark.asyncio
+async def test_plan_pass_tokens_are_not_delivered(patched_memory: None) -> None:
+    client = _LeakyPlanClient()
+    pool = EnginePool(
+        base_url="http://127.0.0.1:8081",
+        parallel_slots=4,
+        completion_client=client,
+    )
+    pool.start()
+    settings = Settings(
+        database_url="postgresql://x@localhost/x",
+        redis_url="redis://localhost",
+    )
+    runner = build_tool_runner(build_tool_registry(settings))
+    supervisor = Supervisor(user_id="u1", session_id="s1")
+    supervisor._ready = True
+    tokens: list[str] = []
+    status: list[str] = []
+
+    async def on_token(tok: str) -> None:
+        tokens.append(tok)
+
+    async def on_status(text: str) -> None:
+        status.append(text)
+
+    try:
+        output = await supervisor.run_turn(
+            "research AI chips in depth",
+            engine_pool=pool,
+            tool_runner=runner,
+            on_token=on_token,
+            on_status_caption=on_status,
+        )
+        delivered = "".join(tokens)
+        assert "Tesla" not in delivered
+        assert "User:" not in delivered
+        assert "Background research is running" in delivered
+        assert output.assistant_text == "Background research is running."
+        assert status == ["I'm on it."]
+    finally:
+        for task in list(supervisor._worker_tasks.values()):
+            if not task.done():
+                task.cancel()
+        await pool.close()
+
+
+@pytest.mark.asyncio
+async def test_short_social_observation_does_not_spawn_tools(
+    patched_memory: None,
+) -> None:
+    client = _SocialObservationClient()
+    pool = EnginePool(
+        base_url="http://127.0.0.1:8081",
+        parallel_slots=4,
+        completion_client=client,
+    )
+    pool.start()
+    settings = Settings(
+        database_url="postgresql://x@localhost/x",
+        redis_url="redis://localhost",
+    )
+    runner = build_tool_runner(build_tool_registry(settings))
+    supervisor = Supervisor(user_id="u1", session_id="s1")
+    supervisor._ready = True
+    events: list[tuple[str, str, str]] = []
+
+    async def on_event(kind: str, task_id: str, summary: str) -> None:
+        events.append((kind, task_id, summary))
+
+    try:
+        output = await supervisor.run_turn(
+            "He's a good guy.",
+            engine_pool=pool,
+            tool_runner=runner,
+            on_task_event=on_event,
+        )
+        assert "good heart" in output.assistant_text
+        assert events == []
+        assert supervisor._worker_tasks == {}
+        assert "Tool catalog" not in client.prompts[0]
     finally:
         await pool.close()

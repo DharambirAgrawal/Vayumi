@@ -28,6 +28,19 @@ def test_finalize_strips_raw_urls() -> None:
     assert "$219" in finalize_assistant_prose(raw)
 
 
+def test_finalize_strips_internal_markers() -> None:
+    raw = (
+        "Answer.\n"
+        '[SUBAGENT_SPAWN task_id=t capability=research goal="x"] '
+        "(background research worker)\n"
+        "Assistant: Clean ending."
+    )
+    cleaned = finalize_assistant_prose(raw)
+    assert "SUBAGENT_SPAWN" not in cleaned
+    assert "Assistant:" not in cleaned
+    assert "Clean ending." in cleaned
+
+
 def test_sanitize_collapses_trailing_bang_after_period() -> None:
     assert sanitize_spoken_prose("Busy day.!") == "Busy day."
 

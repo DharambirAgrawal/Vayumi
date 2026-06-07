@@ -60,6 +60,11 @@ def maybe_surface_signal(
     if not user_is_idle(session):
         return False
 
+    ts = now if now is not None else time.monotonic()
+    if session.last_turn_completed_at is not None:
+        if (ts - session.last_turn_completed_at) < 3.0:
+            return False
+
     if signal.importance < settings.notifier_importance_threshold:
         return False
 

@@ -11,7 +11,6 @@ from typing import Any, Literal
 from server.engine.pool import CompletionPriority, CompletionRequest, EnginePool
 from server.engine.prompt import (
     MainPromptContext,
-    build_greeting_prompt,
     build_main_prompt,
 )
 from server.logger import get_logger
@@ -59,52 +58,6 @@ TurnKind = Literal["voice", "chat", "proactive", "system"]
 _EMPTY_ASSISTANT_FALLBACK = (
     "Sorry, I blanked for a second — could you say that again?"
 )
-
-_CASUAL_PHRASES = frozenset(
-    {
-        "hi",
-        "hey",
-        "hello",
-        "yo",
-        "sup",
-        "hiya",
-        "howdy",
-        "thanks",
-        "thank you",
-        "thx",
-        "how are you",
-        "how are you doing",
-        "what's up",
-        "whats up",
-        "good morning",
-        "good night",
-        "bye",
-        "goodbye",
-    }
-)
-
-
-def _normalize_casual_text(text: str) -> str:
-    normalized = text.strip().lower().rstrip("?!., ")
-    normalized = re.sub(r"\s+", " ", normalized)
-    replacements = (
-        (r"\bhow r u\b", "how are you"),
-        (r"\bhow are u\b", "how are you"),
-        (r"\bwhat'?s up\b", "whats up"),
-        (r"\bthank u\b", "thank you"),
-        (r"\bthx\b", "thanks"),
-    )
-    for pattern, replacement in replacements:
-        normalized = re.sub(pattern, replacement, normalized)
-    return normalized
-
-
-def _is_casual_message(text: str) -> bool:
-    """Short greetings/small talk — use greeting prompt (no tools / DELEGATE blocks)."""
-    normalized = _normalize_casual_text(text)
-    if not normalized or len(normalized) > 48:
-        return False
-    return normalized in _CASUAL_PHRASES
 
 
 def _history_for_tool_follow_up(history_lines: list[str]) -> list[str]:
@@ -217,8 +170,6 @@ class Supervisor:
             )
 
         delegates_allowed = True if allow_delegates is None else allow_delegates
-        if delegates_allowed and _is_casual_message(user_text):
-            delegates_allowed = False
 
         warm = await build_warm_profile(self.user_id)
         history = await recent_turns(self.session_id, limit=8)
@@ -321,8 +272,6 @@ class Supervisor:
 
             async def _plan_on_token(token: str) -> None:
                 await plan_handler.on_token(token)
-                if on_token is not None:
-                    await on_token(token)
 
             plan_on_token = _plan_on_token
         raw_text = await self._complete(
@@ -484,7 +433,7 @@ class Supervisor:
                 )
             elif spawn_blocks:
                 retry_context = (
-                    "A background task was started (see SUBAGENT_SPAWN). "
+                    "A background task was started. "
                     "Tell the user in your own words — do not invent results yet."
                 )
             elif delegate_runs:
@@ -757,27 +706,22 @@ class Supervisor:
                 if context
                 else no_delegate_instruction
             )
-        casual = _is_casual_message(user_text)
-        use_greeting_prompt = casual and "[TOOL_RESULT" not in injected_context
         if include_tools is None:
-            include_tools = allow_delegates and not casual
-        if use_greeting_prompt:
-            prompt = build_greeting_prompt(user_text=user_text)
-        else:
-            prompt = build_main_prompt(
-                MainPromptContext(
-                    user_text=user_text,
-                    warm_profile=warm_profile,
-                    history_lines=history_lines,
-                    compressed_summary=compressed_summary,
-                    recall_context=context,
-                    task_board_block=task_board_block,
-                ),
-                include_tools=include_tools,
-            )
+            include_tools = True
+        prompt = build_main_prompt(
+            MainPromptContext(
+                user_text=user_text,
+                warm_profile=warm_profile,
+                history_lines=history_lines,
+                compressed_summary=compressed_summary,
+                recall_context=context,
+                task_board_block=task_board_block,
+            ),
+            include_tools=include_tools,
+        )
         request = CompletionRequest(
             prompt=prompt,
-            stop=("\n\n```", "\n```\n"),
+            stop=("```", "[TOOL_RESULT", "[SUBAGENT_SPAWN"),
             max_tokens=300 if not allow_delegates else 512,
             cache_prompt=False,
             stream=use_stream,
@@ -793,7 +737,6 @@ class Supervisor:
             max_tokens=request.max_tokens,
             stream=use_stream,
             include_tools=include_tools,
-            casual=use_greeting_prompt,
             pin_slot=False,
         )
         handle = await engine_pool.submit(

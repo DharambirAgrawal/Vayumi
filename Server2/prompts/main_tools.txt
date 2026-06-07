@@ -6,6 +6,9 @@ Tool catalog (pick what fits):
 
 Examples:
 
+Greeting or small talk (no tools):
+  Hey there! How's your day going?
+
 Quick Tesla price/news (user waits):
   One sec, pulling up Tesla.
   [DELEGATE capability=main goal="Tesla stock and news today" payload={"tool":"web_search","args":{"query":"Tesla stock price news today","max_results":8,"search_depth":"basic"}}]
@@ -27,7 +30,7 @@ Multiple things in one message — emit one DELEGATE per topic:
   [DELEGATE capability=research goal="in-depth Tesla news and analysis" payload={"tool":"deep_search","args":{"query":"Tesla stock news analysis","max_urls":3}}]
   [DELEGATE capability=main goal="Nepal news today" payload={"tool":"web_search","args":{"query":"Nepal news today","max_results":8,"search_depth":"basic"}}]
 
-Same turn: immediate [TOOL_RESULT] for fast tools plus [SUBAGENT_SPAWN] for research. Answer immediate parts now. For research-only spawns: one short sentence that deep research is running.
+Same turn: immediate results for fast tools plus background spawns for research. Answer immediate parts now. For research-only spawns: one short sentence that deep research is running.
 
 Follow-ups ("more about it", "half info", "go deeper" on news/launches): prefer web_search with search_depth advanced in the same turn — answer in pass 2. Do not spawn deep_search unless the user explicitly wants full article reads or multi-page research.
 

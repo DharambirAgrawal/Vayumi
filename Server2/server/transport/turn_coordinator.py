@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import TYPE_CHECKING, Literal
 
@@ -265,6 +266,7 @@ async def run_supervisor_text_turn(
         err = ErrorMessage(payload=ErrorPayload(code=4500, message="Completion failed"))
         await send_json(websocket, err)
     finally:
+        session.last_turn_completed_at = time.monotonic()
         session.interrupt.finish_turn()
         session.accumulated_partial = ""
         if input_kind in ("chat", "voice"):

@@ -13,9 +13,9 @@ OnDelegatesReady = Callable[[str], Awaitable[None]]
 
 class PlanStreamHandler:
     """
-    One plan LLM call: stream tokens, speak the first sentence (ack) as soon as
-    it is complete, then notify when complete [DELEGATE] blocks arrive so tools
-    can start while the model may still be generating.
+    One plan LLM call: hold raw tokens away from user delivery, emit only a
+    short status line once a real [DELEGATE] block appears, then notify when
+    complete delegate blocks arrive so tools can start.
     """
 
     def __init__(
@@ -40,7 +40,11 @@ class PlanStreamHandler:
         await self._maybe_notify_delegates()
 
     async def finalize(self) -> str:
-        if not self.ack_sent and self._on_status is not None:
+        if (
+            not self.ack_sent
+            and self._on_status is not None
+            and re.search(r"\[DELEGATE\b", self.raw_text, re.IGNORECASE)
+        ):
             ack = plan_acknowledgment(self.raw_text)
             if ack:
                 await self._on_status(ack)
@@ -49,6 +53,8 @@ class PlanStreamHandler:
 
     async def _maybe_emit_ack(self) -> None:
         if self.ack_sent or self._on_status is None:
+            return
+        if not re.search(r"\[DELEGATE\b", self._buffer, re.IGNORECASE):
             return
         head = self._prose_before_delegate(self._buffer)
         if not head:
@@ -80,10 +86,7 @@ class PlanStreamHandler:
         if count <= self._complete_delegate_blocks:
             return
         if not self.ack_sent and self._on_status is not None:
-            head = self._prose_before_delegate(self._buffer).strip()
-            words = head.split()
-            if len(words) >= 6 and len(head) >= 20:
-                return
+            await self._maybe_emit_ack()
         self._complete_delegate_blocks = count
         await self._on_delegates_ready(self._buffer)
 
