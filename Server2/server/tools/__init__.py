@@ -143,13 +143,16 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
         ToolEntry(
             name="memory_recall",
             capability="main",
-            description="Read an active fact or full supersession chain by key.",
+            description=(
+                "Read a stored fact by key, a supersession chain, or semantic search by query."
+            ),
             args_schema={
                 "type": "object",
-                "required": ["key"],
                 "properties": {
                     "key": {"type": "string"},
                     "chain": {"type": "boolean"},
+                    "query": {"type": "string"},
+                    "k": {"type": "integer", "minimum": 1, "maximum": 20},
                 },
             },
             fn=memory_recall,
@@ -165,13 +168,16 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
         ToolEntry(
             name="memory_recall",
             capability="research",
-            description="Read a stored user fact by key (for background research).",
+            description=(
+                "Read a stored user fact by key or semantic search by query."
+            ),
             args_schema={
                 "type": "object",
-                "required": ["key"],
                 "properties": {
                     "key": {"type": "string"},
                     "chain": {"type": "boolean"},
+                    "query": {"type": "string"},
+                    "k": {"type": "integer", "minimum": 1, "maximum": 20},
                 },
             },
             fn=memory_recall,

@@ -3,7 +3,7 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-06-07 — Step 10 complete + post-Step-10 main-agent amendments (see below)
+> **Last updated:** 2026-06-07 — Step 12 complete (P2 summarizer)
 
 ---
 
@@ -19,7 +19,7 @@
 | `hello.capabilities.tts` | client declares speaker | Step 4 + Step 6 | ✅ |
 | Proactive respond_via | `build_synthetic_turn` + `input_kind='proactive'` | Step 10 | ✅ |
 
-**Current build step:** Step 11 (LanceDB retrieval).
+**Current build step:** Step 13 (Meeting mode).
 
 ---
 
@@ -99,8 +99,9 @@ caption + chat_message + TTS (respond_via per Rule 13)
 | 8 | Sub-agent worker | ✅ | [step-08.md](step-08.md) |
 | 9 | Capability bundles | ✅ | [step-09.md](step-09.md) |
 | 10 | Proactive notifier | ✅ | [step-10.md](step-10.md) |
-| 11 | LanceDB retrieval | ⬜ | [step-11.md](step-11.md) |
-| 12–21 | Summarizer, modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
+| 11 | LanceDB retrieval | ✅ | [step-11.md](step-11.md) |
+| 12 | Summarizer (P2) | ✅ | [step-12.md](step-12.md) |
+| 13–21 | Modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
 
 ---
 
@@ -111,7 +112,7 @@ PHASE 1 — SPINE                                            PHASE 2 — MULTI-A
 ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┬─────────┐
 │ Step 1  │ Step 2  │ Step 3  │ Step 4  │ Step 5  │ Step 6  │ Step 7  │  │ Step 8  │ Step 9  │ Step 10 │ Step 11 │ Step 12 │
 │Scaffold │ Engine  │ Voice   │ Client  │ Memory  │Backfill │ Tools   │  │SubAgent │Capabil. │Notifier │Retrieval│Summariz.│
-│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  │  ✅     │  ✅     │  ✅     │  ⬜     │  ⬜     │
+│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │
 └─────────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘
                │         │         │         │         │         │            │         │         │         │         │
                ▼         ▼         ▼         ▼         ▼         ▼            ▼         ▼         ▼         ▼         ▼
@@ -125,14 +126,90 @@ PHASE 3 — MODES & POLISH                         PHASE 4 — CLIENTS & DEPLOY
 
 Legend: ✅ done   🔄 in progress   ⬜ not started   ❌ blocked
 
-Completed: 10 / 21    Phase 1: 7/7    Phase 2: 3/5    Phase 3: 0/5    Phase 4: 0/4
+Completed: 12 / 21    Phase 1: 7/7    Phase 2: 5/5    Phase 3: 0/5    Phase 4: 0/4
 ```
 
 ---
 
 ## Completed steps (detail sections)
 
-Sections below describe what each finished step added. **Steps 1–10 are complete**; Step 11 is next.
+Sections below describe what each finished step added. **Steps 1–12 are complete**; Step 13 is next. **Phase 2 complete.**
+
+---
+
+## What Step 12 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    P2 SUMMARIZER (Step 12) — background only                    │
+│                                                                                 │
+│  server/memory/summarizer.py                                                    │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ schedule_session_summarization() — fire-and-forget after supervisor turn  │  │
+│  │ summarize_session() — P2 slot, LLM JSON → compressed_summary + facts       │  │
+│  │ extract_facts_from_task() — facts_to_persist from DONE (Pydantic only)    │  │
+│  │ Per-session lock, retries, invalid JSON / engine errors never block user   │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  prompts/summarizer.txt — profile facts (name, relationships.*, preferences.*)  │
+│  signal_bus.py — schedule_task_fact_extraction on DONE                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Post-turn memory flow (Step 12)
+
+```
+User receives caption + chat_message + TTS (turn complete)
+        │
+        ▼ (asyncio.create_task — no await)
+schedule_session_summarization()
+        │
+        ├── tokens < 20k → return (silent)
+        └── tokens ≥ 20k → P2 summarize_session
+                ├── LLM JSON summary → sessions.compressed_summary
+                ├── validated facts → set_fact (source=summarizer)
+                └── prune old turns (keep recent 8)
+
+Sub-agent DONE with facts_to_persist
+        │
+        ▼ (asyncio.create_task)
+extract_facts_from_task() → set_fact (source=task:<id>)
+```
+
+---
+
+## What Step 11 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    LANCEDB RETRIEVAL (Step 11)                                  │
+│                                                                                 │
+│  server/memory/retrieval.py                                                     │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ retrieve(query, filters, k) → ranked Snippet list with citations          │  │
+│  │ get_snippet_by_doc_id(user_id, doc_id) — direct lookup by fact_id          │  │
+│  │ facts_index vector search filtered by user_id                             │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  memory_recall tool — key/chain (Postgres) OR query (semantic LanceDB)          │
+│  directives.py — [RECALL doc:<doc_id>] → inject snippet into Main follow-up     │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Memory retrieval flow (Step 11)
+
+```
+memory_recall(query=…) OR [RECALL doc:fact_id]
+        │
+        ▼
+embed query / lookup fact_id in facts_index
+        │
+        ▼
+ranked Snippets (doc_id, key, text, citation)
+        │
+        ▼
+ToolResult / [RECALL_RESULT doc=…] → Main follow-up context
+```
 
 ---
 
@@ -318,7 +395,8 @@ SignalBus → TaskBoard → (optional) Main reads board on status question
 │  │ warm.py — build_warm_profile, mark_dirty, Redis warm_cache TTL           │  │
 │  │ session.py — load_or_create_session, append_turn, recent_turns           │  │
 │  │ embeddings.py — bge-small-en-v1.5 (sentence-transformers)                │  │
-│  │ retrieval.py — stub (step 11)                                            │  │
+│  │ retrieval.py — LanceDB top-k + doc lookup                                │  │
+│  │ summarizer.py — P2 compression + fact extract (step 12)                  │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                 │
 │  server/orchestrator/                                                           │
@@ -626,12 +704,12 @@ This is the target. Grey sections are not built yet.
 │                          │  │                        │  │                        │
 │ ░░ worker.py             │  │ ░░ registry.py         │  │ ✅ facts.py (versioned)│
 │ ░░ report.py             │  │ ░░ runner.py           │  │ ✅ warm.py (profile)   │
-│ ░░ capabilities/         │  │ ░░ web_search.py       │  │ ░░ retrieval.py (stub) │
+│ ░░ capabilities/         │  │ ░░ web_search.py       │  │ ✅ retrieval.py │
 │    research/             │  │ ░░ mcp_adapter.py      │  │ ✅ session.py          │
-│    productivity/         │  │ ✅ registry/runner     │  │ ░░ summarizer.py       │
+│    productivity/         │  │ ✅ registry/runner     │  │ ✅ summarizer.py       │
 │ ✅ web_search (Tavily) │  │                        │
 │    comms/                │  │                        │  │ ✅ embeddings.py       │
-│ steps 8-9               │  │ step 7                 │  │ step 5 ✅, 11-12       │
+│ steps 8-9               │  │ step 7                 │  │ step 5–12 ✅            │
 └──────────────────────────┘  └────────────────────────┘  └────────────────────────┘
                                                                     │
                                                                     ▼
@@ -771,7 +849,9 @@ Server2/
 │   ├── step-08.md              ✅ complete (sub-agent worker)
 │   ├── step-09.md              ✅ capability bundles
 │   ├── step-10.md              ✅ proactive notifier
-│   ├── step-11.md              ⬜ pending (LanceDB retrieval)
+│   ├── step-11.md              ✅ LanceDB retrieval
+│   ├── step-12.md              ✅ P2 summarizer
+│   ├── step-13.md              ⬜ pending (meeting mode)
 │   ├── tracker.md              ✅ this file — progress + architecture flows
 │   ├── roadmap.md              ✅ full 21-step overview
 │   └── history.md              ✅ change log
@@ -800,7 +880,8 @@ Server2/
 │   │   ├── facts.py            ✅ versioned fact CRUD + LanceDB upsert
 │   │   ├── warm.py             ✅ warm profile + dirty flag + Redis cache
 │   │   ├── session.py          ✅ session + turn history
-│   │   └── retrieval.py        ✅ stub (step 11)
+│   │   ├── retrieval.py        ✅ LanceDB semantic retrieval
+│   │   └── summarizer.py       ✅ P2 background compression
 │   ├── orchestrator/
 │   │   ├── __init__.py         ✅
 │   │   ├── directives.py       ✅ REMEMBER / RECALL / DELEGATE / RESPOND_VIA
@@ -854,13 +935,18 @@ Server2/
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
-    └── unit/                   ✅ 217 unit tests (Step 10 + amendments)
+    └── unit/                   ✅ 240 unit tests (through Step 12)
         ├── test_protocol.py
         ├── test_respond_via.py
         ├── test_session_singleton.py
         ├── test_client_control.py
         ├── test_voice_*.py
         ├── test_memory_*.py
+        ├── test_retrieval.py
+        ├── test_memory_recall.py
+        ├── test_summarizer.py
+        ├── test_session_compression.py
+        ├── test_signal_bus_facts.py
         ├── test_directives.py
         ├── test_directives_tools.py
         ├── test_supervisor.py

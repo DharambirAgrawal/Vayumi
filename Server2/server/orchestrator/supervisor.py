@@ -12,6 +12,7 @@ from server.engine.pool import (
     CompletionPriority,
     CompletionRequest,
     EnginePool,
+    ParsedToolCall,
 )
 from server.engine.prompt import (
     MainPromptContext,
@@ -24,10 +25,12 @@ from server.memory.session import (
     load_or_create_session,
     recent_turns,
 )
+from server.memory.summarizer import schedule_session_summarization
 from server.memory.warm import build_warm_profile
 from server.orchestrator.directives import (
     DelegateDirective,
     RecallDirective,
+    RecallDocDirective,
     RememberDirective,
     contains_directive_leak,
     execute_directives,
@@ -46,14 +49,6 @@ from server.orchestrator.prose import (
     sanitize_spoken_prose,
     scrub_follow_up_prose,
 )
-from server.orchestrator.tool_fallback import (
-    fallback_web_search_query,
-    is_insufficient_tool_answer,
-    is_web_search_only_runs,
-    needs_web_search_synthesis,
-    should_fallback_web_search,
-    tool_status_while_searching,
-)
 from server.orchestrator.signal_bus import SignalBus, TaskEventEmitter
 from server.orchestrator.task_board import TaskBoard
 from server.orchestrator.tool_dispatch import (
@@ -65,9 +60,16 @@ from server.orchestrator.tool_dispatch import (
     speak_web_search_results,
     split_delegate_directives,
 )
-from server.tools.openai_schema import openai_tools_for_main
-from server.engine.pool import ParsedToolCall
+from server.orchestrator.tool_fallback import (
+    fallback_web_search_query,
+    is_insufficient_tool_answer,
+    is_web_search_only_runs,
+    needs_web_search_synthesis,
+    should_fallback_web_search,
+    tool_status_while_searching,
+)
 from server.subagents.worker import SUB_CAPABILITIES, SubAgentWorker
+from server.tools.openai_schema import openai_tools_for_main
 from server.tools.runner import ToolEventEmitter, ToolRunner
 from server.voice.respond_via import InputKind, RespondVia, apply_respond_via_override
 
@@ -470,7 +472,9 @@ class Supervisor:
                 )
 
             recalls = [
-                d for d in profile_directives if isinstance(d, RecallDirective)
+                d
+                for d in profile_directives
+                if isinstance(d, (RecallDirective, RecallDocDirective))
             ]
             remembers = [
                 d for d in profile_directives if isinstance(d, RememberDirective)
@@ -577,6 +581,12 @@ class Supervisor:
         visible = self._ensure_visible_reply(visible)
         if visible.strip():
             await append_turn(self.session_id, self.user_id, "assistant", visible)
+
+        schedule_session_summarization(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            engine_pool=engine_pool,
+        )
 
         log.info(
             "supervisor.turn_complete",

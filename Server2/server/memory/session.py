@@ -166,5 +166,98 @@ async def compressed_history(session_id: str) -> str:
     return str(row["compressed_summary"])
 
 
+def estimate_text_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars per token) for threshold checks."""
+    stripped = text.strip()
+    if not stripped:
+        return 0
+    return max(1, len(stripped) // 4)
+
+
+async def estimate_history_tokens(session_id: str) -> int:
+    summary = await compressed_history(session_id)
+    total = estimate_text_tokens(summary)
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT text FROM turns WHERE session_id = $1 ORDER BY created_at ASC",
+            session_id,
+        )
+    for row in rows:
+        total += estimate_text_tokens(str(row["text"]))
+    return total
+
+
+async def all_turns_ordered(session_id: str) -> list[TurnRecord]:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT * FROM turns
+            WHERE session_id = $1
+            ORDER BY created_at ASC
+            """,
+            session_id,
+        )
+    return [
+        TurnRecord(
+            id=str(row["id"]),
+            session_id=row["session_id"],
+            user_id=row["user_id"],
+            role=row["role"],
+            text=row["text"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+async def turns_for_summarization(
+    session_id: str,
+    *,
+    keep_recent: int,
+) -> list[TurnRecord]:
+    turns = await all_turns_ordered(session_id)
+    if len(turns) <= keep_recent:
+        return []
+    return turns[:-keep_recent]
+
+
+async def update_compressed_summary(session_id: str, summary: str) -> None:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE sessions
+            SET compressed_summary = $2,
+                last_seen_at = now()
+            WHERE id = $1
+            """,
+            session_id,
+            summary.strip() or None,
+        )
+
+
+async def prune_turns(session_id: str, turn_ids: list[str]) -> int:
+    if not turn_ids:
+        return 0
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            DELETE FROM turns
+            WHERE session_id = $1
+              AND id = ANY($2::uuid[])
+            """,
+            session_id,
+            turn_ids,
+        )
+    # asyncpg returns "DELETE N"
+    try:
+        return int(result.split()[-1])
+    except (ValueError, IndexError):
+        return 0
+
+
 def json_dumps(value: Any) -> str:
     return json.dumps(value)

@@ -4,7 +4,9 @@ import pytest
 
 from server.orchestrator.directives import (
     RecallDirective,
+    RecallDocDirective,
     RememberDirective,
+    execute_directives,
     filter_profile_directives,
     format_recall_results,
     parse_directives,
@@ -53,6 +55,53 @@ def test_format_recall_results() -> None:
     )
     assert "RECALL_RESULT" in block
     assert "Alex" in block
+
+
+def test_parse_recall_doc_directive() -> None:
+    directives = parse_directives("[RECALL doc:f-food]")
+    assert len(directives) == 1
+    assert isinstance(directives[0], RecallDocDirective)
+    assert directives[0].doc_id == "f-food"
+
+
+def test_filter_profile_directives_keeps_doc_recall() -> None:
+    filtered = filter_profile_directives(
+        [RecallDocDirective(doc_id="f-food")]
+    )
+    assert filtered == [RecallDocDirective(doc_id="f-food")]
+
+
+@pytest.mark.asyncio
+async def test_recall_doc_injects_snippet_into_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from server.memory.retrieval import Snippet
+    from server.orchestrator import directives as mod
+
+    async def fake_get_snippet(user_id: str, doc_id: str) -> Snippet | None:
+        assert user_id == "u1"
+        assert doc_id == "f-food"
+        return Snippet(
+            doc_id="f-food",
+            key="food.favorite",
+            text="food.favorite: ramen",
+            score=1.0,
+            citation="doc:f-food key=food.favorite",
+        )
+
+    monkeypatch.setattr(mod, "get_snippet_by_doc_id", fake_get_snippet)
+
+    results = await execute_directives(
+        "u1",
+        [RecallDocDirective(doc_id="f-food")],
+    )
+    block = format_recall_results(results)
+
+    assert len(results) == 1
+    assert results[0].doc_id == "f-food"
+    assert "ramen" in results[0].payload
+    assert "[RECALL_RESULT doc=f-food]" in block
+    assert "Answer the user's latest message" in block
 
 
 @pytest.mark.asyncio

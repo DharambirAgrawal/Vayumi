@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from server.logger import get_logger
 from server.memory import facts
+from server.memory.retrieval import get_snippet_by_doc_id
 from server.memory.warm import affects_warm_profile
 
 log = get_logger("orchestrator.directives")
@@ -36,12 +37,16 @@ REMEMBER_RE = re.compile(
     r'\[REMEMBER\s+key=(?P<key>[^\s\]]+)\s+value=(?P<value>.+?)\s+source=(?P<source>"[^"]+"|[^\s\]]+)\s*\]',
     re.IGNORECASE | re.DOTALL,
 )
+RECALL_DOC_RE = re.compile(
+    r"\[RECALL\s+doc:(?P<doc_id>[^\s\]]+)\s*\]",
+    re.IGNORECASE,
+)
 RECALL_CHAIN_RE = re.compile(
     r'\[RECALL\s+chain\s+key=(?P<key>[^\s\]]+)\s*\]',
     re.IGNORECASE,
 )
 RECALL_RE = re.compile(
-    r'\[RECALL\s+(?!chain\s)key=(?P<key>[^\s\]]+)\s*\]',
+    r'\[RECALL\s+(?!chain\s|doc:)key=(?P<key>[^\s\]]+)\s*\]',
     re.IGNORECASE,
 )
 DELEGATE_HEAD_RE = re.compile(
@@ -76,10 +81,16 @@ class RecallDirective:
 
 
 @dataclass(frozen=True)
+class RecallDocDirective:
+    doc_id: str
+
+
+@dataclass(frozen=True)
 class RecallResult:
     key: str
     chain: bool
     payload: str
+    doc_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -170,8 +181,13 @@ def parse_delegate_directives(text: str) -> list[DelegateDirective]:
     return found
 
 
-def parse_directives(text: str) -> list[RememberDirective | RecallDirective]:
-    found: list[RememberDirective | RecallDirective] = []
+ProfileDirective = RememberDirective | RecallDirective | RecallDocDirective
+
+
+def parse_directives(text: str) -> list[ProfileDirective]:
+    found: list[ProfileDirective] = []
+    for match in RECALL_DOC_RE.finditer(text):
+        found.append(RecallDocDirective(doc_id=match.group("doc_id")))
     for match in RECALL_CHAIN_RE.finditer(text):
         found.append(RecallDirective(key=match.group("key"), chain=True))
     for match in RECALL_RE.finditer(text):
@@ -207,11 +223,14 @@ def parse_respond_via_override(text: str) -> Literal["chat", "voice", "both"] | 
 
 
 def filter_profile_directives(
-    directives: list[RememberDirective | RecallDirective],
-) -> list[RememberDirective | RecallDirective]:
+    directives: list[ProfileDirective],
+) -> list[ProfileDirective]:
     """Drop REMEMBER/RECALL for keys outside the profile namespace."""
-    kept: list[RememberDirective | RecallDirective] = []
+    kept: list[ProfileDirective] = []
     for directive in directives:
+        if isinstance(directive, RecallDocDirective):
+            kept.append(directive)
+            continue
         if not affects_warm_profile(directive.key):
             log.debug("directives.skipped_non_profile_key", key=directive.key)
             continue
@@ -275,6 +294,7 @@ def plan_acknowledgment(text: str) -> str:
     for pattern in (
         DELEGATE_HEAD_RE,
         REMEMBER_RE,
+        RECALL_DOC_RE,
         RECALL_CHAIN_RE,
         RECALL_RE,
         ANSWER_TO_RE,
@@ -336,7 +356,7 @@ def contains_directive_leak(text: str) -> bool:
 
 async def execute_directives(
     user_id: str,
-    directives: list[RememberDirective | RecallDirective],
+    directives: list[ProfileDirective],
 ) -> list[RecallResult]:
     results: list[RecallResult] = []
     for directive in directives:
@@ -346,6 +366,28 @@ async def execute_directives(
                 directive.key,
                 directive.value,
                 directive.source,
+            )
+            continue
+
+        if isinstance(directive, RecallDocDirective):
+            snippet = await get_snippet_by_doc_id(user_id, directive.doc_id)
+            if snippet is None:
+                payload = f"(no document for doc_id={directive.doc_id})"
+            else:
+                payload = f"{snippet.text} ({snippet.citation})"
+            results.append(
+                RecallResult(
+                    key=snippet.key if snippet is not None else "",
+                    chain=False,
+                    payload=payload,
+                    doc_id=directive.doc_id,
+                )
+            )
+            log.info(
+                "directives.recall_doc",
+                user_id=user_id,
+                doc_id=directive.doc_id,
+                hit=snippet is not None,
             )
             continue
 
@@ -390,6 +432,9 @@ def format_recall_results(results: list[RecallResult]) -> str:
         return ""
     lines = []
     for item in results:
+        if item.doc_id:
+            lines.append(f"[RECALL_RESULT doc={item.doc_id}] {item.payload}")
+            continue
         label = "chain" if item.chain else "key"
         lines.append(f"[RECALL_RESULT {label}={item.key}] {item.payload}")
     block = "\n".join(lines)

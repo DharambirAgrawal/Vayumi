@@ -228,6 +228,35 @@ def build_sub_prompt(context: SubPromptContext) -> str:
     return build_subagent_prompt(bundle, context)
 
 
+SUMMARIZER_PROMPT_PATH = PROMPT_DIR / "summarizer.txt"
+
+
+@dataclass(frozen=True)
+class SummarizerPromptContext:
+    existing_summary: str
+    turn_lines: list[str]
+
+
+def build_summarizer_chat_messages(
+    context: SummarizerPromptContext,
+) -> list[dict[str, str]]:
+    system_prompt = _load_prompt(SUMMARIZER_PROMPT_PATH).strip()
+    parts: list[str] = []
+    if context.existing_summary.strip():
+        parts.append(
+            "Existing compressed summary:\n" + context.existing_summary.strip()
+        )
+    if context.turn_lines:
+        parts.append(
+            "Conversation turns to compress:\n" + "\n".join(context.turn_lines)
+        )
+    user_block = "\n\n".join(parts) if parts else "No turns to compress."
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_block},
+    ]
+
+
 @lru_cache(maxsize=16)
 def _load_prompt(path: Path) -> str:
     return path.read_text(encoding="utf-8")

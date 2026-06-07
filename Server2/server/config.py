@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     notifier_min_interval_seconds: float = 45.0
     notifier_importance_threshold: float = 0.5
 
+    # ── Session summarizer (Step 12) — background only ───
+    summarizer_token_threshold: int = 20_000
+    summarizer_recent_turn_keep: int = 8
+    summarizer_max_retries: int = 2
+    summarizer_retry_base_seconds: float = 1.0
+    summarizer_min_fact_confidence: float = 0.75
+
     # ── Database pool ────────────────────────────────────────
     db_pool_min_size: int = 2
     db_pool_max_size: int = 10

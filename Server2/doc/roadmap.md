@@ -370,7 +370,7 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 11 — LanceDB retrieval ⬜
+### Step 11 — LanceDB retrieval ✅
 
 **Estimated effort:** 1 day  
 **Diagram pages:** 09
@@ -385,7 +385,7 @@ Goal: sub-agents run in parallel, report back, and the proactive notifier surfac
 
 ---
 
-### Step 12 — Summarizer ⬜
+### Step 12 — Summarizer ✅
 
 **Estimated effort:** 2 days  
 **Diagram pages:** 09
