@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,8 +12,6 @@ if TYPE_CHECKING:
 
 PROMPT_DIR = Path("prompts")
 MAIN_PROMPT_PATH = PROMPT_DIR / "main.txt"
-MAIN_CORE_PATH = PROMPT_DIR / "main_core.txt"
-MAIN_TOOLS_PATH = PROMPT_DIR / "main_tools.txt"
 GREETING_PROMPT_PATH = PROMPT_DIR / "greeting.txt"
 ACK_PROMPT_PATH = PROMPT_DIR / "ack.txt"
 SUB_PROMPT_DIR = PROMPT_DIR / "sub"
@@ -53,35 +52,104 @@ def build_ack_prompt(*, user_text: str, warm_profile: str = "") -> str:
     return "\n\n".join(sections)
 
 
-def build_main_prompt(
-    context: MainPromptContext,
+def today_context_line() -> str:
+    """Server date for the model — training weights are not real-time."""
+    today = date.today()
+    return (
+        f"Today's date (server): {today.isoformat()} ({today.strftime('%A')}). "
+        "You do not have live internet knowledge in your weights. "
+        "For anything current, recent, or after your training cutoff, use web_search "
+        "or say you need to look it up — never state dates, prices, or news from memory."
+    )
+
+
+def _session_context_parts(context: MainPromptContext) -> list[str]:
+    parts: list[str] = [today_context_line()]
+    if context.warm_profile.strip():
+        parts.append(context.warm_profile.strip())
+    if context.compressed_summary.strip():
+        parts.append(f"Earlier conversation summary:\n{context.compressed_summary.strip()}")
+    if context.task_board_block.strip():
+        parts.append(context.task_board_block.strip())
+    if context.recall_context.strip():
+        parts.append(context.recall_context.strip())
+    return parts
+
+
+def _append_chat_message(
+    messages: list[dict[str, str]],
     *,
-    include_tools: bool = True,
-) -> str:
-    system_prompt = _load_prompt(MAIN_CORE_PATH).strip()
-    if include_tools:
-        system_prompt = f"{system_prompt}\n\n{_load_prompt(MAIN_TOOLS_PATH).strip()}"
+    role: str,
+    content: str,
+) -> None:
+    if messages and messages[-1]["role"] == role:
+        messages[-1] = {
+            "role": role,
+            "content": messages[-1]["content"] + "\n" + content,
+        }
+    else:
+        messages.append({"role": role, "content": content})
+
+
+def build_main_prompt(context: MainPromptContext) -> str:
+    system_prompt = _load_prompt(MAIN_PROMPT_PATH).strip()
     sections: list[str] = [system_prompt]
 
-    if context.warm_profile.strip():
-        sections.append(context.warm_profile.strip())
-
-    if context.compressed_summary.strip():
-        sections.append(f"Earlier conversation summary:\n{context.compressed_summary.strip()}")
+    context_parts = _session_context_parts(context)
+    if context_parts:
+        sections.append(
+            "Session context (not the user's message):\n"
+            + "\n\n".join(context_parts)
+        )
 
     if context.history_lines:
         history_block = "\n".join(context.history_lines)
         sections.append(f"Recent conversation:\n{history_block}")
 
-    if context.task_board_block.strip():
-        sections.append(context.task_board_block.strip())
-
-    if context.recall_context.strip():
-        sections.append(context.recall_context.strip())
-
     user_text = context.user_text.strip()
     sections.append(f"User: {user_text}\nVayumi:")
     return "\n\n".join(sections) + "\n"
+
+
+def build_main_chat_messages(context: MainPromptContext) -> list[dict[str, str]]:
+    """Build OpenAI-style messages for llama-server /v1/chat/completions.
+
+    Static rules live in ``system``. Session context, tool results, and runtime
+    instructions live in a separate user/assistant pair so they are not mixed
+    with the user's latest message.
+    """
+    system_prompt = _load_prompt(MAIN_PROMPT_PATH).strip()
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+
+    context_parts = _session_context_parts(context)
+    if context_parts:
+        _append_chat_message(
+            messages,
+            role="user",
+            content=(
+                "Session context (not the user's latest message):\n\n"
+                + "\n\n".join(context_parts)
+            ),
+        )
+        _append_chat_message(messages, role="assistant", content="Understood.")
+
+    for line in context.history_lines:
+        if line.startswith("user: "):
+            role, content = "user", line[6:]
+        elif line.startswith("assistant: "):
+            role, content = "assistant", line[11:]
+        else:
+            role, content = "user", line
+        _append_chat_message(messages, role=role, content=content)
+
+    user_text = context.user_text.strip()
+    if messages and messages[-1]["role"] == "user":
+        if messages[-1]["content"] != user_text:
+            _append_chat_message(messages, role="user", content=user_text)
+    else:
+        _append_chat_message(messages, role="user", content=user_text)
+
+    return messages
 
 
 def build_subagent_prompt(
@@ -106,6 +174,50 @@ def build_subagent_prompt(
         sections.append("Transcript:\n" + "\n".join(context.transcript_lines))
     sections.append("Worker:")
     return "\n\n".join(sections) + "\n"
+
+
+def build_subagent_chat_messages(
+    bundle: CapabilityBundle,
+    context: SubPromptContext,
+) -> list[dict[str, str]]:
+    system_prompt = _load_prompt(bundle.prompt_path).strip()
+    sections: list[str] = [
+        system_prompt,
+        f"Task id: {context.task_id}",
+        f"Capability: {bundle.name}",
+        f"Goal: {context.goal.strip()}",
+    ]
+    if context.warm_profile.strip():
+        sections.append(context.warm_profile.strip())
+    if context.payload:
+        sections.append(f"Payload: {json.dumps(context.payload, ensure_ascii=False)}")
+    if context.tool_context.strip():
+        sections.append(context.tool_context.strip())
+
+    messages: list[dict[str, str]] = [{"role": "system", "content": "\n\n".join(sections)}]
+
+    for line in context.transcript_lines:
+        if line.startswith("assistant: "):
+            role, content = "assistant", line[11:]
+        elif line.startswith("user: "):
+            role, content = "user", line[6:]
+        elif line.startswith("system: "):
+            # Tool results injected as user-side context
+            role, content = "user", line[8:]
+        else:
+            role, content = "user", line
+
+        if messages and messages[-1]["role"] == role:
+            # Merge consecutive same-role messages — Gemma requires strict alternation
+            messages[-1] = {"role": role, "content": messages[-1]["content"] + "\n" + content}
+        else:
+            messages.append({"role": role, "content": content})
+
+    if not context.transcript_lines:
+        messages.append({"role": "user", "content": "Begin task."})
+
+    return messages
+
 
 
 def build_sub_prompt(context: SubPromptContext) -> str:

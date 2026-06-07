@@ -6,7 +6,13 @@ import pytest
 
 from server.config import Settings
 from server.orchestrator.directives import DelegateDirective
-from server.orchestrator.tool_dispatch import run_delegate_directives
+from server.orchestrator.tool_dispatch import (
+    DelegateRun,
+    _trim_spoken_snippet,
+    run_delegate_directives,
+    speak_web_search_results,
+)
+from server.tools.registry import ToolResult
 from server.tools import build_tool_registry, build_tool_runner
 
 
@@ -82,3 +88,45 @@ async def test_non_main_capability_not_capable() -> None:
         runner=runner,
     )
     assert runs[0].result.status == "not_capable"
+
+
+def test_speak_web_search_results_from_snippets() -> None:
+    directive = DelegateDirective(
+        capability="main",
+        goal="nvidia price",
+        payload={"tool": "web_search", "args": {"query": "nvidia"}},
+    )
+    runs = [
+        DelegateRun(
+            directive=directive,
+            tool_name="web_search",
+            result=ToolResult(
+                status="ok",
+                summary="ok",
+                data={
+                    "results": [
+                        {
+                            "title": "NVDA Stock",
+                            "snippet": "NVIDIA trades at $120.50.",
+                        }
+                    ]
+                },
+            ),
+        )
+    ]
+    spoken = speak_web_search_results(runs)
+    assert spoken is not None
+    assert "Here's what I'm seeing" in spoken
+    assert "120.50" in spoken
+
+
+def test_trim_spoken_snippet_ends_cleanly() -> None:
+    raw = (
+        "Shares are currently priced at $212.71, which is +4.3% above the low "
+        "and -1.6% below the high. NVIDIA(NVDA) shares are trading with a volume "
+        "of 219.66M, against the prior close and moving higher in late trading."
+    )
+    trimmed = _trim_spoken_snippet(raw, max_chars=120)
+    assert trimmed.endswith((".", "!", "?"))
+    assert "212.71" in trimmed
+    assert "against" not in trimmed.lower()

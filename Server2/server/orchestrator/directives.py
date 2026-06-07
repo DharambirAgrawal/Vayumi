@@ -223,20 +223,44 @@ TOOL_SEARCH_META_RE = re.compile(
     r"^Found \d+ tool\(s\) for .+$",
     re.IGNORECASE,
 )
+INTERNAL_MARKER_RE = re.compile(
+    r"\[(?:SUBAGENT_SPAWN|BACKGROUND_TASK_DONE|PROACTIVE_SIGNAL)\b[^\]]*\]"
+    r"(?:\s*\([^\n]*\))?",
+    re.IGNORECASE,
+)
+TRANSCRIPT_LABEL_RE = re.compile(
+    r"^(?P<label>User|Vayumi|Assistant|Worker):\s*",
+    re.IGNORECASE,
+)
 
 
 def strip_internal_tool_blocks(text: str) -> str:
     """Remove injected tool traces — never user-visible."""
+    text = INTERNAL_MARKER_RE.sub("", text)
     kept: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("[TOOL_RESULT"):
             continue
+        label_match = TRANSCRIPT_LABEL_RE.match(stripped)
+        if label_match:
+            if label_match.group("label").lower() in ("user", "worker"):
+                continue
+            remainder = TRANSCRIPT_LABEL_RE.sub("", stripped).strip()
+            if not remainder:
+                continue
+            stripped = remainder
         if TOOL_SEARCH_META_RE.match(stripped):
+            continue
+        if re.search(r"\d+\s+result\(s\)\s+from\s+tavily", stripped, re.IGNORECASE):
+            continue
+        if re.match(r"^\d+\.\s+.+\s+—\s+", stripped):
+            continue
+        if stripped.startswith("=== ") or stripped.startswith("--- Immediate result"):
             continue
         if stripped in ("Here's a summary of the results:", "Here's a summary:"):
             continue
-        kept.append(line)
+        kept.append(stripped)
     return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
@@ -279,12 +303,35 @@ def strip_directives(text: str) -> str:
             cleaned = cleaned.replace(block, "", 1)
     cleaned = ANSWER_TO_RE.sub("", cleaned)
     cleaned = STOP_TASK_RE.sub("", cleaned)
+    cleaned = INTERNAL_MARKER_RE.sub("", cleaned)
     cleaned = DIRECTIVE_BLOCK_RE.sub("", cleaned)
     cleaned = RESPOND_VIA_RE.sub("", cleaned)
     cleaned = strip_internal_tool_blocks(cleaned)
     cleaned = re.sub(r"^\s*[\]\[!]+\s*$", "", cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r"^\s*\]\s*", "", cleaned)
+    # Remove lines with partial or complete [DELEGATE blocks
+    kept: list[str] = []
+    for line in cleaned.splitlines():
+        if re.search(r"\[DELEGATE\b", line, re.IGNORECASE):
+            continue
+        kept.append(line)
+    cleaned = "\n".join(kept)
+    # Strip trailing incomplete [DELEGATE ... (no closing ])
+    cleaned = re.sub(
+        r"\[DELEGATE\b[^\]]*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL
+    )
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+_DIRECTIVE_LEAK_RE = re.compile(
+    r"\[DELEGATE\b|(?:^|\s)capability=\w+.*goal=|payload=\{",
+    re.IGNORECASE,
+)
+
+
+def contains_directive_leak(text: str) -> bool:
+    """True when model output still contains internal directive syntax."""
+    return bool(_DIRECTIVE_LEAK_RE.search(text.strip()))
 
 
 async def execute_directives(

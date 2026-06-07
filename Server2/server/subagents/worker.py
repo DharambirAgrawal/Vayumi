@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from server.engine.pool import CompletionPriority, CompletionRequest, EnginePool
-from server.engine.prompt import SubPromptContext, build_subagent_prompt
+from server.engine.prompt import SubPromptContext, build_subagent_chat_messages
 from server.logger import get_logger
 from server.orchestrator.directives import DelegateDirective, parse_delegate_directives
 from server.orchestrator.signal_bus import SignalBus
@@ -230,7 +230,7 @@ class SubAgentWorker:
         return False
 
     async def _model_step(self) -> str:
-        prompt = build_subagent_prompt(
+        prompt = build_subagent_chat_messages(
             self._bundle,
             SubPromptContext(
                 capability=self.capability,
@@ -242,14 +242,21 @@ class SubAgentWorker:
                 tool_context=self._tool_cards,
             ),
         )
+        import json
         log.debug(
             "subagent.llm_start",
             task_id=self.task_id,
             capability=self.capability,
             slot_id=self.slot_id,
-            prompt_chars=len(prompt),
+            prompt_chars=len(json.dumps(prompt)) if isinstance(prompt, list) else len(prompt),
         )
-        request = CompletionRequest(prompt=prompt, max_tokens=768, temperature=0.5)
+        request = CompletionRequest(
+            prompt=prompt, 
+            max_tokens=768, 
+            temperature=0.5,
+            cache_prompt=True,
+            pin_slot=True,
+        )
         handle = await self.engine_pool.submit_assigned(
             self.task_id,
             request,

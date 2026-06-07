@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from server.orchestrator.directives import (
+    contains_directive_leak,
     parse_delegate_directives,
     strip_directives,
 )
@@ -44,4 +45,37 @@ def test_strip_delegate_removes_block() -> None:
     )
     cleaned = strip_directives(raw)
     assert "DELEGATE" not in cleaned
+    assert "Done." in cleaned
+
+
+def test_contains_directive_leak_detects_syntax() -> None:
+    assert contains_directive_leak('[DELEGATE capability=main goal="x"')
+    assert not contains_directive_leak("Hello there.")
+
+
+def test_strip_truncated_delegate_block() -> None:
+    truncated = '[DELEGATE capability=main goal="Tesla stock price and news today"'
+    cleaned = strip_directives(truncated)
+    assert "DELEGATE" not in cleaned
+    assert cleaned == ""
+
+
+def test_strip_internal_background_markers() -> None:
+    raw = (
+        "Okay.\n"
+        '[SUBAGENT_SPAWN task_id=t1 capability=research goal="good guy"] '
+        "(background research worker — results arrive later via notification)\n"
+        '[BACKGROUND_TASK_DONE task_id=t1 capability=research goal="good guy"]\n'
+        '[PROACTIVE_SIGNAL kind=DONE task_id=t1 capability=research goal="good guy"]\n'
+        "User: What's the latest on Tesla?\n"
+        "Vayumi:\n"
+        "Done."
+    )
+    cleaned = strip_directives(raw)
+    assert "SUBAGENT_SPAWN" not in cleaned
+    assert "BACKGROUND_TASK_DONE" not in cleaned
+    assert "PROACTIVE_SIGNAL" not in cleaned
+    assert "User:" not in cleaned
+    assert "Vayumi:" not in cleaned
+    assert "Tesla" not in cleaned
     assert "Done." in cleaned

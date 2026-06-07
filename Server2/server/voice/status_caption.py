@@ -14,12 +14,16 @@ if TYPE_CHECKING:
 
 async def send_status_caption(websocket: WebSocket, *, turn_id: str, text: str) -> None:
     """Live caption while tools run (partial). Pair with TTS via make_status_caption_handler."""
-    if not text.strip():
+    from server.orchestrator.prose import sanitize_spoken_prose
+    from server.orchestrator.directives import strip_directives, strip_internal_tool_blocks
+    
+    clean = sanitize_spoken_prose(strip_internal_tool_blocks(strip_directives(text)))
+    if not clean.strip():
         return
     await send_json(
         websocket,
         CaptionMessage(
-            payload=CaptionPayload(text=text.strip(), partial=True, turn_id=turn_id),
+            payload=CaptionPayload(text=clean.strip(), partial=True, turn_id=turn_id),
         ),
     )
 

@@ -175,6 +175,17 @@ class TaskBoard:
         Avoids dumping unrelated completed tasks (e.g. quantum) when they ask about SpaceX.
         """
         rows = list(self._completed[: self.max_completed])
+        lower = user_text.strip().lower()
+        if (
+            rows
+            and len(lower) < 48
+            and any(
+                phrase in lower
+                for phrase in ("continue", "go on", "keep going", "tell me more", "yes")
+            )
+        ):
+            rows = [rows[0]]
+
         keywords = _topic_keywords(user_text)
         if keywords:
             matched = [

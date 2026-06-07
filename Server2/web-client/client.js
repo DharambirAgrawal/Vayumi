@@ -38,6 +38,8 @@
   let micAudioCtx = null;
   let micWorkletNode = null;
   let micRecording = false;
+  let micUserMuted = false;
+  let pendingStartCapture = false;
 
   const clientState = {
     playback: "idle",
@@ -75,6 +77,30 @@
     }
   }
 
+  function escapeHtml(text) {
+    return String(text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function compactSummary(summary, fallback) {
+    const firstLine = String(summary || "").split(/\n+/)[0].trim();
+    const text = firstLine || fallback || "";
+    if (text.length <= 140) return text;
+    return text.slice(0, 137).trimEnd() + "...";
+  }
+
+  function resetTransientUi() {
+    captionBuffer = "";
+    activityEvents = [];
+    clearConversationStatus();
+    captionText.textContent = "Waiting for assistant…";
+    captionText.classList.add("empty");
+    chatThread.innerHTML = "";
+    renderTaskBoard(activityEvents);
+  }
+
   function sendJson(type, payload) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const msg = JSON.stringify({ type: type, payload: payload });
@@ -89,6 +115,8 @@
 
   let clientStateTimer = null;
   let lastReportedState = "";
+  let visibilityTimer = null;
+  let effectiveVisible = true;
 
   function isClientVisible() {
     return (
@@ -98,10 +126,31 @@
   }
 
   function reportClientState() {
+    const currentlyVisible = isClientVisible();
+    if (currentlyVisible) {
+      effectiveVisible = true;
+      if (visibilityTimer) {
+        clearTimeout(visibilityTimer);
+        visibilityTimer = null;
+      }
+      _doReport();
+    } else {
+      if (!visibilityTimer && effectiveVisible) {
+        visibilityTimer = setTimeout(function() {
+          effectiveVisible = false;
+          visibilityTimer = null;
+          _doReport();
+        }, 1000);
+      }
+      _doReport();
+    }
+  }
+
+  function _doReport() {
     const snapshot = JSON.stringify({
       playback: clientState.playback,
       capture: clientState.capture,
-      visible: isClientVisible(),
+      visible: effectiveVisible,
       route: clientState.route,
     });
     if (snapshot === lastReportedState) {
@@ -117,12 +166,23 @@
       const parsed = JSON.parse(snapshot);
       sendJson("client_state", parsed);
       updateAudioStatusUi();
-    }, 100);
+    }, 400);
   }
 
   function setPlayback(state) {
+    const was = clientState.playback;
     clientState.playback = state;
     reportClientState();
+    if (
+      was === "playing" &&
+      state === "idle" &&
+      pendingStartCapture &&
+      !micUserMuted &&
+      !micRecording
+    ) {
+      pendingStartCapture = false;
+      startMic();
+    }
   }
 
   function setCapture(state) {
@@ -147,6 +207,7 @@
     ws.binaryType = "arraybuffer";
 
     ws.onopen = function () {
+      resetTransientUi();
       setConnStatus("connected");
       debugLine("WebSocket open");
       const helloPayload = {
@@ -362,12 +423,15 @@
 
   function toolEventLabel(kind, summary) {
     if (summary && (kind === "tool_started" || kind === "tool_done")) {
-      return summary;
+      return compactSummary(
+        summary,
+        kind === "tool_started" ? "Tool started" : "Tool finished"
+      );
     }
-    if (kind === "task_step") return summary || "Research in progress";
-    if (kind === "task_done") return summary || "Research finished";
-    if (kind === "task_error") return summary || "Research failed";
-    return summary || kind || "event";
+    if (kind === "task_step") return compactSummary(summary, "Research in progress");
+    if (kind === "task_done") return compactSummary(summary, "Research finished");
+    if (kind === "task_error") return compactSummary(summary, "Research failed");
+    return compactSummary(summary, kind || "event");
   }
 
   function setConversationStatus(text) {
@@ -413,7 +477,7 @@
     toast.className = "notification-toast";
     toast.innerHTML =
       '<span class="notification-label">Update</span>' +
-      payload.text.replace(/</g, "&lt;");
+      escapeHtml(payload.text);
     document.body.appendChild(toast);
     requestAnimationFrame(function () {
       toast.classList.add("visible");
@@ -450,9 +514,9 @@
       const label = toolEventLabel(ev.kind, ev.summary);
       pill.innerHTML =
         '<span class="kind">' +
-        ev.kind +
+        escapeHtml(ev.kind) +
         "</span> · " +
-        label.replace(/</g, "&lt;");
+        escapeHtml(label);
       activityFeed.appendChild(pill);
     });
     activityFeed.scrollTop = activityFeed.scrollHeight;
@@ -544,27 +608,17 @@
         applyDuck();
         break;
       case "start_capture":
-        if (micRecording) break;
+        if (micRecording || micUserMuted) break;
         if (reason === "interrupted") {
           debugLine("start_capture skipped (interrupt)", "info");
           break;
         }
         if (clientState.playback === "playing") {
           debugLine("start_capture deferred (playback active)", "info");
-          (function tryResumeCapture(attempt) {
-            if (micRecording) return;
-            if (clientState.playback !== "playing") {
-              startMic();
-              return;
-            }
-            if (attempt < 20) {
-              setTimeout(function () {
-                tryResumeCapture(attempt + 1);
-              }, 250);
-            }
-          })(0);
+          pendingStartCapture = true;
           break;
         }
+        pendingStartCapture = false;
         startMic();
         break;
       case "stop_capture":
@@ -681,8 +735,11 @@
 
   function toggleMic() {
     if (micRecording) {
+      micUserMuted = true;
+      pendingStartCapture = false;
       stopMic();
     } else {
+      micUserMuted = false;
       startMic();
     }
   }

@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from server.engine.pool import CompletionPriority, CompletionRequest, EnginePool
+from server.engine.pool import (
+    ChatCompletionResult,
+    CompletionPriority,
+    CompletionRequest,
+    EnginePool,
+)
 from server.engine.prompt import (
     MainPromptContext,
-    build_greeting_prompt,
-    build_main_prompt,
+    build_main_chat_messages,
 )
 from server.logger import get_logger
 from server.memory.session import (
@@ -26,6 +29,7 @@ from server.orchestrator.directives import (
     DelegateDirective,
     RecallDirective,
     RememberDirective,
+    contains_directive_leak,
     execute_directives,
     filter_profile_directives,
     format_recall_results,
@@ -37,8 +41,19 @@ from server.orchestrator.directives import (
     plan_acknowledgment,
     strip_directives,
 )
-from server.orchestrator.plan_stream import PlanStreamHandler
-from server.orchestrator.prose import finalize_assistant_prose, scrub_follow_up_prose
+from server.orchestrator.prose import (
+    finalize_assistant_prose,
+    sanitize_spoken_prose,
+    scrub_follow_up_prose,
+)
+from server.orchestrator.tool_fallback import (
+    fallback_web_search_query,
+    is_insufficient_tool_answer,
+    is_web_search_only_runs,
+    needs_web_search_synthesis,
+    should_fallback_web_search,
+    tool_status_while_searching,
+)
 from server.orchestrator.signal_bus import SignalBus, TaskEventEmitter
 from server.orchestrator.task_board import TaskBoard
 from server.orchestrator.tool_dispatch import (
@@ -46,8 +61,12 @@ from server.orchestrator.tool_dispatch import (
     build_follow_up_context,
     format_subagent_spawn_block,
     run_delegate_directives,
+    run_native_tool_calls,
+    speak_web_search_results,
     split_delegate_directives,
 )
+from server.tools.openai_schema import openai_tools_for_main
+from server.engine.pool import ParsedToolCall
 from server.subagents.worker import SUB_CAPABILITIES, SubAgentWorker
 from server.tools.runner import ToolEventEmitter, ToolRunner
 from server.voice.respond_via import InputKind, RespondVia, apply_respond_via_override
@@ -55,56 +74,21 @@ from server.voice.respond_via import InputKind, RespondVia, apply_respond_via_ov
 log = get_logger("orchestrator.supervisor")
 
 TurnKind = Literal["voice", "chat", "proactive", "system"]
+CompletionMode = Literal["plan", "answer", "retry"]
 
 _EMPTY_ASSISTANT_FALLBACK = (
     "Sorry, I blanked for a second — could you say that again?"
 )
 
-_CASUAL_PHRASES = frozenset(
-    {
-        "hi",
-        "hey",
-        "hello",
-        "yo",
-        "sup",
-        "hiya",
-        "howdy",
-        "thanks",
-        "thank you",
-        "thx",
-        "how are you",
-        "how are you doing",
-        "what's up",
-        "whats up",
-        "good morning",
-        "good night",
-        "bye",
-        "goodbye",
-    }
-)
+_MAX_TOKENS_BY_MODE: dict[CompletionMode, int] = {
+    "plan": 384,
+    "answer": 1024,
+    "retry": 512,
+}
 
 
-def _normalize_casual_text(text: str) -> str:
-    normalized = text.strip().lower().rstrip("?!., ")
-    normalized = re.sub(r"\s+", " ", normalized)
-    replacements = (
-        (r"\bhow r u\b", "how are you"),
-        (r"\bhow are u\b", "how are you"),
-        (r"\bwhat'?s up\b", "whats up"),
-        (r"\bthank u\b", "thank you"),
-        (r"\bthx\b", "thanks"),
-    )
-    for pattern, replacement in replacements:
-        normalized = re.sub(pattern, replacement, normalized)
-    return normalized
-
-
-def _is_casual_message(text: str) -> bool:
-    """Short greetings/small talk — use greeting prompt (no tools / DELEGATE blocks)."""
-    normalized = _normalize_casual_text(text)
-    if not normalized or len(normalized) > 48:
-        return False
-    return normalized in _CASUAL_PHRASES
+def _max_tokens_for_mode(mode: CompletionMode) -> int:
+    return _MAX_TOKENS_BY_MODE[mode]
 
 
 def _history_for_tool_follow_up(history_lines: list[str]) -> list[str]:
@@ -130,6 +114,7 @@ class TurnOutput:
     raw_text: str
     turn_id: str
     respond_via: RespondVia
+    revoice_final: bool = False
 
 
 class Supervisor:
@@ -217,8 +202,6 @@ class Supervisor:
             )
 
         delegates_allowed = True if allow_delegates is None else allow_delegates
-        if delegates_allowed and _is_casual_message(user_text):
-            delegates_allowed = False
 
         warm = await build_warm_profile(self.user_id)
         history = await recent_turns(self.session_id, limit=8)
@@ -246,6 +229,7 @@ class Supervisor:
                 engine_pool=engine_pool,
                 on_token=on_token,
                 allow_delegates=False,
+                completion_mode="answer",
             )
             override = parse_respond_via_override(raw_text)
             respond_via = apply_respond_via_override(override, computed_respond_via)
@@ -268,213 +252,279 @@ class Supervisor:
                 respond_via=respond_via,
             )
 
-        early_tool_tasks: list[asyncio.Task[list[DelegateRun]]] = []
-        early_delegate_sigs: set[tuple] = set()
-
-        def _delegate_sig(d: DelegateDirective) -> tuple:
-            raw_args = d.payload.get("args", {})
-            args = raw_args if isinstance(raw_args, dict) else {}
-            tool = d.payload.get("tool")
-            return (d.capability.lower(), tool, d.goal, json.dumps(args, sort_keys=True))
-
-        def _split_delegates(
-            delegate_directives: list[DelegateDirective],
-        ) -> tuple[list[DelegateDirective], list[DelegateDirective]]:
-            return split_delegate_directives(delegate_directives)
-
-        async def _kick_early_tools(partial: str) -> None:
-            if tool_runner is None:
-                return
-            main_batch, _ = _split_delegates(parse_delegate_directives(partial))
-            pending = [
-                d for d in main_batch if _delegate_sig(d) not in early_delegate_sigs
-            ]
-            if not pending:
-                return
-            for directive in pending:
-                early_delegate_sigs.add(_delegate_sig(directive))
-            ack_label = plan_acknowledgment(partial) or None
-
-            async def _run_batch() -> list[DelegateRun]:
-                return await run_delegate_directives(
-                    user_id=self.user_id,
-                    turn_id=tid,
-                    directives=pending,
-                    runner=tool_runner,
-                    on_event=on_tool_event,
-                    event_label_start=ack_label,
-                )
-
-            task = asyncio.create_task(
-                _run_batch(),
-                name=f"early-tools-{tid[:8]}-{len(early_tool_tasks)}",
-            )
-            early_tool_tasks.append(task)
-
-        plan_handler: PlanStreamHandler | None = None
-        plan_on_token = on_token
-        if tool_runner is not None:
-            plan_handler = PlanStreamHandler(
-                on_status_caption=on_status_caption,
-                on_delegates_ready=_kick_early_tools,
-            )
-
-            async def _plan_on_token(token: str) -> None:
-                await plan_handler.on_token(token)
-                if on_token is not None:
-                    await on_token(token)
-
-            plan_on_token = _plan_on_token
-        raw_text = await self._complete(
+        messages = self._build_main_messages(
             user_text=user_text,
             warm_profile=warm,
             history=history,
             compressed_summary=summary,
-            injected_context="",
+            injected_context=injected_context,
             task_board_block=task_board_block,
-            engine_pool=engine_pool,
-            on_token=plan_on_token,
-        )
-        if plan_handler is not None:
-            raw_text = await plan_handler.finalize()
-
-        await self._apply_task_directives(
-            raw_text,
-            engine_pool=engine_pool,
-            tool_runner=tool_runner,
         )
 
-        profile_directives = filter_profile_directives(parse_directives(raw_text))
-        recall_results = await execute_directives(self.user_id, profile_directives)
-
-        main_directives, sub_directives = _split_delegates(
-            parse_delegate_directives(raw_text)
-        )
-
-        spoken_ack = ""
-        if plan_handler is not None:
-            spoken_ack = plan_acknowledgment(raw_text)
-            if (
-                not plan_handler.ack_sent
-                and on_status_caption is not None
-                and spoken_ack
-                and (main_directives or sub_directives)
-            ):
-                await on_status_caption(spoken_ack)
-
-        spawn_blocks: list[str] = []
-
-        async def _spawn_one(directive: DelegateDirective) -> str | None:
-            cap = directive.capability.lower()
-            if cap not in SUB_CAPABILITIES:
-                return None
-            existing = self.task_board.find_running(cap, directive.goal)
-            if existing is not None:
-                log.info(
-                    "supervisor.spawn_skip_duplicate",
-                    user_id=self.user_id,
-                    task_id=existing.task_id,
-                    goal=directive.goal[:80],
-                )
-                return format_subagent_spawn_block(
-                    existing.task_id, cap, existing.goal
-                )
-            task_id = await self.spawn_subagent(
-                cap,
-                directive.goal,
-                directive.payload,
-                engine_pool=engine_pool,
-                tool_runner=tool_runner,
-                on_tool_event=on_tool_event,
+        first: ChatCompletionResult
+        if tool_runner is not None:
+            first = await engine_pool.complete_chat(
+                CompletionRequest(
+                    prompt=messages,
+                    tools=openai_tools_for_main(tool_runner.registry),
+                    max_tokens=_max_tokens_for_mode("answer"),
+                    cache_prompt=True,
+                    stream=False,
+                    temperature=0.7,
+                    stop=("```", "[TOOL_RESULT", "[SUBAGENT_SPAWN"),
+                ),
             )
-            return format_subagent_spawn_block(task_id, cap, directive.goal)
-
-        remaining_main = [
-            d for d in main_directives if _delegate_sig(d) not in early_delegate_sigs
-        ]
-        parallel_tasks: list[asyncio.Task[Any]] = []
-        if sub_directives and tool_runner is not None:
-            for directive in sub_directives:
-                parallel_tasks.append(
-                    asyncio.create_task(
-                        _spawn_one(directive),
-                        name=f"spawn-{tid[:8]}",
-                    )
-                )
-
-        delegate_runs: list[DelegateRun] = []
-        if remaining_main and tool_runner is not None:
-
-            async def _run_remaining_main() -> list[DelegateRun]:
-                return await run_delegate_directives(
-                    user_id=self.user_id,
-                    turn_id=tid,
-                    directives=remaining_main,
-                    runner=tool_runner,
-                    on_event=on_tool_event,
-                    event_label_start=spoken_ack or None,
-                )
-
-            parallel_tasks.append(
-                asyncio.create_task(
-                    _run_remaining_main(),
-                    name=f"main-tools-{tid[:8]}",
-                )
-            )
-
-        if early_tool_tasks:
-            parallel_tasks.extend(early_tool_tasks)
-
-        if parallel_tasks:
-            results = await asyncio.gather(*parallel_tasks, return_exceptions=False)
-            for result in results:
-                if isinstance(result, list):
-                    delegate_runs.extend(result)
-                elif isinstance(result, str):
-                    spawn_blocks.append(result)
-        elif parse_delegate_directives(raw_text) and tool_runner is None:
-            log.warning(
-                "supervisor.delegates_skipped",
+            log.info(
+                "supervisor.tool_pass",
                 user_id=self.user_id,
-                count=len(parse_delegate_directives(raw_text)),
+                session_id=self.session_id,
+                tool_calls=len(first.tool_calls),
+                finish_reason=first.finish_reason,
+                content_chars=len(first.content or ""),
             )
-
-        recalls = [d for d in profile_directives if isinstance(d, RecallDirective)]
-        remembers = [d for d in profile_directives if isinstance(d, RememberDirective)]
-
-        recall_block = (
-            format_recall_results(recall_results)
-            if recalls and recall_results
-            else ""
-        )
-        injected_context = build_follow_up_context(
-            recall_block=recall_block,
-            spawn_blocks=spawn_blocks,
-            delegate_runs=delegate_runs,
-        )
-
-        follow_up_text = ""
-        if injected_context.strip():
-            history = await recent_turns(self.session_id, limit=8)
-            follow_up_text = await self._complete(
+        else:
+            text = await self._complete(
                 user_text=user_text,
                 warm_profile=warm,
                 history=history,
                 compressed_summary=summary,
                 injected_context=injected_context,
-                task_board_block=self.task_board.render_for_main(),
+                task_board_block=task_board_block,
                 engine_pool=engine_pool,
                 on_token=on_token,
-                allow_delegates=False,
+                completion_mode="answer",
+            )
+            first = ChatCompletionResult(content=text, tool_calls=[])
+
+        spawn_blocks: list[str] = []
+        remembers: list[RememberDirective] = []
+        profile_directives: list = []
+        raw_text = first.content
+        spoken_ack = plan_acknowledgment(raw_text) or (
+            raw_text.strip() if raw_text else ""
+        )
+        delegate_runs: list[DelegateRun] = []
+        follow_up_text = ""
+        revoice_final = False
+        tool_wait_line = tool_status_while_searching(raw_text)
+
+        if first.tool_calls and tool_runner is not None:
+            if tool_wait_line and on_status_caption is not None:
+                await on_status_caption(tool_wait_line)
+
+            delegate_runs = await run_native_tool_calls(
+                user_id=self.user_id,
+                turn_id=tid,
+                tool_calls=first.tool_calls,
+                runner=tool_runner,
+                on_event=on_tool_event,
+                event_label_start=tool_wait_line or None,
+            )
+            follow_up_text, revoice_final = await self._answer_after_web_search(
+                user_text=user_text,
+                warm_profile=warm,
+                history=history,
+                compressed_summary=summary,
+                task_board_block=self.task_board.render_for_main(),
+                spoken_ack=tool_wait_line,
+                delegate_runs=delegate_runs,
+                engine_pool=engine_pool,
+                on_token=on_token,
             )
             raw_text = follow_up_text or raw_text
+        else:
+            await self._apply_task_directives(
+                raw_text,
+                engine_pool=engine_pool,
+                tool_runner=tool_runner,
+            )
 
-        answer_raw = follow_up_text or raw_text
-        if injected_context.strip() and follow_up_text:
-            answer_raw = scrub_follow_up_prose(
+            profile_directives = filter_profile_directives(
+                parse_directives(raw_text)
+            )
+            recall_results = await execute_directives(self.user_id, profile_directives)
+
+            main_directives, sub_directives = split_delegate_directives(
+                parse_delegate_directives(raw_text)
+            )
+
+            if (
+                not main_directives
+                and tool_runner is not None
+                and should_fallback_web_search(model_content=raw_text)
+            ):
+                log.warning(
+                    "supervisor.web_search_fallback",
+                    user_id=self.user_id,
+                    session_id=self.session_id,
+                    user_text=user_text[:120],
+                )
+                search_query = fallback_web_search_query(
+                    user_text=user_text,
+                    model_content=raw_text,
+                )
+                fallback_call = ParsedToolCall(
+                    id="call_fallback_web_search",
+                    name="web_search",
+                    arguments=json.dumps(
+                        {"query": search_query, "max_results": 8},
+                        ensure_ascii=False,
+                    ),
+                )
+                if tool_wait_line and on_status_caption is not None:
+                    await on_status_caption(tool_wait_line)
+                delegate_runs = await run_native_tool_calls(
+                    user_id=self.user_id,
+                    turn_id=tid,
+                    tool_calls=[fallback_call],
+                    runner=tool_runner,
+                    on_event=on_tool_event,
+                    event_label_start=tool_wait_line or None,
+                )
+                follow_up_text, revoice_final = await self._answer_after_web_search(
+                    user_text=user_text,
+                    warm_profile=warm,
+                    history=history,
+                    compressed_summary=summary,
+                    task_board_block=self.task_board.render_for_main(),
+                    spoken_ack=tool_wait_line,
+                    delegate_runs=delegate_runs,
+                    engine_pool=engine_pool,
+                    on_token=on_token,
+                )
+                raw_text = follow_up_text or raw_text
+                main_directives = []
+            elif (
+                on_status_caption is not None
+                and spoken_ack
+                and (main_directives or sub_directives)
+            ):
+                await on_status_caption(spoken_ack)
+
+            async def _spawn_one(directive: DelegateDirective) -> str | None:
+                cap = directive.capability.lower()
+                if cap not in SUB_CAPABILITIES:
+                    return None
+                existing = self.task_board.find_running(cap, directive.goal)
+                if existing is not None:
+                    log.info(
+                        "supervisor.spawn_skip_duplicate",
+                        user_id=self.user_id,
+                        task_id=existing.task_id,
+                        goal=directive.goal[:80],
+                    )
+                    return format_subagent_spawn_block(
+                        existing.task_id, cap, existing.goal
+                    )
+                task_id = await self.spawn_subagent(
+                    cap,
+                    directive.goal,
+                    directive.payload,
+                    engine_pool=engine_pool,
+                    tool_runner=tool_runner,
+                    on_tool_event=on_tool_event,
+                )
+                return format_subagent_spawn_block(task_id, cap, directive.goal)
+
+            parallel_tasks: list[asyncio.Task[Any]] = []
+            if sub_directives and tool_runner is not None:
+                for directive in sub_directives:
+                    parallel_tasks.append(
+                        asyncio.create_task(
+                            _spawn_one(directive),
+                            name=f"spawn-{tid[:8]}",
+                        )
+                    )
+
+            if main_directives and tool_runner is not None:
+
+                async def _run_remaining_main() -> list[DelegateRun]:
+                    return await run_delegate_directives(
+                        user_id=self.user_id,
+                        turn_id=tid,
+                        directives=main_directives,
+                        runner=tool_runner,
+                        on_event=on_tool_event,
+                        event_label_start=spoken_ack or None,
+                    )
+
+                parallel_tasks.append(
+                    asyncio.create_task(
+                        _run_remaining_main(),
+                        name=f"main-tools-{tid[:8]}",
+                    )
+                )
+
+            if parallel_tasks:
+                results = await asyncio.gather(*parallel_tasks, return_exceptions=False)
+                for result in results:
+                    if isinstance(result, list):
+                        delegate_runs.extend(result)
+                    elif isinstance(result, str):
+                        spawn_blocks.append(result)
+            elif parse_delegate_directives(raw_text) and tool_runner is None:
+                log.warning(
+                    "supervisor.delegates_skipped",
+                    user_id=self.user_id,
+                    count=len(parse_delegate_directives(raw_text)),
+                )
+
+            recalls = [
+                d for d in profile_directives if isinstance(d, RecallDirective)
+            ]
+            remembers = [
+                d for d in profile_directives if isinstance(d, RememberDirective)
+            ]
+
+            recall_block = (
+                format_recall_results(recall_results)
+                if recalls and recall_results
+                else ""
+            )
+            injected_context = build_follow_up_context(
+                recall_block=recall_block,
+                spawn_blocks=spawn_blocks,
+                delegate_runs=delegate_runs,
+            )
+
+            if injected_context.strip() and is_insufficient_tool_answer(
+                follow_up_text
+            ):
+                history = await recent_turns(self.session_id, limit=8)
+                follow_up_text = await self._complete(
+                    user_text=user_text,
+                    warm_profile=warm,
+                    history=history,
+                    compressed_summary=summary,
+                    injected_context=injected_context,
+                    task_board_block=self.task_board.render_for_main(),
+                    engine_pool=engine_pool,
+                    on_token=on_token,
+                    allow_delegates=False,
+                    completion_mode="answer",
+                )
+                raw_text = follow_up_text or raw_text
+
+        if follow_up_text and spoken_ack:
+            scrubbed = scrub_follow_up_prose(
                 follow_up_text, spoken_ack=spoken_ack
             )
+            answer_raw = scrubbed if scrubbed.strip() else follow_up_text
+        else:
+            answer_raw = follow_up_text or raw_text
         visible = finalize_assistant_prose(strip_directives(answer_raw))
+        if contains_directive_leak(visible):
+            visible = ""
+        visible, delegate_runs, grounded_revoice = await self._ground_lookup_answer(
+            user_text=user_text,
+            visible=visible,
+            delegate_runs=delegate_runs,
+            tool_runner=tool_runner,
+            turn_id=tid,
+            on_tool_event=on_tool_event,
+        )
+        if grounded_revoice and on_token is not None:
+            revoice_final = True
         if not visible.strip():
             retry_context = ""
             if remembers:
@@ -484,13 +534,26 @@ class Supervisor:
                 )
             elif spawn_blocks:
                 retry_context = (
-                    "A background task was started (see SUBAGENT_SPAWN). "
+                    "A background task was started. "
                     "Tell the user in your own words — do not invent results yet."
                 )
             elif delegate_runs:
-                retry_context = (
-                    "Tool results are above. Answer the user in plain spoken prose."
-                )
+                synthesized = speak_web_search_results(delegate_runs)
+                if synthesized:
+                    visible = sanitize_spoken_prose(synthesized)
+                    retry_context = ""
+                else:
+                    injected = build_follow_up_context(
+                        recall_block="",
+                        spawn_blocks=[],
+                        delegate_runs=delegate_runs,
+                    )
+                    retry_context = (
+                        f"{injected}\n\nGive a short spoken answer with real numbers "
+                        "or facts from the snippets above."
+                        if injected.strip()
+                        else "Tool results are above. Answer in plain spoken prose."
+                    )
             if retry_context:
                 visible = finalize_assistant_prose(
                     strip_directives(
@@ -504,6 +567,7 @@ class Supervisor:
                             engine_pool=engine_pool,
                             on_token=on_token,
                             allow_delegates=False,
+                            completion_mode="retry",
                         )
                     )
                 )
@@ -529,6 +593,7 @@ class Supervisor:
             raw_text=raw_text,
             turn_id=tid,
             respond_via=respond_via,
+            revoice_final=revoice_final,
         )
 
     async def spawn_subagent(
@@ -721,10 +786,166 @@ class Supervisor:
     @staticmethod
     def _ensure_visible_reply(visible: str) -> str:
         text = visible.strip()
-        if text:
+        if text and not contains_directive_leak(text):
             return text
+        if text and contains_directive_leak(text):
+            log.warning("supervisor.directive_leak_fallback")
+            return _EMPTY_ASSISTANT_FALLBACK
         log.warning("supervisor.empty_assistant_fallback")
         return _EMPTY_ASSISTANT_FALLBACK
+
+    def _build_main_messages(
+        self,
+        *,
+        user_text: str,
+        warm_profile: str,
+        history: list,
+        compressed_summary: str,
+        injected_context: str,
+        task_board_block: str,
+    ) -> list[dict[str, Any]]:
+        history_lines = [f"{turn.role}: {turn.text}" for turn in history]
+        return build_main_chat_messages(
+            MainPromptContext(
+                user_text=user_text,
+                warm_profile=warm_profile,
+                history_lines=history_lines,
+                compressed_summary=compressed_summary,
+                recall_context=injected_context,
+                task_board_block=task_board_block,
+            ),
+        )
+
+    async def _ground_lookup_answer(
+        self,
+        *,
+        user_text: str,
+        visible: str,
+        delegate_runs: list[DelegateRun],
+        tool_runner: ToolRunner | None,
+        turn_id: str,
+        on_tool_event: ToolEventEmitter | None,
+    ) -> tuple[str, list[DelegateRun], bool]:
+        """Replace acks, leaks, and hallucinated prices with real search snippets."""
+        if not needs_web_search_synthesis(visible, delegate_runs):
+            return sanitize_spoken_prose(visible), delegate_runs, False
+
+        runs = list(delegate_runs)
+        has_ok_search = any(
+            r.tool_name == "web_search" and r.result.status == "ok" for r in runs
+        )
+        if not has_ok_search and tool_runner is not None:
+            search_query = fallback_web_search_query(
+                user_text=user_text,
+                model_content=visible,
+            )
+            emergency_call = ParsedToolCall(
+                id="call_emergency_web_search",
+                name="web_search",
+                arguments=json.dumps(
+                    {"query": search_query, "max_results": 8, "search_depth": "basic"},
+                    ensure_ascii=False,
+                ),
+            )
+            log.warning(
+                "supervisor.emergency_web_search",
+                user_id=self.user_id,
+                session_id=self.session_id,
+                query=search_query[:120],
+            )
+            runs = await run_native_tool_calls(
+                user_id=self.user_id,
+                turn_id=turn_id,
+                tool_calls=[emergency_call],
+                runner=tool_runner,
+                on_event=on_tool_event,
+            )
+
+        synthesized = speak_web_search_results(runs)
+        if synthesized:
+            log.info(
+                "supervisor.web_search_speech_fallback",
+                user_id=self.user_id,
+                session_id=self.session_id,
+                chars=len(synthesized),
+            )
+            return sanitize_spoken_prose(synthesized), runs, True
+
+        return sanitize_spoken_prose(visible), runs, False
+
+    async def _answer_after_web_search(
+        self,
+        *,
+        user_text: str,
+        warm_profile: str,
+        history: list,
+        compressed_summary: str,
+        task_board_block: str,
+        spoken_ack: str,
+        delegate_runs: list[DelegateRun],
+        engine_pool: EnginePool,
+        on_token: Callable[[str], Awaitable[None]] | None,
+    ) -> tuple[str, bool]:
+        """Prefer search snippets over a streaming LLM follow-up for web_search."""
+        streamed = on_token is not None
+        if is_web_search_only_runs(delegate_runs):
+            synthesized = speak_web_search_results(delegate_runs)
+            if synthesized:
+                return synthesized, streamed
+        follow_up_text = await self._follow_up_after_tool_runs(
+            user_text=user_text,
+            warm_profile=warm_profile,
+            history=history,
+            compressed_summary=compressed_summary,
+            task_board_block=task_board_block,
+            spoken_ack=spoken_ack,
+            delegate_runs=delegate_runs,
+            engine_pool=engine_pool,
+            on_token=None if is_web_search_only_runs(delegate_runs) else on_token,
+        )
+        if needs_web_search_synthesis(follow_up_text, delegate_runs):
+            synthesized = speak_web_search_results(delegate_runs)
+            if synthesized:
+                return synthesized, streamed
+        return follow_up_text, False
+
+    async def _follow_up_after_tool_runs(
+        self,
+        *,
+        user_text: str,
+        warm_profile: str,
+        history: list,
+        compressed_summary: str,
+        task_board_block: str,
+        spoken_ack: str,
+        delegate_runs: list[DelegateRun],
+        engine_pool: EnginePool,
+        on_token: Callable[[str], Awaitable[None]] | None,
+    ) -> str:
+        """Second pass: inject tool snippets as text (Gemma-friendly vs role=tool)."""
+        injected = build_follow_up_context(
+            recall_block="",
+            spawn_blocks=[],
+            delegate_runs=delegate_runs,
+        )
+        if spoken_ack.strip():
+            injected = (
+                f"{injected}\n\nDo not repeat this opening: {spoken_ack.strip()}"
+                if injected.strip()
+                else f"Do not repeat this opening: {spoken_ack.strip()}"
+            )
+        return await self._complete(
+            user_text=user_text,
+            warm_profile=warm_profile,
+            history=history,
+            compressed_summary=compressed_summary,
+            injected_context=injected,
+            task_board_block=task_board_block,
+            engine_pool=engine_pool,
+            on_token=on_token,
+            allow_delegates=False,
+            completion_mode="answer",
+        )
 
     async def _complete(
         self,
@@ -738,10 +959,10 @@ class Supervisor:
         engine_pool: EnginePool,
         on_token: Callable[[str], Awaitable[None]] | None,
         allow_delegates: bool = True,
+        completion_mode: CompletionMode | None = None,
         retry_on_empty: bool = True,
         use_stream: bool = True,
         temperature: float = 0.7,
-        include_tools: bool | None = None,
     ) -> str:
         history_lines = [f"{turn.role}: {turn.text}" for turn in history]
         if injected_context.strip() and "[TOOL_RESULT" in injected_context:
@@ -757,44 +978,38 @@ class Supervisor:
                 if context
                 else no_delegate_instruction
             )
-        casual = _is_casual_message(user_text)
-        use_greeting_prompt = casual and "[TOOL_RESULT" not in injected_context
-        if include_tools is None:
-            include_tools = allow_delegates and not casual
-        if use_greeting_prompt:
-            prompt = build_greeting_prompt(user_text=user_text)
-        else:
-            prompt = build_main_prompt(
-                MainPromptContext(
-                    user_text=user_text,
-                    warm_profile=warm_profile,
-                    history_lines=history_lines,
-                    compressed_summary=compressed_summary,
-                    recall_context=context,
-                    task_board_block=task_board_block,
-                ),
-                include_tools=include_tools,
-            )
+        mode: CompletionMode = completion_mode or (
+            "plan" if allow_delegates else "answer"
+        )
+        prompt = build_main_chat_messages(
+            MainPromptContext(
+                user_text=user_text,
+                warm_profile=warm_profile,
+                history_lines=history_lines,
+                compressed_summary=compressed_summary,
+                recall_context=context,
+                task_board_block=task_board_block,
+            ),
+        )
         request = CompletionRequest(
             prompt=prompt,
-            stop=("\n\n```", "\n```\n"),
-            max_tokens=300 if not allow_delegates else 512,
-            cache_prompt=False,
+            stop=("```", "[TOOL_RESULT", "[SUBAGENT_SPAWN"),
+            max_tokens=_max_tokens_for_mode(mode),
+            cache_prompt=True,
             stream=use_stream,
             temperature=temperature,
-            pin_slot=False,
+            pin_slot=True,
         )
         log.debug(
             "llm.request",
             user_id=self.user_id,
             session_id=self.session_id,
             allow_delegates=allow_delegates,
-            prompt_chars=len(prompt),
+            completion_mode=mode,
+            prompt_chars=len(json.dumps(prompt)) if isinstance(prompt, list) else len(prompt),
             max_tokens=request.max_tokens,
             stream=use_stream,
-            include_tools=include_tools,
-            casual=use_greeting_prompt,
-            pin_slot=False,
+            pin_slot=True,
         )
         handle = await engine_pool.submit(
             request, CompletionPriority.P0_MAIN, slot_hint=None
@@ -834,10 +1049,10 @@ class Supervisor:
                     engine_pool=engine_pool,
                     on_token=on_token,
                     allow_delegates=False,
+                    completion_mode="retry",
                     retry_on_empty=False,
                     use_stream=False,
                     temperature=0.85,
-                    include_tools=False,
                 )
         log.debug(
             "llm.response",

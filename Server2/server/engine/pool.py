@@ -6,7 +6,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -21,14 +21,32 @@ class CompletionPriority(IntEnum):
     P2_SUMMARIZER = 2
 
 
+ChatMessage = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ParsedToolCall:
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True)
+class ChatCompletionResult:
+    content: str
+    tool_calls: list[ParsedToolCall]
+    finish_reason: str | None = None
+
+
 @dataclass(frozen=True)
 class CompletionRequest:
-    prompt: str
+    prompt: str | list[ChatMessage]
     max_tokens: int = 512
     temperature: float = 0.7
     stop: tuple[str, ...] = ()
     cache_prompt: bool = False
     stream: bool = True
+    tools: list[dict[str, Any]] | None = None
     # When False, omit slot_id on the HTTP request so llama-server does not reuse
     # a poisoned per-slot KV cache (Gemma may EOS with empty content on slot 0).
     pin_slot: bool = True
@@ -44,6 +62,15 @@ class CompletionClient(Protocol):
     ) -> AsyncIterator[str]:
         ...
 
+    async def complete_chat(
+        self,
+        *,
+        base_url: str,
+        slot_id: int | None,
+        request: CompletionRequest,
+    ) -> ChatCompletionResult:
+        ...
+
 
 class LlamaCompletionClient:
     def stream_completion(
@@ -54,6 +81,20 @@ class LlamaCompletionClient:
         request: CompletionRequest,
     ) -> AsyncIterator[str]:
         return self._stream_completion(base_url=base_url, slot_id=slot_id, request=request)
+
+    async def complete_chat(
+        self,
+        *,
+        base_url: str,
+        slot_id: int | None,
+        request: CompletionRequest,
+    ) -> ChatCompletionResult:
+        data = await self._fetch_completion_json(
+            base_url=base_url,
+            slot_id=slot_id,
+            request=request,
+        )
+        return parse_chat_completion(data)
 
     @staticmethod
     def _completion_params(slot_id: int | None, request: CompletionRequest) -> dict[str, int]:
@@ -81,24 +122,33 @@ class LlamaCompletionClient:
         emitted = False
         sample = ""
         payload: dict[str, object] = {
-            "prompt": request.prompt,
             "stream": True,
-            "n_predict": request.max_tokens,
             "temperature": request.temperature,
             "cache_prompt": request.cache_prompt,
         }
-        if request.stop:
-            payload["stop"] = list(request.stop)
+        payload.update(self._chat_payload(request))
+        if isinstance(request.prompt, list):
+            endpoint = f"{base_url}/v1/chat/completions"
+        else:
+            endpoint = f"{base_url}/completion"
 
         query = self._completion_params(slot_id, request)
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream(
                 "POST",
-                f"{base_url}/completion",
+                endpoint,
                 params=query,
                 json=payload,
                 headers={"Accept": "text/event-stream"},
             ) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    log.error(
+                        "engine.completion_http_error",
+                        endpoint=endpoint,
+                        status=response.status_code,
+                        body=body.decode(errors="replace")[:500],
+                    )
                 response.raise_for_status()
                 buffer = ""
                 async for chunk_text in response.aiter_text():
@@ -145,6 +195,60 @@ class LlamaCompletionClient:
                 )
                 yield fallback
 
+    @staticmethod
+    def _chat_payload(request: CompletionRequest) -> dict[str, object]:
+        payload: dict[str, object] = {}
+        if isinstance(request.prompt, list):
+            payload["messages"] = request.prompt
+            payload["max_tokens"] = request.max_tokens
+        else:
+            payload["prompt"] = request.prompt
+            payload["n_predict"] = request.max_tokens
+        if request.tools:
+            payload["tools"] = request.tools
+            payload["tool_choice"] = "auto"
+        if request.stop:
+            payload["stop"] = list(request.stop)
+        return payload
+
+    async def _fetch_completion_json(
+        self,
+        *,
+        base_url: str,
+        slot_id: int | None,
+        request: CompletionRequest,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "stream": False,
+            "temperature": request.temperature,
+            "cache_prompt": request.cache_prompt,
+        }
+        payload.update(self._chat_payload(request))
+        if isinstance(request.prompt, list):
+            endpoint = f"{base_url}/v1/chat/completions"
+        else:
+            endpoint = f"{base_url}/completion"
+
+        query = self._completion_params(slot_id, request)
+        async with httpx.AsyncClient(timeout=None) as client:
+            response = await client.post(
+                endpoint,
+                params=query,
+                json=payload,
+            )
+            if response.status_code >= 400:
+                log.error(
+                    "engine.completion_http_error",
+                    endpoint=endpoint,
+                    status=response.status_code,
+                    body=response.text[:500],
+                )
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, dict):
+                return data
+        return {}
+
     async def _fetch_completion_non_stream(
         self,
         *,
@@ -152,28 +256,12 @@ class LlamaCompletionClient:
         slot_id: int | None,
         request: CompletionRequest,
     ) -> str:
-        payload: dict[str, object] = {
-            "prompt": request.prompt,
-            "stream": False,
-            "n_predict": request.max_tokens,
-            "temperature": request.temperature,
-            "cache_prompt": request.cache_prompt,
-        }
-        if request.stop:
-            payload["stop"] = list(request.stop)
-
-        query = self._completion_params(slot_id, request)
-        async with httpx.AsyncClient(timeout=None) as client:
-            response = await client.post(
-                f"{base_url}/completion",
-                params=query,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
-            if isinstance(data, dict):
-                return extract_completion_text(data)
-        return ""
+        data = await self._fetch_completion_json(
+            base_url=base_url,
+            slot_id=slot_id,
+            request=request,
+        )
+        return extract_completion_text(data)
 
 
 class CompletionHandle:
@@ -318,6 +406,47 @@ class EnginePool:
     async def cancel(self, handle: CompletionHandle) -> None:
         handle.cancelled = True
         await handle.finish()
+
+    async def complete_chat(
+        self,
+        request: CompletionRequest,
+        priority: CompletionPriority = CompletionPriority.P0_MAIN,
+        slot_hint: int | None = None,
+    ) -> ChatCompletionResult:
+        """Non-streaming chat completion — used for native tool-calling turns."""
+        if self._closed:
+            raise RuntimeError("EnginePool is closed")
+        if self._dispatcher_task is None:
+            self.start()
+        slot_id = await self._claim_slot(slot_hint)
+        try:
+            non_stream_request = CompletionRequest(
+                prompt=request.prompt,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                stop=request.stop,
+                cache_prompt=request.cache_prompt,
+                stream=False,
+                tools=request.tools,
+                pin_slot=request.pin_slot,
+            )
+            complete_chat = getattr(self._completion_client, "complete_chat", None)
+            if callable(complete_chat):
+                return await complete_chat(
+                    base_url=self.base_url,
+                    slot_id=slot_id,
+                    request=non_stream_request,
+                )
+            text = ""
+            async for token in self._completion_client.stream_completion(
+                base_url=self.base_url,
+                slot_id=slot_id,
+                request=non_stream_request,
+            ):
+                text += token
+            return ChatCompletionResult(content=text, tool_calls=[])
+        finally:
+            await self.release_slot(slot_id)
 
     async def reserve_slot(self, role: str, task_id: str | None = None) -> int:
         preferred = 0 if role == "main" else None
@@ -470,6 +599,64 @@ async def reserve_slot(role: str, task_id: str | None = None) -> int:
 
 async def release_slot(slot_id: int) -> None:
     await get_engine_pool().release_slot(slot_id)
+
+
+def parse_chat_completion(data: dict[str, object]) -> ChatCompletionResult:
+    """Parse llama-server /v1/chat/completions JSON into content + tool_calls."""
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ChatCompletionResult(content=extract_completion_text(data), tool_calls=[])
+
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ChatCompletionResult(content="", tool_calls=[])
+
+    finish_reason = first.get("finish_reason")
+    finish = finish_reason if isinstance(finish_reason, str) else None
+
+    message = first.get("message")
+    if not isinstance(message, dict):
+        return ChatCompletionResult(content=extract_completion_text(data), tool_calls=[], finish_reason=finish)
+
+    content_raw = message.get("content")
+    content = content_raw if isinstance(content_raw, str) else ""
+
+    tool_calls: list[ParsedToolCall] = []
+    raw_calls = message.get("tool_calls")
+    if isinstance(raw_calls, list):
+        for index, item in enumerate(raw_calls):
+            if not isinstance(item, dict):
+                continue
+            fn = item.get("function")
+            if not isinstance(fn, dict):
+                continue
+            name = fn.get("name")
+            args = fn.get("arguments")
+            if not isinstance(name, str):
+                continue
+            call_id = item.get("id")
+            if not isinstance(call_id, str) or not call_id:
+                call_id = f"call_{index}"
+            tool_calls.append(
+                ParsedToolCall(
+                    id=call_id,
+                    name=name,
+                    arguments=args if isinstance(args, str) else json.dumps(args or {}),
+                )
+            )
+
+    return ChatCompletionResult(content=content, tool_calls=tool_calls, finish_reason=finish)
+
+
+def tool_calls_to_openai_message(tool_calls: list[ParsedToolCall]) -> list[dict[str, object]]:
+    return [
+        {
+            "id": call.id,
+            "type": "function",
+            "function": {"name": call.name, "arguments": call.arguments},
+        }
+        for call in tool_calls
+    ]
 
 
 def extract_completion_text(data: dict[str, object]) -> str:

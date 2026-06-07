@@ -21,6 +21,7 @@ def compute_respond_via(
     capabilities_tts: bool,
     client_state: ClientControlSession,
     input_kind: InputKind,
+    force_voice: bool = False,
 ) -> RespondViaDecision:
     """Rule 13 decision table (PLAN.md §7.5)."""
     if input_kind == "voice":
@@ -30,6 +31,16 @@ def compute_respond_via(
         return RespondViaDecision(respond_via="chat_only", interrupt_policy="queue")
 
     if input_kind == "chat":
+        if (
+            force_voice
+            and capabilities_tts
+            and client_state.route != "none"
+            and client_state.mode != "meeting"
+            and client_state.visible
+        ):
+            return RespondViaDecision(
+                respond_via="voice_and_chat", interrupt_policy="queue"
+            )
         if not capabilities_tts:
             return RespondViaDecision(respond_via="chat_only", interrupt_policy="queue")
         if client_state.playback == "playing":

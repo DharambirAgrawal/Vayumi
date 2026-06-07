@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Literal
 from starlette.websockets import WebSocket
 
 from server.logger import get_logger
+from server.orchestrator.directives import strip_directives
 from server.orchestrator.prose import sanitize_spoken_prose
 from server.transport.outbound import send_json
 from server.transport.protocol import (
@@ -60,7 +61,7 @@ async def deliver_turn_output(
     streaming_pipeline: StreamingTtsPipeline | None = None,
 ) -> None:
     """§5.5: captions + optional TTS + canonical chat_message."""
-    text = sanitize_spoken_prose(assistant_text.strip())
+    text = sanitize_spoken_prose(strip_directives(assistant_text.strip()))
     streamed_during_llm = streaming_pipeline is not None
     streaming_audio_ok = (
         streaming_pipeline is not None and streaming_pipeline.audio_delivered
@@ -132,11 +133,12 @@ async def deliver_interrupted_partial(
     turn_id: str,
     partial_text: str,
 ) -> None:
+    text = sanitize_spoken_prose(strip_directives(partial_text.strip()))
     await send_json(
         websocket,
         AssistantChatMessage(
             payload=AssistantChatMessagePayload(
-                text=partial_text,
+                text=text,
                 turn_id=turn_id,
                 final=False,
             ),
