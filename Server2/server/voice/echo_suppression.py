@@ -20,6 +20,8 @@ from server.voice.tts_stream import stream_tts_sentences
 
 log = get_logger("voice.echo_suppression")
 
+_scheduled_start_capture: dict[int, str] = {}
+
 
 async def begin_tts_with_echo_suppression(
     websocket: WebSocket,
@@ -93,6 +95,7 @@ async def begin_tts_with_echo_suppression(
                     websocket,
                     turn_id=turn_id,
                     delay_ms=suppression_delay_ms,
+                    capture_state=None,
                 ),
                 name=f"echo-clear-{turn_id}",
             )
@@ -105,6 +108,7 @@ async def schedule_start_capture(
     *,
     turn_id: str,
     delay_ms: int,
+    capture_state: str | None = None,
 ) -> None:
     """Resume mic capture after echo suppression delay. Shared by all TTS paths."""
     await asyncio.sleep(delay_ms / 1000.0)
@@ -112,4 +116,12 @@ async def schedule_start_capture(
 
     if websocket.client_state != WebSocketState.CONNECTED:
         return
+    ws_id = id(websocket)
+    if _scheduled_start_capture.get(ws_id) == turn_id:
+        log.debug("echo_suppression.start_capture_skip_duplicate", turn_id=turn_id)
+        return
+    if capture_state == "recording":
+        log.debug("echo_suppression.start_capture_skip_recording", turn_id=turn_id)
+        return
+    _scheduled_start_capture[ws_id] = turn_id
     await send_client_control(websocket, "start_capture", "echo_clear", turn_id=turn_id)

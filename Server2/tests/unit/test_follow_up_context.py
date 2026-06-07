@@ -25,6 +25,6 @@ def test_multi_part_context_includes_immediate_and_background() -> None:
     )
     assert "Immediate result" in ctx
     assert "Nepal news" in ctx
-    assert "Background task started" in ctx
+    assert "Background research started" in ctx
     assert "SUBAGENT_SPAWN" not in ctx
     assert "multiple things" in ctx.lower() or "multiple" in ctx.lower()

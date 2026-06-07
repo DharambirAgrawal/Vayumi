@@ -32,10 +32,10 @@ from server.transport.protocol import (
     parse_client_message,
 )
 from server.transport.session_registry import UserSession, enforce_session_singleton
+from server.transport.session_busy import chat_should_queue, session_busy
 from server.transport.turn_coordinator import (
     defer_voice_utterance,
     persist_interrupted_assistant,
-    session_busy,
     start_voice_turn,
 )
 from server.voice.respond_via import compute_respond_via
@@ -232,7 +232,42 @@ async def _handle_text(
         await _handle_interrupt(websocket, msg, session)
 
     elif isinstance(msg, ClientStateMessage):
+        prev_playback = session.client_control.playback
         session.client_control.handle_client_state(msg.payload)
+        if prev_playback == "playing" and msg.payload.playback == "idle":
+            from server.transport.chat_queue import (
+                drain_queued_chat,
+                try_deliver_pending_chat,
+            )
+
+            settings = websocket.app.state.settings
+            await try_deliver_pending_chat(websocket, session, settings)
+            if (
+                session.queued_chat is not None
+                or session.pending_chat_delivery is not None
+            ):
+                engine_pool = websocket.app.state.engine_pool
+                from server.transport.turn_coordinator import run_supervisor_text_turn
+
+                async def _run_queued_chat_turn(
+                    ws, sess, text, st, pool, *, force_voice: bool = False
+                ) -> None:
+                    await run_supervisor_text_turn(
+                        ws,
+                        sess,
+                        text,
+                        st,
+                        pool,
+                        input_kind="chat",
+                        force_voice=force_voice,
+                    )
+
+                await drain_queued_chat(
+                    session,
+                    websocket,
+                    engine_pool,
+                    run_chat_turn=_run_queued_chat_turn,
+                )
 
     elif isinstance(msg, ModeMessage):
         session.client_control.set_mode(msg.payload.mode)
@@ -253,9 +288,10 @@ async def _handle_text(
 async def _handle_interrupt(
     websocket: WebSocket, msg: InterruptMessage, session: UserSession
 ) -> None:
+    from server.orchestrator.directives import strip_directives
     from server.voice.delivery import deliver_interrupted_partial
 
-    partial = session.accumulated_partial
+    partial = strip_directives(session.accumulated_partial)
     await send_interrupt_controls(
         websocket,
         turn_id=session.interrupt.turn_id or None,
@@ -266,7 +302,7 @@ async def _handle_interrupt(
         session.turn_task.cancel()
     if session.queued_chat_task and not session.queued_chat_task.done():
         session.queued_chat_task.cancel()
-        session.queued_chat_text = None
+        session.queued_chat = None
         session.queued_chat_task = None
     if partial and session.interrupt.turn_id:
         await deliver_interrupted_partial(
@@ -326,6 +362,23 @@ async def _handle_audio_end(
 async def _handle_chat(
     websocket: WebSocket, msg: ChatMessage, session: UserSession, settings: Settings
 ) -> None:
+    try:
+        await _handle_chat_inner(websocket, msg, session, settings)
+    except Exception:
+        log.exception(
+            "ws.chat_failed",
+            user_id=session.user_id,
+            text=(msg.payload.text or "")[:80],
+        )
+        err = ErrorMessage(
+            payload=ErrorPayload(code=4500, message="Could not process chat message")
+        )
+        await send_json(websocket, err)
+
+
+async def _handle_chat_inner(
+    websocket: WebSocket, msg: ChatMessage, session: UserSession, settings: Settings
+) -> None:
     log.info(
         "ws.chat_received",
         user_id=session.user_id,
@@ -338,14 +391,46 @@ async def _handle_chat(
         input_kind="chat",
     )
 
-    if session_busy(session) and decision.interrupt_policy == "queue":
-        if session.queued_chat_task and not session.queued_chat_task.done():
-            session.queued_chat_task.cancel()
-        session.queued_chat_text = msg.payload.text
-        engine_pool: EnginePool = websocket.app.state.engine_pool
-        session.queued_chat_task = asyncio.create_task(
-            _wait_and_run_queued_chat(websocket, session, settings, engine_pool),
-            name=f"queued-chat-{session.user_id}",
+    should_queue = chat_should_queue(
+        session, interrupt_policy=decision.interrupt_policy
+    )
+    if should_queue:
+        from server.orchestrator.tool_fallback import is_trivial_chat_followup
+        from server.transport.chat_queue import enqueue_chat
+
+        if is_trivial_chat_followup(msg.payload.text) and (
+            session.queued_chat is not None
+            or session.pending_chat_delivery is not None
+            or (
+                session.queued_compute_task is not None
+                and not session.queued_compute_task.done()
+            )
+        ):
+            log.debug(
+                "ws.chat_ignored_trivial",
+                user_id=session.user_id,
+                text=msg.payload.text,
+            )
+            return
+        from server.transport.outbound import send_json
+        from server.transport.protocol import CaptionMessage, CaptionPayload
+
+        enqueue_chat(session, msg.payload.text, prefer_voice=True)
+        await send_json(
+            websocket,
+            CaptionMessage(
+                payload=CaptionPayload(
+                    text="Got it — working on that now while I finish speaking.",
+                    partial=False,
+                    turn_id=None,
+                ),
+            ),
+        )
+        engine_pool = websocket.app.state.engine_pool
+        from server.transport.chat_queue import start_background_chat_compute
+
+        await start_background_chat_compute(
+            websocket, session, settings, engine_pool
         )
         return
 
@@ -357,28 +442,14 @@ async def _handle_chat(
     session.interrupt.attach_turn_task(session.turn_task)
 
 
-async def _wait_and_run_queued_chat(
-    websocket: WebSocket,
-    session: UserSession,
-    settings: Settings,
-    engine_pool: EnginePool,
-) -> None:
-    while session_busy(session):
-        await asyncio.sleep(0.05)
-    text = session.queued_chat_text
-    session.queued_chat_text = None
-    session.queued_chat_task = None
-    if not text:
-        return
-    await _run_chat_turn(websocket, session, text, settings, engine_pool)
-
-
 async def _run_chat_turn(
     websocket: WebSocket,
     session: UserSession,
     text: str,
     settings: Settings,
     engine_pool: EnginePool,
+    *,
+    force_voice: bool = False,
 ) -> None:
     from server.transport.turn_coordinator import run_supervisor_text_turn
 
@@ -389,6 +460,7 @@ async def _run_chat_turn(
         settings,
         engine_pool,
         input_kind="chat",
+        force_voice=force_voice,
     )
 
 

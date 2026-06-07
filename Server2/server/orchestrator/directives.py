@@ -252,6 +252,12 @@ def strip_internal_tool_blocks(text: str) -> str:
             stripped = remainder
         if TOOL_SEARCH_META_RE.match(stripped):
             continue
+        if re.search(r"\d+\s+result\(s\)\s+from\s+tavily", stripped, re.IGNORECASE):
+            continue
+        if re.match(r"^\d+\.\s+.+\s+—\s+", stripped):
+            continue
+        if stripped.startswith("=== ") or stripped.startswith("--- Immediate result"):
+            continue
         if stripped in ("Here's a summary of the results:", "Here's a summary:"):
             continue
         kept.append(stripped)
@@ -303,7 +309,29 @@ def strip_directives(text: str) -> str:
     cleaned = strip_internal_tool_blocks(cleaned)
     cleaned = re.sub(r"^\s*[\]\[!]+\s*$", "", cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r"^\s*\]\s*", "", cleaned)
+    # Remove lines with partial or complete [DELEGATE blocks
+    kept: list[str] = []
+    for line in cleaned.splitlines():
+        if re.search(r"\[DELEGATE\b", line, re.IGNORECASE):
+            continue
+        kept.append(line)
+    cleaned = "\n".join(kept)
+    # Strip trailing incomplete [DELEGATE ... (no closing ])
+    cleaned = re.sub(
+        r"\[DELEGATE\b[^\]]*$", "", cleaned, flags=re.IGNORECASE | re.DOTALL
+    )
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+_DIRECTIVE_LEAK_RE = re.compile(
+    r"\[DELEGATE\b|(?:^|\s)capability=\w+.*goal=|payload=\{",
+    re.IGNORECASE,
+)
+
+
+def contains_directive_leak(text: str) -> bool:
+    """True when model output still contains internal directive syntax."""
+    return bool(_DIRECTIVE_LEAK_RE.search(text.strip()))
 
 
 async def execute_directives(

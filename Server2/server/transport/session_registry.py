@@ -7,6 +7,7 @@ from starlette.websockets import WebSocket, WebSocketState
 
 from server.logger import get_logger
 from server.orchestrator.supervisor import Supervisor
+from server.transport.queue_types import PendingChatDelivery, QueuedChat
 from server.transport.client_control import ClientControlSession
 from server.transport.protocol import EventMessage, EventPayload, serialize_server_message
 from server.voice.interrupt import InterruptController
@@ -26,8 +27,11 @@ class UserSession:
     capabilities: dict[str, bool] = field(default_factory=dict)
     websocket: WebSocket | None = None
     turn_task: asyncio.Task[None] | None = None
-    queued_chat_text: str | None = None
+    queued_chat: QueuedChat | None = None
     queued_chat_task: asyncio.Task[None] | None = None
+    pending_chat_delivery: PendingChatDelivery | None = None
+    queued_compute_task: asyncio.Task[None] | None = None
+    last_start_capture_turn_id: str = ""
     accumulated_partial: str = ""
     voice_capture_active: bool = False
     voice_chunks: list[bytes] = field(default_factory=list)

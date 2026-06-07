@@ -45,6 +45,22 @@ def test_sanitize_collapses_trailing_bang_after_period() -> None:
     assert sanitize_spoken_prose("Busy day.!") == "Busy day."
 
 
+def test_sanitize_strips_markdown_bullets() -> None:
+    raw = "Summary: * **Founded:** SpaceX was founded in 2002. * **Mission:** Mars."
+    cleaned = sanitize_spoken_prose(raw)
+    assert "**" not in cleaned
+    assert "Founded:" in cleaned
+
+
+def test_sanitize_strips_inline_web_search_tag() -> None:
+    raw = (
+        'You are welcome! [web_search query="NVIDIA stock price"]'
+    )
+    cleaned = sanitize_spoken_prose(raw)
+    assert "web_search" not in cleaned
+    assert "You are welcome" in cleaned
+
+
 def test_texts_largely_repeat_detects_paraphrase() -> None:
     a = "I'm doing well, thank you for asking!"
     b = "I'm doing well, thank you for asking! It's nice to hear from you."

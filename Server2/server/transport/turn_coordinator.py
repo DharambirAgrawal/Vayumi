@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Literal
 from starlette.websockets import WebSocket
 
 from server.logger import get_logger
+from server.orchestrator.directives import strip_directives
+from server.transport.session_busy import session_busy
 from server.transport.session_registry import UserSession
 from server.voice.respond_via import InputKind, RespondVia, compute_respond_via
 
@@ -16,10 +18,6 @@ if TYPE_CHECKING:
     from server.engine.pool import EnginePool
 
 log = get_logger("transport.turn_coordinator")
-
-
-def session_busy(session: UserSession) -> bool:
-    return session.interrupt.state.value in ("speaking", "thinking")
 
 
 async def persist_interrupted_assistant(
@@ -123,6 +121,7 @@ async def run_supervisor_text_turn(
     allow_delegates: bool | None = None,
     injected_context: str = "",
     interrupt_policy: Literal["replace", "queue"] | None = None,
+    force_voice: bool = False,
 ) -> None:
     """Shared chat/proactive turn delivery with streaming TTS and echo suppression."""
     from server.transport.ws import make_activity_event_emitter
@@ -138,6 +137,7 @@ async def run_supervisor_text_turn(
             capabilities_tts=session.capabilities.get("tts", True),
             client_state=session.client_control,
             input_kind=input_kind,
+            force_voice=force_voice,
         )
         respond_via = decision.respond_via
         policy = decision.interrupt_policy
@@ -160,8 +160,15 @@ async def run_supervisor_text_turn(
         and policy == "queue"
         and input_kind != "proactive"
     ):
+        from server.transport.chat_queue import enqueue_chat
+
+        enqueue_chat(
+            session,
+            text,
+            prefer_voice=force_voice or input_kind == "chat",
+        )
         log.debug(
-            "supervisor_text_turn.deferred_busy",
+            "turn.requeued_busy",
             user_id=session.user_id,
             input_kind=input_kind,
         )
@@ -220,7 +227,21 @@ async def run_supervisor_text_turn(
         )
         session.turn_llm_persisted = True
         delay = suppression_delay_ms(session, settings)
-        if pipeline is not None:
+        delivery_pipeline = pipeline
+        if output.revoice_final and pipeline is not None:
+            from server.transport.client_control import send_client_control
+
+            await pipeline.cancel()
+            await send_client_control(
+                websocket, "clear_queue", "answer_corrected", turn_id=tid
+            )
+            delivery_pipeline = None
+            log.info(
+                "turn.revoice_final",
+                user_id=session.user_id,
+                turn_id=tid,
+            )
+        elif pipeline is not None:
             await pipeline.flush()
             await pipeline.finish(delay)
         await deliver_turn_output(
@@ -231,8 +252,8 @@ async def run_supervisor_text_turn(
             interrupt=session.interrupt,
             tts=voice["tts"],
             suppression_delay_ms=delay,
-            stream_captions_during_llm=True,
-            streaming_pipeline=pipeline,
+            stream_captions_during_llm=delivery_pipeline is not None,
+            streaming_pipeline=delivery_pipeline,
         )
         log.info(
             "turn.chat_complete",
@@ -246,12 +267,13 @@ async def run_supervisor_text_turn(
         if pipeline is not None:
             await pipeline.cancel()
         if session.accumulated_partial:
+            cleaned_partial = strip_directives(session.accumulated_partial)
             await deliver_interrupted_partial(
                 websocket,
                 turn_id=tid,
-                partial_text=session.accumulated_partial,
+                partial_text=cleaned_partial,
             )
-            await persist_interrupted_assistant(session, session.accumulated_partial)
+            await persist_interrupted_assistant(session, cleaned_partial)
         raise
     except Exception as exc:
         from server.transport.outbound import send_json
@@ -272,9 +294,17 @@ async def run_supervisor_text_turn(
         if input_kind in ("chat", "voice"):
             from server.transport.chat_queue import drain_queued_chat
 
-            async def _run_chat_turn(ws, sess, chat_text, st, pool):
+            async def _run_chat_turn(
+                ws, sess, chat_text, st, pool, *, force_voice: bool = False
+            ):
                 await run_supervisor_text_turn(
-                    ws, sess, chat_text, st, pool, input_kind="chat"
+                    ws,
+                    sess,
+                    chat_text,
+                    st,
+                    pool,
+                    input_kind="chat",
+                    force_voice=force_voice,
                 )
 
             await drain_queued_chat(

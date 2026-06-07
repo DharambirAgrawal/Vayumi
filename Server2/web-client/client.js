@@ -38,6 +38,8 @@
   let micAudioCtx = null;
   let micWorkletNode = null;
   let micRecording = false;
+  let micUserMuted = false;
+  let pendingStartCapture = false;
 
   const clientState = {
     playback: "idle",
@@ -168,8 +170,19 @@
   }
 
   function setPlayback(state) {
+    const was = clientState.playback;
     clientState.playback = state;
     reportClientState();
+    if (
+      was === "playing" &&
+      state === "idle" &&
+      pendingStartCapture &&
+      !micUserMuted &&
+      !micRecording
+    ) {
+      pendingStartCapture = false;
+      startMic();
+    }
   }
 
   function setCapture(state) {
@@ -595,27 +608,17 @@
         applyDuck();
         break;
       case "start_capture":
-        if (micRecording) break;
+        if (micRecording || micUserMuted) break;
         if (reason === "interrupted") {
           debugLine("start_capture skipped (interrupt)", "info");
           break;
         }
         if (clientState.playback === "playing") {
           debugLine("start_capture deferred (playback active)", "info");
-          (function tryResumeCapture(attempt) {
-            if (micRecording) return;
-            if (clientState.playback !== "playing") {
-              startMic();
-              return;
-            }
-            if (attempt < 20) {
-              setTimeout(function () {
-                tryResumeCapture(attempt + 1);
-              }, 250);
-            }
-          })(0);
+          pendingStartCapture = true;
           break;
         }
+        pendingStartCapture = false;
         startMic();
         break;
       case "stop_capture":
@@ -732,8 +735,11 @@
 
   function toggleMic() {
     if (micRecording) {
+      micUserMuted = true;
+      pendingStartCapture = false;
       stopMic();
     } else {
+      micUserMuted = false;
       startMic();
     }
   }

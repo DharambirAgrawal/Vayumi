@@ -35,7 +35,7 @@ def user_is_idle(session: UserSession) -> bool:
         return False
     if session.turn_task is not None and not session.turn_task.done():
         return False
-    if session.queued_chat_text:
+    if session.queued_chat:
         return False
     if session_busy(session):
         return False

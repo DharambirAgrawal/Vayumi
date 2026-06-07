@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from server.orchestrator.directives import (
+    contains_directive_leak,
     parse_delegate_directives,
     strip_directives,
 )
@@ -45,6 +46,18 @@ def test_strip_delegate_removes_block() -> None:
     cleaned = strip_directives(raw)
     assert "DELEGATE" not in cleaned
     assert "Done." in cleaned
+
+
+def test_contains_directive_leak_detects_syntax() -> None:
+    assert contains_directive_leak('[DELEGATE capability=main goal="x"')
+    assert not contains_directive_leak("Hello there.")
+
+
+def test_strip_truncated_delegate_block() -> None:
+    truncated = '[DELEGATE capability=main goal="Tesla stock price and news today"'
+    cleaned = strip_directives(truncated)
+    assert "DELEGATE" not in cleaned
+    assert cleaned == ""
 
 
 def test_strip_internal_background_markers() -> None:

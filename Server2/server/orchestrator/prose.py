@@ -5,6 +5,15 @@ from difflib import SequenceMatcher
 
 from server.orchestrator.directives import strip_internal_tool_blocks
 
+_TAVILY_META_RE = re.compile(r"\d+\s+result\(s\)\s+from\s+tavily", re.IGNORECASE)
+_TOOL_SEARCH_META_RE = re.compile(r"Found\s+\d+\s+tool\(s\)\s+for\s+", re.IGNORECASE)
+_SNIPPET_LINE_RE = re.compile(r"^\d+\.\s+.+\s+—\s+")
+_FOLLOW_UP_INSTRUCTION_RE = re.compile(
+    r"^(?:Today is \d{4}-\d{2}-\d{2}\.|Answer from the immediate|Snippet numbers are|"
+    r"User's latest message \(answer ONLY|=== Tool snippets|=== Answer now|"
+    r"--- Immediate result \d+:|Never quote snippet numbers)",
+    re.IGNORECASE,
+)
 _STALE_PROMISE_RE = re.compile(
     r"still working|let you know when|i'll let you know|i will let you know|"
     r"when that'?s done|when i have the full|pull in all the relevant|"
@@ -13,14 +22,46 @@ _STALE_PROMISE_RE = re.compile(
 )
 
 
+def strip_tool_artifacts(text: str) -> str:
+    """Remove echoed tool summaries, snippet dumps, and follow-up instructions."""
+    if not text.strip():
+        return ""
+    kept: list[str] = []
+    for line in text.splitlines():
+        chunk = line.strip()
+        if not chunk:
+            continue
+        chunk = _TAVILY_META_RE.sub("", chunk).strip()
+        chunk = _TOOL_SEARCH_META_RE.sub("", chunk).strip()
+        if not chunk:
+            continue
+        if _SNIPPET_LINE_RE.match(chunk):
+            continue
+        if _FOLLOW_UP_INSTRUCTION_RE.match(chunk):
+            continue
+        if chunk.startswith("[TOOL_RESULT"):
+            continue
+        kept.append(chunk)
+    out = "\n".join(kept)
+    out = _TAVILY_META_RE.sub("", out)
+    out = _TOOL_SEARCH_META_RE.sub("", out)
+    return re.sub(r"\s+", " ", out).strip()
+
+
 def sanitize_spoken_prose(text: str) -> str:
     """Remove raw URLs and markdown links so voice/chat sounds human."""
-    out = text.strip()
+    out = strip_tool_artifacts(text.strip())
     out = re.sub(r"^```+\s*", "", out)
     out = re.sub(r"\s*```+\s*$", "", out)
     out = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", out)
     out = re.sub(r"\[https?://[^\]]+\]", "", out)
     out = re.sub(r"https?://\S+", "", out)
+    # Strip accidental tool payload leakage (when model forgets [DELEGATE])
+    out = re.sub(r"payload=\{.*", "", out, flags=re.DOTALL)
+    out = re.sub(r"\[web_search[^\]]*\]", "", out, flags=re.IGNORECASE)
+    out = re.sub(r"\*\*([^*]+)\*\*", r"\1", out)
+    out = re.sub(r"(?:^|\n)\s*\*\s+", " ", out)
+    out = re.sub(r"\s+\*\s+", " ", out)
     out = re.sub(r"\s+([,.!?;:])", r"\1", out)
     out = re.sub(r"\.!+", ".", out)
     out = re.sub(r"([.!?])\1+", r"\1", out)
@@ -30,7 +71,7 @@ def sanitize_spoken_prose(text: str) -> str:
 
 def scrub_follow_up_prose(text: str, *, spoken_ack: str = "") -> str:
     """Remove directive junk and repeated plan ack from the answer pass."""
-    stripped = strip_internal_tool_blocks(text.strip())
+    stripped = strip_tool_artifacts(strip_internal_tool_blocks(text.strip()))
     if not stripped:
         return ""
     ack_lower = spoken_ack.strip().lower()

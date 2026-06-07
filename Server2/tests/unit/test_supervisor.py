@@ -10,7 +10,7 @@ from server.orchestrator.supervisor import Supervisor
 
 class _RecallThenAnswerClient:
     def __init__(self) -> None:
-        self.prompts: list[str] = []
+        self.prompts: list[str | list[dict]] = []
         self._pass = 0
 
     def stream_completion(
@@ -109,4 +109,8 @@ async def test_supervisor_follow_up_on_recall(monkeypatch: pytest.MonkeyPatch) -
 
     assert output.assistant_text == "Your name is Alex."
     assert len(client.prompts) == 2
-    assert "RECALL_RESULT" in client.prompts[1]
+    second_prompt = client.prompts[1]
+    if isinstance(second_prompt, list):
+        assert any("RECALL_RESULT" in str(m.get("content", "")) for m in second_prompt)
+    else:
+        assert "RECALL_RESULT" in second_prompt
