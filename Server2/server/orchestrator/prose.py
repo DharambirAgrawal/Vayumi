@@ -71,7 +71,7 @@ def sanitize_spoken_prose(text: str) -> str:
 
 def scrub_follow_up_prose(text: str, *, spoken_ack: str = "") -> str:
     """Remove directive junk and repeated plan ack from the answer pass."""
-    stripped = strip_tool_artifacts(strip_internal_tool_blocks(text.strip()))
+    stripped = strip_internal_tool_blocks(text.strip())
     if not stripped:
         return ""
     ack_lower = spoken_ack.strip().lower()

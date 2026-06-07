@@ -171,12 +171,11 @@ async def test_supervisor_main_tool_follow_up(monkeypatch: pytest.MonkeyPatch) -
     finally:
         await pool.close()
 
-    assert "headlines" in output.assistant_text.lower() or "search" in output.assistant_text.lower()
+    assert "seeing" in output.assistant_text.lower() or "s1" in output.assistant_text.lower()
     assert len(events) == 2
     assert events[0][0] == "tool_started"
     assert events[1][0] == "tool_done"
-    assert len(client.prompts) == 2
-    second_pass = client.prompts[1]
-    assert isinstance(second_pass, list)
-    system_blob = str(second_pass)
-    assert "TOOL_RESULT" in system_blob or "Immediate result" in system_blob
+    assert len(client.prompts) == 1
+    first_pass = client.prompts[0]
+    assert isinstance(first_pass, list)
+    assert any(m.get("role") == "system" for m in first_pass)

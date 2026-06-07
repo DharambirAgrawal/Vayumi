@@ -1,9 +1,9 @@
 # Vayumi Server 2 — Master Plan
 
-**Version:** 1.7  
-**Status:** Architecture locked, Step 11 next (Steps 1-10 complete)  
-**Last updated:** 2026-05-21  
-**Companion files:** `doc/step-06.md` (current), `doc/roadmap.md` (full step overview), `doc/tracker.md` (progress + flows), `agent-prompt.md` (reusable build prompt)  
+**Version:** 1.7 (+ post-Step-10 amendments, see §7.10.1)  
+**Status:** Architecture locked, Step 11 next (Steps 1–10 complete)  
+**Last updated:** 2026-06-07  
+**Companion files:** `doc/step-11.md` (current), `doc/roadmap.md`, `doc/tracker.md` (progress + flows + §Post-Step-10), `agent-prompt.md`  
 **Reference diagrams:** `orchestrator_diagram_v3.drawio` (17 pages — architecture), `doc/tracker.md` (build progress + architecture flows)  
 **Sister service:** `Server1/` (TypeScript) — owns auth, identity, sessions, push tokens. Already implemented and verified.
 
@@ -184,6 +184,10 @@ Server2/
 │   ├── transport/
 │   │   ├── ws.py                    WebSocket endpoint + envelope codec
 │   │   ├── protocol.py              JSON message types (typed)
+│   │   ├── session_registry.py      user_id → UserSession singleton
+│   │   ├── session_busy.py          playback grace + chat_should_queue
+│   │   ├── turn_coordinator.py      shared chat/voice/proactive delivery
+│   │   ├── chat_queue.py            typed-chat queue + background compute
 │   │   ├── uploads.py               upload endpoint, validation, file_id creation
 │   │   └── client_control.py        server -> client playback / capture commands
 │   ├── voice/
@@ -205,7 +209,10 @@ Server2/
 │   │   ├── directives.py
 │   │   ├── signal_bus.py
 │   │   ├── notifier.py
-│   │   └── task_board.py
+│   │   ├── task_board.py
+│   │   ├── tool_dispatch.py         main + sub-agent tool execution
+│   │   ├── tool_fallback.py         model-output safety nets (no user-keyword routing)
+│   │   └── prose.py                 spoken-output sanitization
 │   ├── subagents/
 │   │   ├── worker.py
 │   │   ├── report.py                 report() schema + Pydantic validation
@@ -690,7 +697,7 @@ Tool access is intentionally asymmetric.
 
 | Actor | What it sees | What it can call | Why |
 |---|---|---|---|
-| Main Agent | Directives, active task board, cheap direct tools (`web_search`, `memory_recall`, `tool_search`) and capability labels | Fast, stateless tools only; delegates everything heavy | Keeps voice latency low and avoids stuffing all schemas into Main context. |
+| Main Agent | Directives, active task board, **native OpenAI-style tool_calls** (`web_search`, `memory_save`, `memory_recall`) via `complete_chat`, plus capability labels | Fast, stateless tools only; delegates everything heavy | Keeps voice latency low. Main prompt is a single `prompts/main.txt`; session context (date, warm profile, task board) is injected separately (see §7.10.1). |
 | Sub-agent | Its capability prompt, its task goal/payload, `report()`, and only its allowed tool cards | Tools mapped to its capability by `ToolRegistry.resolve_for_capability(...)` | Keeps prompts small and prevents cross-domain tool misuse. |
 | Tool runner code | Full registry, auth broker, schemas, confirmation policy, audit logger | Can execute any registered tool after capability + auth validation | Code enforces safety; LLM only requests. |
 
@@ -747,7 +754,30 @@ Agents do not need the full registry in the system prompt. They get a small `too
 tool_search(query: str, capability: str | None = None) -> list[ToolCard]
 ```
 
-`ToolCard` contains only `name`, `capability`, `description`, `risk`, and required auth labels. Main can use `tool_search` to decide whether Vayumi is capable, then either call a cheap direct tool or delegate. A sub-agent can use `tool_search` inside its own capability if the capability has many MCP-imported tools. The runner still validates every final tool call against `ToolRegistry`.
+`ToolCard` contains only `name`, `capability`, `description`, `risk`, and required auth labels. Main calls **`web_search` / `memory_*` as native function tools** (llama-server `/v1/chat/completions`). `[DELEGATE capability=main …]` remains a **fallback** parser path for the same tools when the model emits directive text instead of `tool_calls`. Sub-agents use capability bundles. The runner still validates every final tool call against `ToolRegistry`.
+
+### 7.10.1 Main turn pipeline (post-Step-10 — implemented)
+
+This amends Step 7’s original “DELEGATE-only main tools” design. **No user-message keyword routing** — the model + prompt decide when to search.
+
+**Prompt assembly (`server/engine/prompt.py`):**
+- `system` = static `prompts/main.txt` only.
+- Separate labeled user turn for session context: **today’s date**, warm profile, compressed summary, task board, injected tool/recall blocks.
+- Real user message is always the last user turn.
+- `build_main_chat_messages()` is the canonical format for `complete_chat`.
+
+**Turn flow (`server/orchestrator/supervisor.py`):**
+1. **Pass 1:** `engine_pool.complete_chat()` with `tools=openai_tools_for_main()` (`web_search`, `memory_save`, `memory_recall`).
+2. If `tool_calls` → `run_native_tool_calls()` → `_answer_after_web_search()` (prefer `speak_web_search_results()` from Tavily/DDG snippets; no streaming LLM follow-up for web_search-only turns).
+3. Else parse `[DELEGATE]` / `[REMEMBER]` / `[RECALL]` from prose; **`[DELEGATE capability=main]`** still runs via `tool_dispatch` when the model uses directive syntax.
+4. **Safety nets (`tool_fallback.py`, model output only):** if the model acks without tools, leaks `[web_search …]`, cites ungrounded prices, or past calendar years → run `web_search` and speak snippets; never trust hallucinated live data.
+5. **Delivery:** `tool_status_while_searching()` speaks a short safe line while search runs (not stale facts). `revoice_final` re-speaks the grounded answer if streaming TTS already played bad partials.
+
+**Typed chat while TTS is playing (`chat_queue.py`):**
+- Queue depth 1; background `run_turn` while playback active; deliver when idle (+ 3s post-TTS grace in `session_busy.py`).
+- Trivial follow-ups (`?`, `!`) do not replace a queued message.
+
+**Not used:** split prompts (`main_core` / `main_tools`), intent regex routing, search-before-LLM keyword paths.
 
 ### Confirmation example: email send
 
@@ -815,6 +845,9 @@ This is the broad function catalog. It is not saying every function ships in Ste
 | `server/transport/uploads.py` | `delete_uploaded_file(file_id, user_id)` | User-initiated cleanup / retention policy hook. |
 | `server/transport/client_control.py` | `send_client_control(command, reason, turn_id=None)` | Server asks client to play/pause/stop/duck/unduck/start/stop capture. |
 | `server/transport/client_control.py` | `handle_client_state(state)` | Client confirms local playback/capture/visibility/audio route. Updates the respond_via cache for this session. |
+| `server/transport/session_busy.py` | `chat_should_queue(session)` / `playback_blocks_voice(session)` | Queue typed chat during TTS + 3s post-playback grace (§7.10.1). |
+| `server/transport/chat_queue.py` | `start_background_chat_compute(...)` / `try_deliver_pending_chat(...)` | Depth-1 queue; compute turn during playback; deliver when idle. |
+| `server/transport/turn_coordinator.py` | `run_supervisor_text_turn(...)` / `revoice_final` | Shared chat/proactive delivery; re-speak grounded answer after bad streaming partials. |
 
 Client-control rule: the server may request local audio behavior, but the client is the device owner. The server sends `client_control`; the client replies with `client_state`. If the client cannot comply, it reports state honestly and the Supervisor adapts. The server never assumes compliance — it always reads `client_state` to know actual device status.
 
@@ -839,8 +872,11 @@ Client-control rule: the server may request local audio behavior, but the client
 | File | Function / class | Responsibility |
 |---|---|---|
 | `server/orchestrator/supervisor.py` | `handle_turn(input: TurnInput)` | One entry point for chat, voice transcript, proactive signal, and file/image turns. Computes respond_via at start. |
+| `server/orchestrator/supervisor.py` | `run_turn(...)` | Main turn: `complete_chat` + native `tool_calls` + safety nets (§7.10.1). Replaces streaming-only main path for typed chat. |
 | `server/orchestrator/supervisor.py` | `assemble_main_context(input) -> MainContext` | Warm profile, history, active tasks, retrieval snippets, attachment summaries. |
-| `server/orchestrator/supervisor.py` | `stream_main_response(context, respond_via)` | Submits Main to P0, streams text, parses directives, drives TTS/chat per respond_via. |
+| `server/orchestrator/tool_dispatch.py` | `run_native_tool_calls(...)` / `speak_web_search_results(runs)` | Execute OpenAI-style tool_calls; speak grounded answers from search snippets. |
+| `server/orchestrator/tool_fallback.py` | `should_fallback_web_search(model_content=...)` / `tool_status_while_searching()` | Model-output safety nets; safe status line while search runs. |
+| `server/orchestrator/prose.py` | `sanitize_spoken_prose(text)` | Strip markdown, URLs, `[web_search]` leaks from TTS/caption text. |
 | `server/orchestrator/directives.py` | `parse_directive_blocks(stream) -> AsyncIterator[Directive | TextChunk]` | Splits plain text from directive blocks safely while streaming. |
 | `server/orchestrator/directives.py` | `validate_directive(directive) -> TypedDirective` | Pydantic validation for DELEGATE/STOP_TASK/ANSWER_TO/etc. |
 | `server/orchestrator/supervisor.py` | `execute_directive(directive)` | Applies parsed directives to memory, tasks, retrieval, response channel, or tool dispatch. |
@@ -865,10 +901,13 @@ Client-control rule: the server may request local audio behavior, but the client
 | File | Function / class | Responsibility |
 |---|---|---|
 | `server/engine/runner.py` | `start_llama_server()` / `stop_llama_server()` / `health_check()` | Owns the single llama-server subprocess. |
-| `server/engine/pool.py` | `submit(request, priority, slot_hint=None) -> CompletionHandle` | Queue model work by P0/P1/P2. |
+| `server/engine/pool.py` | `submit(request, priority, slot_hint=None) -> CompletionHandle` | Queue model work by P0/P1/P2 (streaming sub-agents, legacy paths). |
+| `server/engine/pool.py` | `complete_chat(messages, tools=...) -> ChatCompletionResult` | Non-streaming chat completion with native `tool_calls` (main turn §7.10.1). |
 | `server/engine/pool.py` | `cancel(handle)` | Cancel Main decode on interrupt; task cancellation uses worker-level cancel. |
 | `server/engine/pool.py` | `reserve_slot(role, task_id)` / `release_slot(slot_id)` | Slot accounting for Main/sub-agent/summarizer. |
-| `server/engine/prompt.py` | `build_main_prompt(context)` / `build_subagent_prompt(bundle, task)` / `build_summarizer_prompt(...)` | Prompt assembly with role-specific context. |
+| `server/engine/prompt.py` | `build_main_chat_messages(context)` | Canonical main messages: static system + session context user turn + user message (§7.10.1). |
+| `server/engine/prompt.py` | `today_context_line()` | Injects today's date into session context every turn. |
+| `server/engine/prompt.py` | `build_main_prompt(context)` / `build_subagent_prompt(bundle, task)` / `build_summarizer_prompt(...)` | Legacy string prompt + sub-agent/summarizer assembly. |
 
 ### Memory, retrieval, files, and summarization
 
@@ -1336,3 +1375,4 @@ If this example feels coherent, the architecture is doing its job. If any step f
 | 1.5 | 2026-05-16 | Added "Multimodal inputs — deferred" note in §2. Added `doc/roadmap.md` and `implementation_tracker.drawio`. |
 | 1.6 | 2026-05-17 | Step 1 complete. Python locked to 3.11. Replaced tracker.drawio with `doc/tracker.md`. Dev setup: cloud Postgres/Redis via `.env`. |
 | 1.7 | 2026-05-19 | **Session singleton (§5.0):** one WS per user enforced at connection time; device handover with `session_superseded` + `welcome{resumed:true}` + `task_board_snapshot`; `enforce_session_singleton()` added to API map. **Typed chat → voice by default (Rule 11):** `chat` input defaults to `voice_and_chat` when session is voice-capable; full `respond_via` decision table added as Rule 13 in §7.5; `compute_respond_via()` added to API map. **Echo suppression mandatory (Rule 12):** `begin_tts_with_echo_suppression()` is the only path to `audio_start`; always sends `stop_capture` first; `start_capture` after delay; AEC clients get reduced delay; `SELF_ECHO_SUPPRESSION_DELAY_MS` and `AEC_CLIENT_SUPPRESSION_DELAY_MS` added to env vars. **Text and caption delivery contract (§5.5):** two channels always sent (`caption` sentence-by-sentence, `chat_message` once complete); behavior on TTS failure, interrupt, and rapid typed messages defined; queue depth = 1 pending; `chat_message` event added to §5.3. **Interrupt FSM (§7.5):** complete state machine table added; queue depth, queue replacement, and queue clearing on interrupt all specified. **`welcome` payload** updated with `resumed` and `task_board_snapshot` fields. **§13 worked example** updated: Turn 2 shows typed chat → voice reply with echo suppression; Turn 3 shows interrupt clearing echo suppression immediately; device handover in §13.6 exercises singleton rule. |
+| 1.7+ | 2026-06-07 | **Post-Step-10 main-agent amendments (§7.10.1):** native `tool_calls` via `complete_chat`; single `prompts/main.txt` + `build_main_chat_messages()` session context (today's date, warm, task board); `speak_web_search_results()` for grounded live facts; `tool_fallback.py` / `prose.py` model-output safety nets (no user-keyword routing); typed-chat queue + playback grace (`chat_queue.py`, `session_busy.py`); `revoice_final` when streaming TTS spoke bad partials. Folder map updated for `tool_fallback.py`, `prose.py`, transport helpers. |

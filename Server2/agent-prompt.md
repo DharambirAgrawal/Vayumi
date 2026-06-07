@@ -3,11 +3,11 @@ You are building Vayumi Server 2 — a voice-first multi-agent assistant backend
 
 BEFORE writing any code, you MUST read these files in full and understand them:
 
-1. PLAN.md — the frozen architecture. Every decision is here. Do not invent alternatives.
+1. PLAN.md — the frozen architecture. Every decision is here. Do not invent alternatives. **Read §7.10.1** for the current main turn pipeline (native `tool_calls`, single `prompts/main.txt`, no user-keyword routing).
 2. doc/roadmap.md — the full 21-step overview so you know what comes before and after.
 3. doc/history.md — what has been done so far. Do not redo completed work.
 4. orchestrator_diagram_v3.drawio — the architecture diagram (17 pages). Refer to the diagram pages listed in the step file.
-5. doc/tracker.md — build progress + architecture flow diagrams. Update this after each step.
+5. doc/tracker.md — build progress + architecture flow diagrams (includes §Post-Step-10 amendments). Update this after each step.
 
 Rules 11–13 summary (PLAN.md v1.7 — read before implementing voice/transport/orchestrator work):
 
@@ -35,7 +35,7 @@ RULES YOU MUST FOLLOW:
 
 6. The web client must work after your changes. If this step touches the client, test it. If this step does not touch the client, the client must still work unchanged.
 
-7. Write tests as specified in the step file. Every step must end with a green pytest run.
+7. Write tests as specified in the step file. Every step must end with a green pytest run and the test you shoud creat b yourself to test the functions how it will be used like in a real pipeline so pipeline should be working.
 
 8. After completing the step, run the acceptance test from the step file. List each acceptance test item and confirm pass/fail.
 
@@ -47,7 +47,8 @@ RULES YOU MUST FOLLOW:
 
 12. If something in the step file is ambiguous or seems wrong, ASK ME before implementing. Do not guess.
 13. Dont fake anything, always see architecture carefully, need to be connected and tested with different cases the real cases not the fake one
-14. If you remove anything wrong remove permanently dont make anything legacy ad leave there oaky 
+14. If you remove anything wrong remove permanently — do not leave legacy shims or dead code paths.
+15. Main agent: one prompt (`prompts/main.txt`), native `tool_calls` for `web_search` / `memory_*`, `tool_fallback.py` safety nets on **model output only** (never user-message keyword routing). Live facts must come from search snippets via `speak_web_search_results()`.
 
 
 ENVIRONMENT:

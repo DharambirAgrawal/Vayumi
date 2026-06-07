@@ -253,9 +253,11 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 **Estimated effort:** 2 days  
 **Diagram pages:** 08
 
+> **Post-Step-10 amendment (2026-06):** Main uses native `tool_calls` + `prompts/main.txt` (see PLAN.md §7.10.1). `[DELEGATE capability=main]` is fallback only. `tool_fallback.py`, `prose.py`, `chat_queue.py`, and `revoice_final` were added after Step 10 — not a new roadmap step.
+
 **What the user can do after this step:**
 - Ask "search for the latest AI news" and get results from Tavily/DDG.
-- Main agent can call cheap direct tools (web_search, memory_recall, tool_search).
+- Main agent calls cheap direct tools (`web_search`, `memory_recall`, `memory_save`) via native `tool_calls` (DELEGATE fallback).
 - Activity feed shows tool usage (started, done).
 
 **Features delivered:**
@@ -264,7 +266,7 @@ Goal: prove the architecture is real. By the end of Phase 1, you can talk to Vay
 - `tool_search` discovery tool
 - `web_search` (Tavily primary, DDG fallback)
 - `memory_save` / `memory_recall` as registered tools
-- `[DELEGATE]` directive parsing (ready for sub-agents, spawning deferred to step 8)
+- `[DELEGATE]` directive parsing (main fallback + sub-agent spawn in step 8)
 - `event{kind:tool_started}` / `event{kind:tool_done}` transport events
 
 **Files created / changed:**

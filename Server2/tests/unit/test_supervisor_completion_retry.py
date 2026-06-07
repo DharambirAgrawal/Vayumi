@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 
 import pytest
@@ -144,5 +145,10 @@ async def test_empty_response_retries_with_second_llm_pass(
 
     assert output.assistant_text == "Hello there."
     assert len(client.prompts) == 2
-    assert "previous model pass returned no visible text" in client.prompts[1]
+    retry_blob = (
+        json.dumps(client.prompts[1])
+        if isinstance(client.prompts[1], list)
+        else client.prompts[1]
+    )
+    assert "previous model pass returned no visible text" in retry_blob
     assert [request.cache_prompt for request in client.requests] == [False, False]

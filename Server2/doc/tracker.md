@@ -3,7 +3,7 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-05-23 — Step 10 complete
+> **Last updated:** 2026-06-07 — Step 10 complete + post-Step-10 main-agent amendments (see below)
 
 ---
 
@@ -20,6 +20,70 @@
 | Proactive respond_via | `build_synthetic_turn` + `input_kind='proactive'` | Step 10 | ✅ |
 
 **Current build step:** Step 11 (LanceDB retrieval).
+
+---
+
+## Post-Step-10 amendments (main agent — implemented 2026-06)
+
+These changes are **not** a new roadmap step; they supersede parts of Step 7’s original “DELEGATE-only main tools” wording. See PLAN.md §7.10.1.
+
+### Main turn flow (current)
+
+```
+User message (voice STT or typed chat)
+        │
+        ▼
+build_main_chat_messages()
+  system = prompts/main.txt (static)
+  user   = session context (today's date, warm, task board, injections)
+  user   = real user message (last)
+        │
+        ▼
+complete_chat(tools=[web_search, memory_save, memory_recall])
+        │
+        ├── tool_calls? ──▶ run_native_tool_calls
+        │                      │
+        │                      ▼
+        │                 speak_web_search_results()  (snippets, not LLM guess)
+        │                      │
+        │                      ▼
+        │                 revoice_final if streaming spoke bad partials
+        │
+        └── prose only? ──▶ parse [DELEGATE]/[REMEMBER]/[RECALL]
+                              │
+                              ├── [DELEGATE capability=main] → tool_dispatch (fallback)
+                              ├── model-output safety nets (tool_fallback.py):
+                              │     ack-only, [web_search leak], ungrounded $, stale years
+                              │     → emergency web_search + speak snippets
+                              └── [DELEGATE capability=research|…] → spawn sub-agent
+        │
+        ▼
+caption + chat_message + TTS (respond_via per Rule 13)
+```
+
+**Explicitly removed:** `main_core.txt` / `main_tools.txt` split, user-message keyword routing, search-before-LLM intent heuristics.
+
+### Typed chat while speaking
+
+| Piece | Role |
+|---|---|
+| `chat_should_queue()` | Queue when busy, playback active, or within 3s post-TTS grace |
+| `chat_queue.py` | Depth-1 queue; `start_background_chat_compute` runs `run_turn` during TTS |
+| `try_deliver_pending_chat` | Speaks precomputed answer when playback idle |
+| `is_trivial_chat_followup` | `?` / `!` do not replace an in-flight queued question |
+
+### Key files (amendments)
+
+| File | Role |
+|---|---|
+| `server/engine/prompt.py` | `build_main_chat_messages`, `today_context_line()` |
+| `server/engine/pool.py` | `complete_chat`, `ChatCompletionResult`, `ParsedToolCall` |
+| `server/tools/openai_schema.py` | OpenAI tool schemas for main native tools |
+| `server/orchestrator/tool_fallback.py` | Model-output safety nets only |
+| `server/orchestrator/tool_dispatch.py` | `run_native_tool_calls`, `speak_web_search_results` |
+| `server/orchestrator/prose.py` | Sanitize spoken output (no markdown/URLs/leaks) |
+| `server/transport/session_busy.py` | `playback_blocks_voice`, `chat_should_queue` |
+| `prompts/main.txt` | Single unified main prompt (tools + DELEGATE research) |
 
 ### Step index (quick reference)
 
@@ -133,46 +197,42 @@ ProactiveNotifier tick (~3s)
 
 ---
 
-## What Step 7 Built
+## What Step 7 Built (+ §7.10.1 amendments)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         TOOL PLANE (Step 7)                                     │
+│                         TOOL PLANE (Step 7 + amendments)                        │
 │                                                                                 │
 │  server/tools/                                                                  │
 │  ┌───────────────────────────────────────────────────────────────────────────┐  │
 │  │ registry.py — ToolEntry, ToolResult, ToolRegistry, validate_tool_args      │  │
 │  │ runner.py — ToolRunner.execute (gate, timeout, events, confirmation)       │  │
 │  │ tool_search.py / web_search.py / memory_save.py / memory_recall.py         │  │
+│  │ openai_schema.py — native tool schemas for complete_chat                   │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                 │
-│  server/orchestrator/tool_dispatch.py — parallel DELEGATE runs, not_capable stub │
-│  directives.py — [DELEGATE capability=main goal="..." payload={...}]           │
-│  supervisor.py — tool results → follow-up completion (same pattern as RECALL)  │
+│  complete_chat + run_native_tool_calls + speak_web_search_results (snippets)   │
+│  tool_fallback.py — model-output safety nets (no keyword routing)              │
+│  prose.py — sanitize spoken output (no markdown / [web_search] leaks)        │
+│  [DELEGATE capability=main] — fallback when model emits directive text         │
 │  ws.py — tool_started / tool_done events on activity feed                        │
 │  app.py — init_tools() at boot; Tavily when TAVILY_API_KEY set                   │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Main tool turn flow (Step 7)
+### Main tool turn flow (Step 7 + §7.10.1 amendments)
 
 ```
 User message
      │
      ▼
-Supervisor.run_turn (pass 1)
+Supervisor.run_turn — complete_chat (native tool_calls)
      │
-     ├── Main streams text + optional [DELEGATE ...] blocks
+     ├── tool_calls → run_native_tool_calls → speak_web_search_results
+     │                (short status caption while searching; revoice_final if needed)
      │
-     ▼
-tool_dispatch.run_delegate_directives (asyncio.gather for multiple tools)
-     │
-     ├── event tool_started → client activity feed
-     ├── ToolRunner.execute → Tavily or DDG / memory / tool_search
-     └── event tool_done
-     │
-     ▼
-Supervisor.run_turn (pass 2) with [TOOL_RESULT ...] injected
+     └── prose → [DELEGATE capability=main] fallback OR sub-agent spawn
+                 + tool_fallback safety nets on bad model output
      │
      ▼
 caption + chat_message (+ voice per respond_via)
@@ -716,7 +776,7 @@ Server2/
 │   ├── roadmap.md              ✅ full 21-step overview
 │   └── history.md              ✅ change log
 ├── prompts/
-│   └── main.txt                ✅ Main prompt + DELEGATE tool guidance
+│   └── main.txt                ✅ Unified main prompt (native tools + DELEGATE research)
 ├── server/
 │   ├── __init__.py             ✅
 │   ├── app.py                  ✅ FastAPI + lifespan + engine + voice + tools boot
@@ -733,7 +793,7 @@ Server2/
 │   │   ├── __init__.py         ✅
 │   │   ├── runner.py           ✅ llama-server subprocess lifecycle
 │   │   ├── pool.py             ✅ priority queue + slot manager
-│   │   └── prompt.py           ✅ Main prompt assembly + warm/history
+│   │   └── prompt.py           ✅ build_main_chat_messages + today_context_line
 │   ├── memory/
 │   │   ├── __init__.py         ✅
 │   │   ├── embeddings.py       ✅ bge-small-en-v1.5 embedder
@@ -745,8 +805,10 @@ Server2/
 │   │   ├── __init__.py         ✅
 │   │   ├── directives.py       ✅ REMEMBER / RECALL / DELEGATE / RESPOND_VIA
 │   │   ├── notifier.py         ✅ proactive synthetic turns (Step 10)
-│   │   ├── tool_dispatch.py    ✅ bundle-gated sub-agent tool dispatch
-│   │   └── supervisor.py       ✅ handle_turn + spawn sub-agents
+│   │   ├── tool_dispatch.py    ✅ native tool_calls + DELEGATE dispatch
+│   │   ├── tool_fallback.py    ✅ model-output safety nets (no keyword routing)
+│   │   ├── prose.py            ✅ spoken-output sanitization
+│   │   └── supervisor.py       ✅ complete_chat turn + spawn sub-agents
 │   ├── subagents/
 │   │   ├── worker.py           ✅ CapabilityBundle + tool cards in prompt
 │   │   ├── report.py           ✅
@@ -761,7 +823,8 @@ Server2/
 │   │   ├── summarize_url.py    ✅ trafilatura extract
 │   │   ├── fetch_html.py       ✅ raw HTML
 │   │   ├── memory_save.py      ✅
-│   │   └── memory_recall.py    ✅
+│   │   ├── memory_recall.py    ✅
+│   │   └── openai_schema.py    ✅ native tool schemas for complete_chat
 │   ├── voice/
 │   │   ├── stt/groq.py         ✅ Groq Whisper STT
 │   │   ├── tts/kokoro.py         ✅ Kokoro streaming TTS
@@ -779,7 +842,9 @@ Server2/
 │       ├── __init__.py         ✅
 │       ├── ws.py               ✅ hello-first, chat/voice, singleton
 │       ├── session_registry.py ✅ enforce_session_singleton
-│       ├── chat_queue.py       ✅ typed chat queue depth 1
+│       ├── chat_queue.py       ✅ queue + background compute + pending delivery
+│       ├── session_busy.py     ✅ playback grace + chat_should_queue
+│       ├── turn_coordinator.py ✅ shared delivery + revoice_final
 │       ├── protocol.py         ✅ chat_message, welcome.resumed, events
 │       └── client_control.py   ✅ stop/start_capture + playback
 ├── web-client/
@@ -789,7 +854,7 @@ Server2/
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
-    └── unit/                   ✅ 172 tests (through Step 10)
+    └── unit/                   ✅ 217 unit tests (Step 10 + amendments)
         ├── test_protocol.py
         ├── test_respond_via.py
         ├── test_session_singleton.py
@@ -802,6 +867,10 @@ Server2/
         ├── test_supervisor_tools.py
         ├── test_tools_*.py
         ├── test_tool_dispatch.py
+        ├── test_tool_fallback.py
+        ├── test_main_chat_messages.py
+        ├── test_prose.py
+        ├── test_supervisor_no_coerce.py
         ├── test_sentence_buffer.py
         ├── test_streaming_tts.py
         ├── test_notifier.py

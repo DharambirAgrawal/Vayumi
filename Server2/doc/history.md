@@ -508,6 +508,39 @@ This log tracks updates pushed to GitHub for Server2. Each entry should be small
 
 ---
 
+## 2026-06-07 - Post-Step-10 main-agent refactor: native tools, grounded search, doc sync
+
+**Scope:** orchestrator | engine | transport | prompts | tests | docs
+
+**Why:** After upgrades, the main agent was still leaking `[web_search]` text, hallucinating live prices/dates, and using stale keyword routing. Docs and step files still described the old DELEGATE-only two-pass flow.
+
+**Key changes:**
+- Single `prompts/main.txt` + `build_main_chat_messages()` (today's date, warm profile, task board in a labeled user turn).
+- Main turn uses `complete_chat()` with native `tool_calls` (`web_search`, `memory_save`, `memory_recall`).
+- `speak_web_search_results()` answers from Tavily/DDG snippets; web_search-only turns skip streaming LLM follow-up.
+- `tool_fallback.py` — model-output safety nets only (acks, inline leaks, ungrounded prices, stale years); emergency search + snippets.
+- `prose.py` — strip markdown/URLs/`[web_search]` from spoken output.
+- `tool_status_while_searching()` + `revoice_final` — safe status while searching; re-speak grounded answer if bad partials already played.
+- Typed chat queue: `chat_queue.py`, `session_busy.py` (3s post-TTS grace), background compute, trivial `?` ignore.
+- Removed: `main_core`/`main_tools` split, user-message keyword routing, search-before-LLM intent heuristics.
+- Synced PLAN.md §7.10.1, tracker, roadmap, step-07/08 amendment banners, agent-prompt, README.
+
+**Files/areas:**
+- CHANGED: `server/orchestrator/{supervisor,tool_dispatch,tool_fallback,prose}.py`, `server/engine/{prompt,pool}.py`, `server/transport/{ws,chat_queue,session_busy,turn_coordinator}.py`, `prompts/main.txt`
+- NEW tests: `test_tool_fallback.py`, `test_main_chat_messages.py`, `test_prose.py`, updates to `test_tool_dispatch.py`, `test_supervisor_no_coerce.py`
+- CHANGED docs: `PLAN.md`, `doc/{tracker,roadmap,history,step-07,step-08}.md`, `agent-prompt.md`, `README.md`
+
+**Plan/diagram references:** PLAN.md §7.10, §7.10.1, §5.5, Rules 11–13; diagram page 08
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 217 passed (updated stale tests for `complete_chat`, snippet answers, chat-message prompts)
+
+**Follow-ups:**
+- Step 11: LanceDB retrieval.
+- Optional: apply same `revoice_final` / safe-status path to voice turns (`server/voice/turn.py`).
+
+---
+
 ## 2026-05-22 - requirements sync (fetch tools)
 
 **Scope:** deploy

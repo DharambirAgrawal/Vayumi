@@ -995,7 +995,7 @@ class Supervisor:
             prompt=prompt,
             stop=("```", "[TOOL_RESULT", "[SUBAGENT_SPAWN"),
             max_tokens=_max_tokens_for_mode(mode),
-            cache_prompt=True,
+            cache_prompt=allow_delegates,
             stream=use_stream,
             temperature=temperature,
             pin_slot=True,
@@ -1021,14 +1021,19 @@ class Supervisor:
             if on_token is not None:
                 await on_token(token)
         if not full_text.strip():
-            head = prompt[:200].replace("\n", "\\n")
-            tail = prompt[-200:].replace("\n", "\\n")
+            prompt_log = (
+                json.dumps(prompt, ensure_ascii=False)
+                if isinstance(prompt, list)
+                else prompt
+            )
+            head = prompt_log[:200].replace("\n", "\\n")
+            tail = prompt_log[-200:].replace("\n", "\\n")
             log.warning(
                 "llm.empty_response",
                 user_id=self.user_id,
                 session_id=self.session_id,
                 allow_delegates=allow_delegates,
-                prompt_chars=len(prompt),
+                prompt_chars=len(prompt_log),
                 prompt_head=head,
                 prompt_tail=tail,
             )

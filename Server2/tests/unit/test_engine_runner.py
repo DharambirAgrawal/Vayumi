@@ -32,6 +32,7 @@ def test_build_llama_command_uses_configured_slots_and_context() -> None:
         "32768",
         "--slot-prompt-similarity",
         "0.0",
+        "--jinja",
     ]
 
 

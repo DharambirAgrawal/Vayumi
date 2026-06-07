@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 
 import pytest
@@ -9,6 +10,17 @@ from server.config import Settings
 from server.engine.pool import CompletionRequest, EnginePool
 from server.orchestrator.supervisor import Supervisor
 from server.tools import build_tool_registry, build_tool_runner
+
+
+def _prompt_blob(prompt: object) -> str:
+    if isinstance(prompt, list):
+        return json.dumps(prompt)
+    return str(prompt)
+
+
+def _is_subagent_prompt(prompt: object) -> bool:
+    blob = _prompt_blob(prompt)
+    return "research sub-agent" in blob or "Worker:" in blob
 
 
 class _MainSpawnClient:
@@ -109,7 +121,7 @@ class _LeakyPlanClient:
     ) -> AsyncIterator[str]:
         del base_url, slot_id
         self.prompts.append(request.prompt)
-        if "Worker:" in request.prompt:
+        if _is_subagent_prompt(request.prompt):
             yield '[REPORT kind=DONE summary="clean research summary" payload={}]'
             return
         if self._pass == 0:
@@ -206,7 +218,7 @@ async def test_spawn_research_non_blocking(patched_memory: None) -> None:
 
     class _RouterClient:
         def stream_completion(self, *, base_url, slot_id, request):
-            if "Worker:" in request.prompt:
+            if _is_subagent_prompt(request.prompt):
                 return sub_client.stream_completion(
                     base_url=base_url, slot_id=slot_id, request=request
                 )
