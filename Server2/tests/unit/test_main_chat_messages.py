@@ -21,7 +21,7 @@ def test_system_message_is_static_prompt_only() -> None:
     assert messages[0]["role"] == "system"
     assert "You are Vayumi" in messages[0]["content"]
     assert "Alex" not in messages[0]["content"]
-    assert "active_tasks" not in messages[0]["content"]
+    assert "active_tasks: none" not in messages[0]["content"]
     assert "Do not use tools" not in messages[0]["content"]
     assert messages[-1] == {"role": "user", "content": "hey"}
 

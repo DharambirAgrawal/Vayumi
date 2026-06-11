@@ -6,6 +6,8 @@
 **Owner:** you  
 **Diagram pages:** 08
 
+> **Post-Step-10 amendment (2026-06-07):** Main tool calls now use **native `tool_calls`** via `complete_chat()` (`web_search`, `memory_save`, `memory_recall`). `[DELEGATE capability=main …]` is a **fallback** when the model emits directive text. Live-fact answers come from `speak_web_search_results()` (search snippets), not a streaming LLM follow-up. Safety nets live in `tool_fallback.py` (model output only — no user-keyword routing). Single prompt: `prompts/main.txt` + session context via `build_main_chat_messages()`. **Authoritative spec:** PLAN.md §7.10.1 and `doc/tracker.md` §Post-Step-10 amendments. The tasks below describe the original Step 7 build; behavior has evolved as above.
+
 ---
 
 ## Goal

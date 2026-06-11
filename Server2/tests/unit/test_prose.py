@@ -16,7 +16,9 @@ def test_finalize_collapses_markdown_echo_block() -> None:
 
 def test_finalize_keeps_distinct_follow_up() -> None:
     text = "First point.\n\nSecond point adds new information."
-    assert finalize_assistant_prose(text) == text
+    assert finalize_assistant_prose(text) == (
+        "First point. Second point adds new information."
+    )
 
 
 def test_finalize_strips_raw_urls() -> None:

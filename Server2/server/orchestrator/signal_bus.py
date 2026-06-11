@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from typing import Literal
 
 from server.logger import get_logger
+from server.memory.summarizer import schedule_task_fact_extraction
 from server.orchestrator.task_board import TaskBoard, TaskRow
 from server.subagents.report import ReportSignal
 
@@ -53,6 +54,13 @@ class SignalBus:
         if self._on_event is not None:
             kind = event_kind_for_report(signal.kind)
             await self._on_event(kind, signal.task_id, signal.summary)
+        if signal.kind == "DONE":
+            schedule_task_fact_extraction(
+                task_id=signal.task_id,
+                user_id=self.user_id,
+                facts_payload=signal.payload.get("facts_to_persist"),
+            )
+
         log.info(
             "signal_bus.published",
             user_id=self.user_id,

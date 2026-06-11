@@ -2,6 +2,8 @@
 
 Voice-first multi-agent backend (FastAPI + WebSocket).
 
+**Architecture & build status:** [`PLAN.md`](PLAN.md) (frozen spec, §7.10.1 = current main turn flow) · [`doc/tracker.md`](doc/tracker.md) (progress + flows) · [`doc/roadmap.md`](doc/roadmap.md) (21 steps, Step 11 next).
+
 ## What you need
 
 | Piece | What it is | Required? |

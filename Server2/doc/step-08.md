@@ -18,7 +18,7 @@ This is the **rich** version of the same UX pattern Step 7 started:
 |-------|------------------------|---------------------------|
 | Announce | `tool_started` + status caption | `task_step` pills (Path A); optional Main line on spawn |
 | Work | `ToolRunner` (sync, ~seconds) | `SubAgentWorker` asyncio task (minutes, many tools) |
-| Result | `[TOOL_RESULT]` → Main pass 2 → speak | `report(DONE)` → task_board → Main or Step 10 |
+| Result | native `tool_calls` → snippets / follow-up (§7.10.1) | `report(DONE)` → task_board → Main or Step 10 |
 | User waits? | Yes for final answer (~1–2s) | **No** for the long job — work runs in background |
 
 Sub-agents bind to the **Supervisor** (`user_id`), not the WebSocket. Device handover (PLAN.md §5.0) reattaches transport; workers keep running. `welcome{task_board_snapshot}` must list in-flight tasks after reconnect.
@@ -30,7 +30,7 @@ Sub-agents bind to the **Supervisor** (`user_id`), not the WebSocket. Device han
 From Steps 6–7:
 
 - `ToolRegistry` + `ToolRunner` — sub-agents call tools **only** through `ToolRunner.execute(task_id, …)`.
-- `[DELEGATE capability=main …]` → `server/orchestrator/tool_dispatch.py` (cheap tools, follow-up completion).
+- Main cheap tools via native `tool_calls` (or `[DELEGATE capability=main …]` fallback) → `tool_dispatch.py` (see PLAN.md §7.10.1).
 - `[DELEGATE capability=research|productivity|comms|data …]` today returns `not_capable` — **Step 8 replaces that branch with `spawn_subagent`.**
 - `event{kind:tool_started|tool_done}` + activity feed rendering in `web-client/client.js`.
 - `compute_respond_via`, echo suppression, `chat_message` vs `caption` (Step 6).

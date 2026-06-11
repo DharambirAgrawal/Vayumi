@@ -1,6 +1,6 @@
 # Step 11 — LanceDB retrieval + memory_recall upgrade
 
-**Status:** ⬜ pending  
+**Status:** ✅ complete  
 **Depends on:** step-10  
 **Estimated effort:** 1 day  
 **Owner:** you  

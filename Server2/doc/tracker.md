@@ -3,7 +3,7 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-05-23 — Step 10 complete
+> **Last updated:** 2026-06-07 — Step 12 complete (P2 summarizer)
 
 ---
 
@@ -19,7 +19,71 @@
 | `hello.capabilities.tts` | client declares speaker | Step 4 + Step 6 | ✅ |
 | Proactive respond_via | `build_synthetic_turn` + `input_kind='proactive'` | Step 10 | ✅ |
 
-**Current build step:** Step 11 (LanceDB retrieval).
+**Current build step:** Step 13 (Meeting mode).
+
+---
+
+## Post-Step-10 amendments (main agent — implemented 2026-06)
+
+These changes are **not** a new roadmap step; they supersede parts of Step 7’s original “DELEGATE-only main tools” wording. See PLAN.md §7.10.1.
+
+### Main turn flow (current)
+
+```
+User message (voice STT or typed chat)
+        │
+        ▼
+build_main_chat_messages()
+  system = prompts/main.txt (static)
+  user   = session context (today's date, warm, task board, injections)
+  user   = real user message (last)
+        │
+        ▼
+complete_chat(tools=[web_search, memory_save, memory_recall])
+        │
+        ├── tool_calls? ──▶ run_native_tool_calls
+        │                      │
+        │                      ▼
+        │                 speak_web_search_results()  (snippets, not LLM guess)
+        │                      │
+        │                      ▼
+        │                 revoice_final if streaming spoke bad partials
+        │
+        └── prose only? ──▶ parse [DELEGATE]/[REMEMBER]/[RECALL]
+                              │
+                              ├── [DELEGATE capability=main] → tool_dispatch (fallback)
+                              ├── model-output safety nets (tool_fallback.py):
+                              │     ack-only, [web_search leak], ungrounded $, stale years
+                              │     → emergency web_search + speak snippets
+                              └── [DELEGATE capability=research|…] → spawn sub-agent
+        │
+        ▼
+caption + chat_message + TTS (respond_via per Rule 13)
+```
+
+**Explicitly removed:** `main_core.txt` / `main_tools.txt` split, user-message keyword routing, search-before-LLM intent heuristics.
+
+### Typed chat while speaking
+
+| Piece | Role |
+|---|---|
+| `chat_should_queue()` | Queue when busy, playback active, or within 3s post-TTS grace |
+| `chat_queue.py` | Depth-1 queue; `start_background_chat_compute` runs `run_turn` during TTS |
+| `try_deliver_pending_chat` | Speaks precomputed answer when playback idle |
+| `is_trivial_chat_followup` | `?` / `!` do not replace an in-flight queued question |
+
+### Key files (amendments)
+
+| File | Role |
+|---|---|
+| `server/engine/prompt.py` | `build_main_chat_messages`, `today_context_line()` |
+| `server/engine/pool.py` | `complete_chat`, `ChatCompletionResult`, `ParsedToolCall` |
+| `server/tools/openai_schema.py` | OpenAI tool schemas for main native tools |
+| `server/orchestrator/tool_fallback.py` | Model-output safety nets only |
+| `server/orchestrator/tool_dispatch.py` | `run_native_tool_calls`, `speak_web_search_results` |
+| `server/orchestrator/prose.py` | Sanitize spoken output (no markdown/URLs/leaks) |
+| `server/transport/session_busy.py` | `playback_blocks_voice`, `chat_should_queue` |
+| `prompts/main.txt` | Single unified main prompt (tools + DELEGATE research) |
 
 ### Step index (quick reference)
 
@@ -35,8 +99,9 @@
 | 8 | Sub-agent worker | ✅ | [step-08.md](step-08.md) |
 | 9 | Capability bundles | ✅ | [step-09.md](step-09.md) |
 | 10 | Proactive notifier | ✅ | [step-10.md](step-10.md) |
-| 11 | LanceDB retrieval | ⬜ | [step-11.md](step-11.md) |
-| 12–21 | Summarizer, modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
+| 11 | LanceDB retrieval | ✅ | [step-11.md](step-11.md) |
+| 12 | Summarizer (P2) | ✅ | [step-12.md](step-12.md) |
+| 13–21 | Modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
 
 ---
 
@@ -47,7 +112,7 @@ PHASE 1 — SPINE                                            PHASE 2 — MULTI-A
 ┌─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┐  ┌─────────┬─────────┬─────────┬─────────┬─────────┐
 │ Step 1  │ Step 2  │ Step 3  │ Step 4  │ Step 5  │ Step 6  │ Step 7  │  │ Step 8  │ Step 9  │ Step 10 │ Step 11 │ Step 12 │
 │Scaffold │ Engine  │ Voice   │ Client  │ Memory  │Backfill │ Tools   │  │SubAgent │Capabil. │Notifier │Retrieval│Summariz.│
-│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  │  ✅     │  ✅     │  ✅     │  ⬜     │  ⬜     │
+│  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │  │  ✅     │  ✅     │  ✅     │  ✅     │  ✅     │
 └─────────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘  └────┬────┴────┬────┴────┬────┴────┬────┴────┬────┘
                │         │         │         │         │         │            │         │         │         │         │
                ▼         ▼         ▼         ▼         ▼         ▼            ▼         ▼         ▼         ▼         ▼
@@ -61,14 +126,90 @@ PHASE 3 — MODES & POLISH                         PHASE 4 — CLIENTS & DEPLOY
 
 Legend: ✅ done   🔄 in progress   ⬜ not started   ❌ blocked
 
-Completed: 10 / 21    Phase 1: 7/7    Phase 2: 3/5    Phase 3: 0/5    Phase 4: 0/4
+Completed: 12 / 21    Phase 1: 7/7    Phase 2: 5/5    Phase 3: 0/5    Phase 4: 0/4
 ```
 
 ---
 
 ## Completed steps (detail sections)
 
-Sections below describe what each finished step added. **Steps 1–10 are complete**; Step 11 is next.
+Sections below describe what each finished step added. **Steps 1–12 are complete**; Step 13 is next. **Phase 2 complete.**
+
+---
+
+## What Step 12 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    P2 SUMMARIZER (Step 12) — background only                    │
+│                                                                                 │
+│  server/memory/summarizer.py                                                    │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ schedule_session_summarization() — fire-and-forget after supervisor turn  │  │
+│  │ summarize_session() — P2 slot, LLM JSON → compressed_summary + facts       │  │
+│  │ extract_facts_from_task() — facts_to_persist from DONE (Pydantic only)    │  │
+│  │ Per-session lock, retries, invalid JSON / engine errors never block user   │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  prompts/summarizer.txt — profile facts (name, relationships.*, preferences.*)  │
+│  signal_bus.py — schedule_task_fact_extraction on DONE                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Post-turn memory flow (Step 12)
+
+```
+User receives caption + chat_message + TTS (turn complete)
+        │
+        ▼ (asyncio.create_task — no await)
+schedule_session_summarization()
+        │
+        ├── tokens < 20k → return (silent)
+        └── tokens ≥ 20k → P2 summarize_session
+                ├── LLM JSON summary → sessions.compressed_summary
+                ├── validated facts → set_fact (source=summarizer)
+                └── prune old turns (keep recent 8)
+
+Sub-agent DONE with facts_to_persist
+        │
+        ▼ (asyncio.create_task)
+extract_facts_from_task() → set_fact (source=task:<id>)
+```
+
+---
+
+## What Step 11 Built
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    LANCEDB RETRIEVAL (Step 11)                                  │
+│                                                                                 │
+│  server/memory/retrieval.py                                                     │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │ retrieve(query, filters, k) → ranked Snippet list with citations          │  │
+│  │ get_snippet_by_doc_id(user_id, doc_id) — direct lookup by fact_id          │  │
+│  │ facts_index vector search filtered by user_id                             │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                 │
+│  memory_recall tool — key/chain (Postgres) OR query (semantic LanceDB)          │
+│  directives.py — [RECALL doc:<doc_id>] → inject snippet into Main follow-up     │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Memory retrieval flow (Step 11)
+
+```
+memory_recall(query=…) OR [RECALL doc:fact_id]
+        │
+        ▼
+embed query / lookup fact_id in facts_index
+        │
+        ▼
+ranked Snippets (doc_id, key, text, citation)
+        │
+        ▼
+ToolResult / [RECALL_RESULT doc=…] → Main follow-up context
+```
 
 ---
 
@@ -133,46 +274,42 @@ ProactiveNotifier tick (~3s)
 
 ---
 
-## What Step 7 Built
+## What Step 7 Built (+ §7.10.1 amendments)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         TOOL PLANE (Step 7)                                     │
+│                         TOOL PLANE (Step 7 + amendments)                        │
 │                                                                                 │
 │  server/tools/                                                                  │
 │  ┌───────────────────────────────────────────────────────────────────────────┐  │
 │  │ registry.py — ToolEntry, ToolResult, ToolRegistry, validate_tool_args      │  │
 │  │ runner.py — ToolRunner.execute (gate, timeout, events, confirmation)       │  │
 │  │ tool_search.py / web_search.py / memory_save.py / memory_recall.py         │  │
+│  │ openai_schema.py — native tool schemas for complete_chat                   │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                 │
-│  server/orchestrator/tool_dispatch.py — parallel DELEGATE runs, not_capable stub │
-│  directives.py — [DELEGATE capability=main goal="..." payload={...}]           │
-│  supervisor.py — tool results → follow-up completion (same pattern as RECALL)  │
+│  complete_chat + run_native_tool_calls + speak_web_search_results (snippets)   │
+│  tool_fallback.py — model-output safety nets (no keyword routing)              │
+│  prose.py — sanitize spoken output (no markdown / [web_search] leaks)        │
+│  [DELEGATE capability=main] — fallback when model emits directive text         │
 │  ws.py — tool_started / tool_done events on activity feed                        │
 │  app.py — init_tools() at boot; Tavily when TAVILY_API_KEY set                   │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Main tool turn flow (Step 7)
+### Main tool turn flow (Step 7 + §7.10.1 amendments)
 
 ```
 User message
      │
      ▼
-Supervisor.run_turn (pass 1)
+Supervisor.run_turn — complete_chat (native tool_calls)
      │
-     ├── Main streams text + optional [DELEGATE ...] blocks
+     ├── tool_calls → run_native_tool_calls → speak_web_search_results
+     │                (short status caption while searching; revoice_final if needed)
      │
-     ▼
-tool_dispatch.run_delegate_directives (asyncio.gather for multiple tools)
-     │
-     ├── event tool_started → client activity feed
-     ├── ToolRunner.execute → Tavily or DDG / memory / tool_search
-     └── event tool_done
-     │
-     ▼
-Supervisor.run_turn (pass 2) with [TOOL_RESULT ...] injected
+     └── prose → [DELEGATE capability=main] fallback OR sub-agent spawn
+                 + tool_fallback safety nets on bad model output
      │
      ▼
 caption + chat_message (+ voice per respond_via)
@@ -258,7 +395,8 @@ SignalBus → TaskBoard → (optional) Main reads board on status question
 │  │ warm.py — build_warm_profile, mark_dirty, Redis warm_cache TTL           │  │
 │  │ session.py — load_or_create_session, append_turn, recent_turns           │  │
 │  │ embeddings.py — bge-small-en-v1.5 (sentence-transformers)                │  │
-│  │ retrieval.py — stub (step 11)                                            │  │
+│  │ retrieval.py — LanceDB top-k + doc lookup                                │  │
+│  │ summarizer.py — P2 compression + fact extract (step 12)                  │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                 │
 │  server/orchestrator/                                                           │
@@ -566,12 +704,12 @@ This is the target. Grey sections are not built yet.
 │                          │  │                        │  │                        │
 │ ░░ worker.py             │  │ ░░ registry.py         │  │ ✅ facts.py (versioned)│
 │ ░░ report.py             │  │ ░░ runner.py           │  │ ✅ warm.py (profile)   │
-│ ░░ capabilities/         │  │ ░░ web_search.py       │  │ ░░ retrieval.py (stub) │
+│ ░░ capabilities/         │  │ ░░ web_search.py       │  │ ✅ retrieval.py │
 │    research/             │  │ ░░ mcp_adapter.py      │  │ ✅ session.py          │
-│    productivity/         │  │ ✅ registry/runner     │  │ ░░ summarizer.py       │
+│    productivity/         │  │ ✅ registry/runner     │  │ ✅ summarizer.py       │
 │ ✅ web_search (Tavily) │  │                        │
 │    comms/                │  │                        │  │ ✅ embeddings.py       │
-│ steps 8-9               │  │ step 7                 │  │ step 5 ✅, 11-12       │
+│ steps 8-9               │  │ step 7                 │  │ step 5–12 ✅            │
 └──────────────────────────┘  └────────────────────────┘  └────────────────────────┘
                                                                     │
                                                                     ▼
@@ -711,12 +849,14 @@ Server2/
 │   ├── step-08.md              ✅ complete (sub-agent worker)
 │   ├── step-09.md              ✅ capability bundles
 │   ├── step-10.md              ✅ proactive notifier
-│   ├── step-11.md              ⬜ pending (LanceDB retrieval)
+│   ├── step-11.md              ✅ LanceDB retrieval
+│   ├── step-12.md              ✅ P2 summarizer
+│   ├── step-13.md              ⬜ pending (meeting mode)
 │   ├── tracker.md              ✅ this file — progress + architecture flows
 │   ├── roadmap.md              ✅ full 21-step overview
 │   └── history.md              ✅ change log
 ├── prompts/
-│   └── main.txt                ✅ Main prompt + DELEGATE tool guidance
+│   └── main.txt                ✅ Unified main prompt (native tools + DELEGATE research)
 ├── server/
 │   ├── __init__.py             ✅
 │   ├── app.py                  ✅ FastAPI + lifespan + engine + voice + tools boot
@@ -733,20 +873,23 @@ Server2/
 │   │   ├── __init__.py         ✅
 │   │   ├── runner.py           ✅ llama-server subprocess lifecycle
 │   │   ├── pool.py             ✅ priority queue + slot manager
-│   │   └── prompt.py           ✅ Main prompt assembly + warm/history
+│   │   └── prompt.py           ✅ build_main_chat_messages + today_context_line
 │   ├── memory/
 │   │   ├── __init__.py         ✅
 │   │   ├── embeddings.py       ✅ bge-small-en-v1.5 embedder
 │   │   ├── facts.py            ✅ versioned fact CRUD + LanceDB upsert
 │   │   ├── warm.py             ✅ warm profile + dirty flag + Redis cache
 │   │   ├── session.py          ✅ session + turn history
-│   │   └── retrieval.py        ✅ stub (step 11)
+│   │   ├── retrieval.py        ✅ LanceDB semantic retrieval
+│   │   └── summarizer.py       ✅ P2 background compression
 │   ├── orchestrator/
 │   │   ├── __init__.py         ✅
 │   │   ├── directives.py       ✅ REMEMBER / RECALL / DELEGATE / RESPOND_VIA
 │   │   ├── notifier.py         ✅ proactive synthetic turns (Step 10)
-│   │   ├── tool_dispatch.py    ✅ bundle-gated sub-agent tool dispatch
-│   │   └── supervisor.py       ✅ handle_turn + spawn sub-agents
+│   │   ├── tool_dispatch.py    ✅ native tool_calls + DELEGATE dispatch
+│   │   ├── tool_fallback.py    ✅ model-output safety nets (no keyword routing)
+│   │   ├── prose.py            ✅ spoken-output sanitization
+│   │   └── supervisor.py       ✅ complete_chat turn + spawn sub-agents
 │   ├── subagents/
 │   │   ├── worker.py           ✅ CapabilityBundle + tool cards in prompt
 │   │   ├── report.py           ✅
@@ -761,7 +904,8 @@ Server2/
 │   │   ├── summarize_url.py    ✅ trafilatura extract
 │   │   ├── fetch_html.py       ✅ raw HTML
 │   │   ├── memory_save.py      ✅
-│   │   └── memory_recall.py    ✅
+│   │   ├── memory_recall.py    ✅
+│   │   └── openai_schema.py    ✅ native tool schemas for complete_chat
 │   ├── voice/
 │   │   ├── stt/groq.py         ✅ Groq Whisper STT
 │   │   ├── tts/kokoro.py         ✅ Kokoro streaming TTS
@@ -779,7 +923,9 @@ Server2/
 │       ├── __init__.py         ✅
 │       ├── ws.py               ✅ hello-first, chat/voice, singleton
 │       ├── session_registry.py ✅ enforce_session_singleton
-│       ├── chat_queue.py       ✅ typed chat queue depth 1
+│       ├── chat_queue.py       ✅ queue + background compute + pending delivery
+│       ├── session_busy.py     ✅ playback grace + chat_should_queue
+│       ├── turn_coordinator.py ✅ shared delivery + revoice_final
 │       ├── protocol.py         ✅ chat_message, welcome.resumed, events
 │       └── client_control.py   ✅ stop/start_capture + playback
 ├── web-client/
@@ -789,19 +935,28 @@ Server2/
 └── tests/
     ├── __init__.py             ✅
     ├── conftest.py             ✅ fixtures + fake JWT helper
-    └── unit/                   ✅ 172 tests (through Step 10)
+    └── unit/                   ✅ 240 unit tests (through Step 12)
         ├── test_protocol.py
         ├── test_respond_via.py
         ├── test_session_singleton.py
         ├── test_client_control.py
         ├── test_voice_*.py
         ├── test_memory_*.py
+        ├── test_retrieval.py
+        ├── test_memory_recall.py
+        ├── test_summarizer.py
+        ├── test_session_compression.py
+        ├── test_signal_bus_facts.py
         ├── test_directives.py
         ├── test_directives_tools.py
         ├── test_supervisor.py
         ├── test_supervisor_tools.py
         ├── test_tools_*.py
         ├── test_tool_dispatch.py
+        ├── test_tool_fallback.py
+        ├── test_main_chat_messages.py
+        ├── test_prose.py
+        ├── test_supervisor_no_coerce.py
         ├── test_sentence_buffer.py
         ├── test_streaming_tts.py
         ├── test_notifier.py

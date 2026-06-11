@@ -508,6 +508,97 @@ This log tracks updates pushed to GitHub for Server2. Each entry should be small
 
 ---
 
+## 2026-06-07 - Post-Step-10 main-agent refactor: native tools, grounded search, doc sync
+
+**Scope:** orchestrator | engine | transport | prompts | tests | docs
+
+**Why:** After upgrades, the main agent was still leaking `[web_search]` text, hallucinating live prices/dates, and using stale keyword routing. Docs and step files still described the old DELEGATE-only two-pass flow.
+
+**Key changes:**
+- Single `prompts/main.txt` + `build_main_chat_messages()` (today's date, warm profile, task board in a labeled user turn).
+- Main turn uses `complete_chat()` with native `tool_calls` (`web_search`, `memory_save`, `memory_recall`).
+- `speak_web_search_results()` answers from Tavily/DDG snippets; web_search-only turns skip streaming LLM follow-up.
+- `tool_fallback.py` — model-output safety nets only (acks, inline leaks, ungrounded prices, stale years); emergency search + snippets.
+- `prose.py` — strip markdown/URLs/`[web_search]` from spoken output.
+- `tool_status_while_searching()` + `revoice_final` — safe status while searching; re-speak grounded answer if bad partials already played.
+- Typed chat queue: `chat_queue.py`, `session_busy.py` (3s post-TTS grace), background compute, trivial `?` ignore.
+- Removed: `main_core`/`main_tools` split, user-message keyword routing, search-before-LLM intent heuristics.
+- Synced PLAN.md §7.10.1, tracker, roadmap, step-07/08 amendment banners, agent-prompt, README.
+
+**Files/areas:**
+- CHANGED: `server/orchestrator/{supervisor,tool_dispatch,tool_fallback,prose}.py`, `server/engine/{prompt,pool}.py`, `server/transport/{ws,chat_queue,session_busy,turn_coordinator}.py`, `prompts/main.txt`
+- NEW tests: `test_tool_fallback.py`, `test_main_chat_messages.py`, `test_prose.py`, updates to `test_tool_dispatch.py`, `test_supervisor_no_coerce.py`
+- CHANGED docs: `PLAN.md`, `doc/{tracker,roadmap,history,step-07,step-08}.md`, `agent-prompt.md`, `README.md`
+
+**Plan/diagram references:** PLAN.md §7.10, §7.10.1, §5.5, Rules 11–13; diagram page 08
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 217 passed (updated stale tests for `complete_chat`, snippet answers, chat-message prompts)
+
+**Follow-ups:**
+- Step 11: LanceDB retrieval.
+- Optional: apply same `revoice_final` / safe-status path to voice turns (`server/voice/turn.py`).
+
+---
+
+## 2026-06-07 - Step 11 complete: LanceDB retrieval + memory_recall upgrade
+
+**Scope:** memory | orchestrator | tools | tests
+
+**Why:** Enable on-demand semantic memory search over the existing `facts_index` embeddings and support `[RECALL doc:<fact_id>]` for direct document lookup.
+
+**Key changes:**
+- `server/memory/retrieval.py` — `retrieve(query, filters, k)` returns ranked `Snippet` list with citations; `get_snippet_by_doc_id()` for doc recall.
+- `memory_recall` tool — key/chain Postgres path unchanged; new optional `query` + `k` for LanceDB semantic search.
+- `directives.py` — `[RECALL doc:<doc_id>]` parsing, execution, and `[RECALL_RESULT doc=…]` injection into Main follow-up.
+- `supervisor.py` — doc recalls trigger the same follow-up path as key/chain recalls.
+
+**Files/areas:**
+- NEW: `server/memory/retrieval.py`, `tests/unit/test_retrieval.py`, `tests/unit/test_memory_recall.py`, `doc/step-12.md` (stub)
+- CHANGED: `server/tools/memory_recall.py`, `server/tools/__init__.py`, `server/orchestrator/directives.py`, `server/orchestrator/supervisor.py`, `tests/unit/test_directives.py`
+- CHANGED: `PLAN.md`, `doc/{step-11,roadmap,tracker,history}.md`
+
+**Plan/diagram references:**
+- PLAN.md §3.7, §7.11 (`retrieval.py` API), §8 Step 11; diagram page 09
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 226 passed
+- `ruff check` on changed files — clean
+
+**Follow-ups:**
+- Step 12: P2 summarizer + automatic session compression at 20k tokens
+
+---
+
+## 2026-06-07 - Step 12 complete: P2 summarizer + background memory compression
+
+**Scope:** memory | engine | orchestrator | tests
+
+**Why:** Compress long session history and persist profile facts without blocking user turns — all memory work runs fire-and-forget after the reply is delivered.
+
+**Key changes:**
+- `server/memory/summarizer.py` — P2 `summarize_session()` (LLM JSON → Pydantic → `set_fact` + prune old turns); `extract_facts_from_task()` for structured `facts_to_persist`; per-session lock + retries.
+- `schedule_session_summarization()` from supervisor after every turn (no await); `schedule_task_fact_extraction()` from signal bus on DONE.
+- `prompts/summarizer.txt` — JSON-only output for summary + profile facts (`name`, `relationships.*`, `preferences.*`).
+- Session helpers: `estimate_history_tokens`, `turns_for_summarization`, `prune_turns`, `update_compressed_summary`.
+
+**Files/areas:**
+- NEW: `server/memory/summarizer.py`, `prompts/summarizer.txt`, `tests/unit/{test_summarizer,test_session_compression,test_signal_bus_facts}.py`, `doc/step-13.md` (stub)
+- CHANGED: `server/{config,memory/session,engine/prompt,orchestrator/supervisor,orchestrator/signal_bus}.py`, `.env.example`
+- CHANGED: `PLAN.md`, `doc/{step-12,roadmap,tracker,history}.md`
+
+**Plan/diagram references:**
+- PLAN.md §3.7, §7.11, §8 Step 12, §9 (typed fact extraction); diagram page 09
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 240 passed
+- `ruff check` on changed files — clean
+
+**Follow-ups:**
+- Step 13: Meeting mode
+
+---
+
 ## 2026-05-22 - requirements sync (fetch tools)
 
 **Scope:** deploy
