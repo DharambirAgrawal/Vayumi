@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from server.logger import get_logger
@@ -34,6 +35,11 @@ def embed_text(text: str) -> list[float]:
         raise RuntimeError("Embedder not initialized — call init_embedder first")
     vector = _model.encode(text, normalize_embeddings=True)
     return vector.tolist()
+
+
+async def embed_text_async(text: str) -> list[float]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, embed_text, text)
 
 
 def close_embedder() -> None:

@@ -28,7 +28,7 @@ class ClientControlSession:
     playback: PlaybackState = "idle"
     capture: CaptureState = "idle"
     visible: bool = True
-    route: Literal["speaker", "earpiece", "bluetooth"] | None = None
+    route: Literal["speaker", "earpiece", "bluetooth", "none"] | None = None
     mode: SessionMode = "conversation"
 
     def handle_client_state(self, state: ClientStatePayload) -> None:

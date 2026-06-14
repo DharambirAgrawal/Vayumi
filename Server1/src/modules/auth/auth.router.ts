@@ -13,7 +13,8 @@ import {
   registerSchema,
   resendVerificationSchema,
   resetPasswordSchema,
-  tokenQuerySchema,
+  verifyEmailCodeByEmailSchema,
+  verifyEmailCodeSchema,
 } from "./auth.validators.js";
 
 export const authRouter = Router();
@@ -23,7 +24,8 @@ const authLimit = rateLimiter({ ...appConfig.rateLimit.auth, keyPrefix: "auth" }
 authRouter.post("/register", validate.body(registerSchema), authController.register);
 authRouter.post("/login", authLimit, validate.body(loginSchema), authController.login);
 authRouter.post("/google", authLimit, validate.body(googleSchema), authController.google);
-authRouter.get("/verify-email", validate.query(tokenQuerySchema), authController.verifyEmail);
+authRouter.post("/verify-email/confirm", authenticate, validate.body(verifyEmailCodeSchema), authController.verifyEmailCode);
+authRouter.post("/verify-email/confirm/request", authLimit, validate.body(verifyEmailCodeByEmailSchema), authController.verifyEmailCodeByEmail);
 authRouter.post("/verify-email/resend", authenticate, authController.resendVerification);
 authRouter.post("/verify-email/resend/request", authLimit, validate.body(resendVerificationSchema), authController.resendVerificationByEmail);
 authRouter.post("/token/refresh", authLimit, validate.body(refreshSchema), authController.refresh);

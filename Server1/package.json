@@ -29,12 +29,14 @@
     "mailchecker": "latest",
     "multer": "latest",
     "node-cron": "latest",
-    "nodemailer": "latest",
+    "oci-common": "^2.134.1",
+    "oci-emaildataplane": "^2.134.1",
     "pino": "latest",
     "pino-http": "latest",
     "postgres": "latest",
     "rate-limit-redis": "latest",
     "redis": "^5.12.1",
+    "rrule": "^2.8.1",
     "zod": "latest"
   },
   "devDependencies": {
@@ -44,7 +46,6 @@
     "@types/multer": "latest",
     "@types/node": "latest",
     "@types/node-cron": "latest",
-    "@types/nodemailer": "latest",
     "drizzle-kit": "latest",
     "tsx": "latest",
     "typescript": "latest"

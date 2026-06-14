@@ -1,7 +1,8 @@
 import { OAuth2Client, type LoginTicket } from "google-auth-library";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import mailchecker from "mailchecker";
-import nodemailer from "nodemailer";
+import * as common from "oci-common";
+import * as emaildataplane from "oci-emaildataplane";
 import { appConfig } from "../../core/config/app.js";
 import { env } from "../../core/config/index.js";
 import { db } from "../../core/db/index.js";
@@ -18,7 +19,7 @@ import { cache } from "../../core/redis/helpers.js";
 import { redis } from "../../core/redis/index.js";
 import { RedisKeys, RedisTTL } from "../../core/redis/keys.js";
 import { addSeconds } from "../../core/utils/date.js";
-import { compareHash, hashPassword, randomToken, sha256 } from "../../core/utils/crypto.js";
+import { compareHash, generateNumericCode, hashPassword, randomToken, sha256 } from "../../core/utils/crypto.js";
 import type { AccessTokenPayload, User } from "../../core/types/index.js";
 import { logger } from "../../core/utils/logger.js";
 import {
@@ -44,15 +45,16 @@ const googleAudiences = env.GOOGLE_CLIENT_ID
   .map((value) => value.trim())
   .filter(Boolean);
 
-const mailer = nodemailer.createTransport({
-  host: env.SMTP_HOST,
-  port: env.SMTP_PORT,
-  secure: env.SMTP_PORT === 465,
-  auth: {
-    user: env.SMTP_USER,
-    pass: env.SMTP_PASS,
-  },
-});
+const ociAuthProvider = new common.SimpleAuthenticationDetailsProvider(
+  env.OCI_TENANCY_ID,
+  env.OCI_USER_ID,
+  env.OCI_FINGERPRINT,
+  env.OCI_PRIVATE_KEY.replace(/\\n/g, "\n"),
+  env.OCI_PRIVATE_KEY_PASSPHRASE ?? null,
+  common.Region.fromRegionId(env.OCI_REGION),
+);
+
+const emailClient = new emaildataplane.EmailDPClient({ authenticationDetailsProvider: ociAuthProvider });
 
 const publicUser = (user: User) => ({
   id: user.id,
@@ -65,13 +67,20 @@ const publicUser = (user: User) => ({
 });
 
 const sendEmail = async (input: { to: string; subject: string; text: string }) => {
-  await mailer.sendMail({
-    from: env.FROM_EMAIL,
-    to: input.to,
-    subject: input.subject,
-    text: input.text,
+  await emailClient.submitEmail({
+    submitEmailDetails: {
+      sender: {
+        senderAddress: { email: env.FROM_EMAIL },
+        compartmentId: env.OCI_EMAIL_COMPARTMENT_ID,
+      },
+      recipients: { to: [{ email: input.to }] },
+      subject: input.subject,
+      bodyText: input.text,
+    },
   });
 };
+
+const MAX_VERIFICATION_ATTEMPTS = 5;
 
 const trySendVerificationEmail = async (user: User) => {
   try {
@@ -83,6 +92,17 @@ const trySendVerificationEmail = async (user: User) => {
   }
 };
 
+const isVerificationOnCooldown = (userId: string) =>
+  cache.get<string>(RedisKeys.emailVerificationCooldown(userId));
+
+const sendVerificationCodeWithCooldown = async (user: User) => {
+  const sent = await trySendVerificationEmail(user);
+  if (sent) {
+    await cache.set(RedisKeys.emailVerificationCooldown(user.id), "1", RedisTTL.emailVerificationCooldown);
+  }
+  return sent;
+};
+
 const trySendPasswordResetEmail = async (user: User) => {
   try {
     await sendPasswordResetEmail(user);
@@ -92,18 +112,16 @@ const trySendPasswordResetEmail = async (user: User) => {
 };
 
 const sendVerificationEmail = async (user: User) => {
-  const token = randomToken();
-  const tokenHash = sha256(token);
-  const expiresAt = addSeconds(new Date(), RedisTTL.emailVerification);
+  const code = generateNumericCode();
+  const tokenHash = sha256(code);
+  const expiresAt = addSeconds(new Date(), RedisTTL.emailVerificationCode);
 
   await db.insert(emailVerifications).values({ userId: user.id, tokenHash, expiresAt });
-  await cache.set(RedisKeys.emailVerification(tokenHash), { userId: user.id }, RedisTTL.emailVerification);
 
-  const link = `${appConfig.appUrl}/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`;
   await sendEmail({
     to: user.email,
-    subject: "Verify your email",
-    text: `Verify your email by opening this link: ${link}`,
+    subject: "Your Vayumi verification code",
+    text: `Your Vayumi verification code is ${code}. It expires in 10 minutes. If you didn't request this, you can safely ignore this email.`,
   });
 };
 
@@ -212,7 +230,7 @@ export const authService = {
     });
 
     const tokens = await createSessionAndTokens(user.id, input);
-    const verificationSent = await trySendVerificationEmail(user);
+    const verificationSent = await sendVerificationCodeWithCooldown(user);
     await cache.invalidate(RedisKeys.userProfile(user.id));
 
     return {
@@ -240,7 +258,8 @@ export const authService = {
     }
 
     if (!user.isVerified) {
-      const verificationSent = await trySendVerificationEmail(user);
+      const onCooldown = await isVerificationOnCooldown(user.id);
+      const verificationSent = onCooldown ? true : await sendVerificationCodeWithCooldown(user);
       throw new AppError(403, "EMAIL_NOT_VERIFIED", "Please verify your email before signing in", {
         verification_sent: verificationSent,
       });
@@ -344,38 +363,66 @@ export const authService = {
     return { user: publicUser(user), tokens };
   },
 
-  async verifyEmail(token: string) {
-    const tokenHash = sha256(token);
+  async verifyEmailCode(input: { code: string; userId?: string; email?: string }) {
+    let user: User | undefined;
+
+    if (input.userId) {
+      [user] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+    } else if (input.email) {
+      [user] = await db
+        .select()
+        .from(users)
+        .where(and(eq(users.email, input.email), isNull(users.deletedAt)))
+        .limit(1);
+    }
+
+    if (!user) {
+      throw new AuthError("Invalid or expired verification code");
+    }
+
+    if (user.isVerified) {
+      return { user: publicUser(user), already_verified: true };
+    }
+
     const [verification] = await db
       .select()
       .from(emailVerifications)
       .where(
         and(
-          eq(emailVerifications.tokenHash, tokenHash),
+          eq(emailVerifications.userId, user.id),
           isNull(emailVerifications.usedAt),
           gt(emailVerifications.expiresAt, new Date()),
         ),
       )
+      .orderBy(desc(emailVerifications.createdAt))
       .limit(1);
 
     if (!verification) {
-      throw new AuthError("Invalid or expired verification token");
+      throw new AuthError("Invalid or expired verification code");
     }
 
-    const [user] = await db
+    if (verification.attempts >= MAX_VERIFICATION_ATTEMPTS) {
+      throw new AppError(429, "TOO_MANY_ATTEMPTS", "Too many incorrect attempts. Please request a new code");
+    }
+
+    if (sha256(input.code) !== verification.tokenHash) {
+      await db
+        .update(emailVerifications)
+        .set({ attempts: verification.attempts + 1 })
+        .where(eq(emailVerifications.id, verification.id));
+      throw new AuthError("Incorrect verification code");
+    }
+
+    const [updatedUser] = await db
       .update(users)
       .set({ isVerified: true, updatedAt: new Date() })
-      .where(eq(users.id, verification.userId))
+      .where(eq(users.id, user.id))
       .returning();
 
-    await db
-      .update(emailVerifications)
-      .set({ usedAt: new Date() })
-      .where(eq(emailVerifications.id, verification.id));
+    await db.update(emailVerifications).set({ usedAt: new Date() }).where(eq(emailVerifications.id, verification.id));
+    await cache.invalidate(RedisKeys.userProfile(user.id));
 
-    await cache.invalidate(RedisKeys.emailVerification(tokenHash), RedisKeys.userProfile(verification.userId));
-
-    return { user: user ? publicUser(user) : null };
+    return { user: updatedUser ? publicUser(updatedUser) : null };
   },
 
   async resendVerification(user: User) {
@@ -383,7 +430,11 @@ export const authService = {
       return { verification_sent: false, message: "Email is already verified" };
     }
 
-    const verificationSent = await trySendVerificationEmail(user);
+    if (await isVerificationOnCooldown(user.id)) {
+      return { verification_sent: false, message: "Please wait a moment before requesting another code" };
+    }
+
+    const verificationSent = await sendVerificationCodeWithCooldown(user);
     return verificationSent
       ? { verification_sent: true }
       : { verification_sent: false, message: "Verification email could not be sent" };
@@ -397,16 +448,20 @@ export const authService = {
       .limit(1);
 
     if (!user) {
-      return { verification_sent: false, message: "If the account exists, a verification email will be sent" };
+      return { verification_sent: false, message: "If the account exists, a verification code will be sent" };
     }
 
     if (user.isVerified) {
       return { verification_sent: false, message: "Email is already verified" };
     }
 
-    const verificationSent = await trySendVerificationEmail(user);
+    if (await isVerificationOnCooldown(user.id)) {
+      return { verification_sent: false, message: "Please wait a moment before requesting another code" };
+    }
+
+    const verificationSent = await sendVerificationCodeWithCooldown(user);
     return verificationSent
-      ? { verification_sent: true, message: "Verification email sent" }
+      ? { verification_sent: true, message: "Verification code sent" }
       : { verification_sent: false, message: "Verification email could not be sent" };
   },
 

@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { env } from "../config/index.js";
 
@@ -18,6 +18,9 @@ export const compareHash = (value: string, hash: string) => bcrypt.compare(value
 export const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 export const randomToken = (bytes = 32) => randomBytes(bytes).toString("base64url");
+
+export const generateNumericCode = (digits = 6) =>
+  randomInt(0, 10 ** digits).toString().padStart(digits, "0");
 
 export const encrypt = (plainText: string): string => {
   const iv = randomBytes(12);

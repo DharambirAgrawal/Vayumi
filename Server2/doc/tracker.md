@@ -3,7 +3,7 @@
 > **Purpose:** One file to see (1) what's built, (2) how data moves through the system.  
 > Updated after each step completes.  
 > Config rule: keep `.env` for secrets, deployment endpoints, local paths, ports, and overrides; keep ordinary defaults in `server/config.py`.
-> **Last updated:** 2026-06-07 — Step 12 complete (P2 summarizer)
+> **Last updated:** 2026-06-07 — Step 13 complete (meeting mode)
 
 ---
 
@@ -19,7 +19,7 @@
 | `hello.capabilities.tts` | client declares speaker | Step 4 + Step 6 | ✅ |
 | Proactive respond_via | `build_synthetic_turn` + `input_kind='proactive'` | Step 10 | ✅ |
 
-**Current build step:** Step 13 (Meeting mode).
+**Current build step:** Step 14 (Local STT fallback).
 
 ---
 
@@ -101,7 +101,8 @@ caption + chat_message + TTS (respond_via per Rule 13)
 | 10 | Proactive notifier | ✅ | [step-10.md](step-10.md) |
 | 11 | LanceDB retrieval | ✅ | [step-11.md](step-11.md) |
 | 12 | Summarizer (P2) | ✅ | [step-12.md](step-12.md) |
-| 13–21 | Modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
+| 13 | Meeting mode | ✅ | [step-13.md](step-13.md) |
+| 14–21 | Modes, clients… | ⬜ | [roadmap.md](roadmap.md) |
 
 ---
 
@@ -851,7 +852,8 @@ Server2/
 │   ├── step-10.md              ✅ proactive notifier
 │   ├── step-11.md              ✅ LanceDB retrieval
 │   ├── step-12.md              ✅ P2 summarizer
-│   ├── step-13.md              ⬜ pending (meeting mode)
+│   ├── step-13.md              ✅ meeting mode
+│   ├── step-14.md              ⬜ pending (local STT fallback)
 │   ├── tracker.md              ✅ this file — progress + architecture flows
 │   ├── roadmap.md              ✅ full 21-step overview
 │   └── history.md              ✅ change log
@@ -867,7 +869,7 @@ Server2/
 │   │   ├── __init__.py         ✅
 │   │   ├── postgres.py         ✅ asyncpg pool + migration
 │   │   ├── redis.py            ✅ own Redis + Server 1 Redis, masked logs
-│   │   ├── lancedb.py          ✅ connect + writable check + facts_index
+│   │   ├── lancedb.py          ✅ facts_index + meeting_chunks
 │   │   └── schema.sql          ✅ facts, sessions, turns DDL
 │   ├── engine/
 │   │   ├── __init__.py         ✅

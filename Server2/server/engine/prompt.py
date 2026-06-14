@@ -229,6 +229,7 @@ def build_sub_prompt(context: SubPromptContext) -> str:
 
 
 SUMMARIZER_PROMPT_PATH = PROMPT_DIR / "summarizer.txt"
+MEETING_SUMMARY_PROMPT_PATH = PROMPT_DIR / "meeting_summary.txt"
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,22 @@ def build_summarizer_chat_messages(
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_block},
+    ]
+
+
+@dataclass(frozen=True)
+class MeetingSummaryPromptContext:
+    transcript_lines: list[str]
+
+
+def build_meeting_summary_chat_messages(
+    context: MeetingSummaryPromptContext,
+) -> list[dict[str, str]]:
+    system_prompt = _load_prompt(MEETING_SUMMARY_PROMPT_PATH).strip()
+    transcript = "\n\n".join(context.transcript_lines)
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Meeting transcript:\n\n{transcript}"},
     ]
 
 

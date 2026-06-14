@@ -1,10 +1,10 @@
 # Step 13 — Meeting mode
 
-**Status:** ⬜ pending  
+**Status:** ✅ complete  
 **Depends on:** step-12  
 **Estimated effort:** 2 days  
 **Owner:** you  
-**Diagram pages:** TBD
+**Diagram pages:** m1–m8
 
 ---
 
@@ -17,9 +17,21 @@ _Meeting mode toggle (Main dormant, transcript accumulates); diarization-friendl
 ## Files this step creates or changes
 
 ```
-server/orchestrator/meeting.py     NEW — meeting mode state + transcript accumulation
-server/transport/ws.py             CHANGED — mode handling
-web-client/client.js               CHANGED — meeting mode UI (stub → full)
+server/orchestrator/meeting.py         NEW — meeting state, passive/addressed routing, mode hooks
+server/voice/meeting_turn.py           NEW — STT + meeting delegate
+server/memory/meeting_storage.py       NEW — LanceDB meeting_chunks I/O
+server/memory/meeting_summarizer.py    NEW — background post-meeting LLM summary
+prompts/meeting_summary.txt            NEW — JSON-only meeting summary prompt
+server/db/lancedb.py                   CHANGED — meeting_chunks table
+server/transport/ws.py                 CHANGED — mode + audio_end branch
+server/transport/turn_coordinator.py   CHANGED — start_meeting_turn
+server/transport/session_registry.py   CHANGED — meeting_state field
+server/config.py                       CHANGED — meeting thresholds
+server/engine/prompt.py                CHANGED — build_meeting_summary_chat_messages
+server/orchestrator/directives.py      CHANGED — [RECALL meeting:id]
+server/memory/retrieval.py             CHANGED — get_meeting_recall
+server/tools/memory_recall.py          CHANGED — meeting_id param
+web-client/client.js                   CHANGED — continuous capture + meeting UI
 ```
 
 ---
@@ -36,6 +48,7 @@ web-client/client.js               CHANGED — meeting mode UI (stub → full)
 
 - Local STT fallback (Step 14).
 - File upload pipeline (Step 16).
+- Client openWakeWord ONNX (server-side addressed detection for Step 13).
 
 ---
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import re
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -12,6 +10,12 @@ from server.engine.pool import CompletionPriority, CompletionRequest, EnginePool
 from server.engine.prompt import SummarizerPromptContext, build_summarizer_chat_messages
 from server.logger import get_logger
 from server.memory import facts
+from server.memory._background import (
+    key_lock,
+    parse_json_model,
+    summarizer_slot_hint,
+    track_background_task,
+)
 from server.memory.session import (
     TurnRecord,
     compressed_history,
@@ -27,8 +31,6 @@ log = get_logger("memory.summarizer")
 _session_locks: dict[str, asyncio.Lock] = {}
 _background_tasks: set[asyncio.Task[None]] = set()
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
-
 
 class ExtractedFact(BaseModel):
     key: str
@@ -42,15 +44,7 @@ class SummarizerOutput(BaseModel):
 
 
 def _session_lock(session_id: str) -> asyncio.Lock:
-    lock = _session_locks.get(session_id)
-    if lock is None:
-        lock = asyncio.Lock()
-        _session_locks[session_id] = lock
-    return lock
-
-
-def _summarizer_slot_hint(parallel_slots: int) -> int:
-    return max(0, parallel_slots - 1)
+    return key_lock(_session_locks, session_id)
 
 
 def _turn_to_line(turn: TurnRecord) -> str:
@@ -59,29 +53,7 @@ def _turn_to_line(turn: TurnRecord) -> str:
 
 
 def _parse_summarizer_json(raw: str) -> SummarizerOutput | None:
-    text = raw.strip()
-    if not text:
-        return None
-    fence = _JSON_FENCE_RE.search(text)
-    if fence:
-        text = fence.group(1).strip()
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        try:
-            payload = json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            return None
-    if not isinstance(payload, dict):
-        return None
-    try:
-        return SummarizerOutput.model_validate(payload)
-    except ValidationError:
-        return None
+    return parse_json_model(raw, SummarizerOutput)
 
 
 async def _call_summarizer_llm(
@@ -90,7 +62,7 @@ async def _call_summarizer_llm(
     messages: list[dict[str, str]],
 ) -> str:
     settings = get_settings()
-    slot_hint = _summarizer_slot_hint(settings.llama_parallel_slots)
+    slot_hint = summarizer_slot_hint(settings.llama_parallel_slots)
     request = CompletionRequest(
         prompt=messages,
         max_tokens=1024,
@@ -324,17 +296,14 @@ async def _maybe_summarize_session(
 
 
 def _track_background_task(task: asyncio.Task[None]) -> None:
-    _background_tasks.add(task)
-
-    def _done(t: asyncio.Task[None]) -> None:
-        _background_tasks.discard(t)
-        if t.cancelled():
-            return
-        exc = t.exception()
-        if exc is not None:
-            log.error("summarizer.background_task_crashed", error=str(exc))
-
-    task.add_done_callback(_done)
+    track_background_task(
+        _background_tasks,
+        task,
+        on_crash=lambda exc: log.error(
+            "summarizer.background_task_crashed",
+            error=str(exc),
+        ),
+    )
 
 
 def schedule_session_summarization(

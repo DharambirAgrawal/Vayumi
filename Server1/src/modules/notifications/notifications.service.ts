@@ -1,9 +1,34 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../core/db/index.js";
 import { pushTokens } from "../../core/db/schema/index.js";
+import { fcmProvider } from "./fcm.provider.js";
 import type { RegisterPushTokenInput, RemovePushTokenInput } from "./notifications.validators.js";
 
 export const notificationsService = {
+  async sendPushToUser(
+    userId: string,
+    input: { title: string; body: string; data?: Record<string, string> },
+  ) {
+    const tokens = await db.select().from(pushTokens).where(eq(pushTokens.userId, userId));
+
+    if (tokens.length === 0) {
+      return false;
+    }
+
+    const results = await Promise.allSettled(
+      tokens.map((row) =>
+        fcmProvider.sendPush({
+          token: row.token,
+          title: input.title,
+          body: input.body,
+          ...(input.data ? { data: input.data } : {}),
+        }),
+      ),
+    );
+
+    return results.some((result) => result.status === "fulfilled" && result.value.success);
+  },
+
   async registerPushToken(userId: string, sessionId: string, input: RegisterPushTokenInput) {
     const [token] = await db
       .insert(pushTokens)

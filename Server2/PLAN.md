@@ -978,7 +978,7 @@ The minimum that proves the architecture is real. End of phase 1 you can talk to
 
 | # | Step | Status |
 |---|---|---|
-| 13 | Meeting mode (diarization-friendly transcript accumulation, post-meeting summary) | ⬜ |
+| 13 | Meeting mode (diarization-friendly transcript accumulation, post-meeting summary) | ✅ |
 | 14 | Local STT fallback (faster-whisper) + offline mode flag | ⬜ |
 | 15 | Server-side wake-word echo trap (anti-self-trigger when TTS is playing, extends Rule 12) | ⬜ |
 | 16 | File/image upload + attachment summaries + long-input ack + chunked async doc analysis | ⬜ |

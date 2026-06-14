@@ -10,6 +10,8 @@ import type {
   RegisterInput,
   ResendVerificationInput,
   ResetPasswordInput,
+  VerifyEmailCodeByEmailInput,
+  VerifyEmailCodeInput,
 } from "./auth.validators.js";
 
 const asyncHandler =
@@ -38,8 +40,15 @@ export const authController = {
     res.json(await authService.google(req.body as GoogleInput));
   }),
 
-  verifyEmail: asyncHandler(async (req, res) => {
-    res.json(await authService.verifyEmail(String(req.query.token)));
+  verifyEmailCode: asyncHandler(async (req, res) => {
+    const { user } = requireAuth(req);
+    const { code } = req.body as VerifyEmailCodeInput;
+    res.json(await authService.verifyEmailCode({ userId: user.id, code }));
+  }),
+
+  verifyEmailCodeByEmail: asyncHandler(async (req, res) => {
+    const { email, code } = req.body as VerifyEmailCodeByEmailInput;
+    res.json(await authService.verifyEmailCode({ email, code }));
   }),
 
   resendVerification: asyncHandler(async (req, res) => {

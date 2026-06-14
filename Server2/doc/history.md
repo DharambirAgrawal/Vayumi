@@ -599,6 +599,36 @@ This log tracks updates pushed to GitHub for Server2. Each entry should be small
 
 ---
 
+## 2026-06-07 - Step 13 complete: Meeting mode
+
+**Scope:** orchestrator | voice | memory | transport | web-client | tests
+
+**Why:** Enable meeting mode where Main stays dormant for passive room audio, transcripts accumulate in diarization-friendly LanceDB chunks, and a post-meeting summary is stored as a versioned fact — all heavy LLM work in background.
+
+**Key changes:**
+- Two voice paths in meeting mode: passive STT → caption + chunk flush (~30s); addressed "Hey Vayumi" → full Main turn (`chat_only`).
+- `MeetingState` on session; mode enter/exit via UI `mode` message or addressed voice commands.
+- LanceDB `meeting_chunks` table; silence-gap diarization stub (`SPEAKER_XX`).
+- Background `meeting_summarizer` → `facts.set_fact(meeting:<id>:summary)` on mode exit.
+- Web client: continuous mic, 30s chunk timer, meeting captions with speaker labels.
+- `[RECALL meeting:<id>]` directive + `memory_recall(meeting_id=...)`.
+
+**Files/areas:**
+- NEW: `server/orchestrator/meeting.py`, `server/voice/meeting_turn.py`, `server/memory/{meeting_storage,meeting_summarizer}.py`, `prompts/meeting_summary.txt`, `tests/unit/test_meeting_*.py`, `doc/step-14.md` (stub)
+- CHANGED: `server/{db/lancedb,config,engine/prompt,transport/{ws,turn_coordinator,session_registry},orchestrator/directives,memory/retrieval,tools/memory_recall}.py`, `web-client/client.js`
+- CHANGED: `PLAN.md`, `doc/{step-13,roadmap,tracker,history}.md`
+
+**Plan/diagram references:**
+- PLAN.md §7.5 (meeting respond_via), §8 Step 13; diagram pages m1–m8
+
+**Tests/verification:**
+- `python -m pytest tests/unit -q` — 257 passed
+
+**Follow-ups:**
+- Step 14: Local STT fallback
+
+---
+
 ## 2026-05-22 - requirements sync (fetch tools)
 
 **Scope:** deploy

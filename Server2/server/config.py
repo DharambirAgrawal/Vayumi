@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     summarizer_retry_base_seconds: float = 1.0
     summarizer_min_fact_confidence: float = 0.75
 
+    # ── Meeting mode (Step 13) ─────────────────────────────
+    meeting_chunk_interval_seconds: float = 30.0
+    meeting_speaker_gap_seconds: float = 3.0
+    meeting_summary_max_retries: int = 2
+
     # ── Database pool ────────────────────────────────────────
     db_pool_min_size: int = 2
     db_pool_max_size: int = 10

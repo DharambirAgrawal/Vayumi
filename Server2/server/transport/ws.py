@@ -36,6 +36,7 @@ from server.transport.session_busy import chat_should_queue, session_busy
 from server.transport.turn_coordinator import (
     defer_voice_utterance,
     persist_interrupted_assistant,
+    start_meeting_turn,
     start_voice_turn,
 )
 from server.voice.respond_via import compute_respond_via
@@ -270,7 +271,15 @@ async def _handle_text(
                 )
 
     elif isinstance(msg, ModeMessage):
-        session.client_control.set_mode(msg.payload.mode)
+        from server.orchestrator.meeting import on_mode_change
+
+        engine_pool = websocket.app.state.engine_pool
+        await on_mode_change(
+            session,
+            msg.payload.mode,
+            websocket,
+            engine_pool,
+        )
 
     elif isinstance(msg, HelloMessage):
         echo = EchoMessage(
@@ -356,7 +365,10 @@ async def _handle_audio_end(
         defer_voice_utterance(session, pcm_chunks)
         return
 
-    await start_voice_turn(websocket, session, settings, pcm_chunks)
+    if session.client_control.mode == "meeting":
+        await start_meeting_turn(websocket, session, settings, pcm_chunks)
+    else:
+        await start_voice_turn(websocket, session, settings, pcm_chunks)
 
 
 async def _handle_chat(

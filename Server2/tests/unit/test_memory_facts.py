@@ -97,7 +97,10 @@ def _patch_pool_and_embed(monkeypatch: pytest.MonkeyPatch) -> None:
     conn = ConnWithTx()
     pool = _FakePool(conn)
     monkeypatch.setattr(facts, "get_pool", lambda: pool)
-    monkeypatch.setattr(facts, "embed_text", lambda text: [0.1] * 384)
+    async def fake_embed_async(text: str) -> list[float]:
+        return [0.1] * 384
+
+    monkeypatch.setattr(facts, "embed_text_async", fake_embed_async)
     monkeypatch.setattr(facts, "upsert_fact_embedding", lambda **_: None)
     async def _noop_dirty(user_id: str) -> None:
         return None

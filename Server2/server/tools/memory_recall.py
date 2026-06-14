@@ -11,16 +11,28 @@ async def memory_recall(
     key: str | None = None,
     chain: bool = False,
     query: str | None = None,
+    meeting_id: str | None = None,
     k: int = 5,
 ) -> ToolResult:
     key = (key or "").strip()
     query = (query or "").strip()
+    meeting_id = (meeting_id or "").strip()
 
-    if not key and not query:
+    if not key and not query and not meeting_id:
         return ToolResult(
             status="error",
-            summary="key or query is required",
+            summary="key, query, or meeting_id is required",
             retryable=False,
+        )
+
+    if meeting_id:
+        from server.memory.retrieval import get_meeting_recall
+
+        payload = await get_meeting_recall(user_id, meeting_id)
+        return ToolResult(
+            status="ok",
+            summary=f"Recalled meeting {meeting_id}",
+            data={"meeting_id": meeting_id, "text": payload},
         )
 
     if key:

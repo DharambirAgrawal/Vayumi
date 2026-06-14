@@ -57,6 +57,15 @@ def test_format_recall_results() -> None:
     assert "Alex" in block
 
 
+def test_parse_recall_meeting_directive() -> None:
+    from server.orchestrator.directives import RecallMeetingDirective
+
+    directives = parse_directives("[RECALL meeting:20260607-120000]")
+    assert len(directives) == 1
+    assert isinstance(directives[0], RecallMeetingDirective)
+    assert directives[0].meeting_id == "20260607-120000"
+
+
 def test_parse_recall_doc_directive() -> None:
     directives = parse_directives("[RECALL doc:f-food]")
     assert len(directives) == 1

@@ -79,6 +79,32 @@ async def start_voice_turn(
     session.interrupt.attach_turn_task(session.turn_task)
 
 
+async def start_meeting_turn(
+    websocket: WebSocket,
+    session: UserSession,
+    settings: Settings,
+    pcm_chunks: list[bytes],
+) -> None:
+    from server.voice.meeting_turn import run_meeting_turn
+    from server.voice.stt.base import STTBackend
+
+    voice = websocket.app.state.voice
+    stt: STTBackend = voice["stt"]
+    engine_pool: EnginePool = websocket.app.state.engine_pool
+
+    session.turn_task = asyncio.create_task(
+        run_meeting_turn(
+            websocket=websocket,
+            engine_pool=engine_pool,
+            stt=stt,
+            user_session=session,
+            pcm_chunks=pcm_chunks,
+        ),
+        name=f"meeting-turn-{session.user_id}",
+    )
+    session.interrupt.attach_turn_task(session.turn_task)
+
+
 async def drain_pending_voice(
     websocket: WebSocket,
     session: UserSession,
@@ -99,7 +125,10 @@ async def drain_pending_voice(
             bytes=sum(len(c) for c in chunks),
         )
         return
-    await start_voice_turn(websocket, session, settings, chunks)
+    if session.client_control.mode == "meeting":
+        await start_meeting_turn(websocket, session, settings, chunks)
+    else:
+        await start_voice_turn(websocket, session, settings, chunks)
 
 
 def suppression_delay_ms(session: UserSession, settings: Settings) -> int:
