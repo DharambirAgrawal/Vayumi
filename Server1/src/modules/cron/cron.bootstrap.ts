@@ -1,8 +1,9 @@
 import cron from "node-cron";
 import { logger } from "../../core/utils/logger.js";
 import { cleanExpiredTokensJob } from "./jobs/cleanExpiredTokens.js";
+import { fireRemindersJob } from "./jobs/fireReminders.js";
 
-const jobs = [cleanExpiredTokensJob];
+const jobs = [cleanExpiredTokensJob, fireRemindersJob];
 
 export const bootstrapCron = () => {
   for (const job of jobs) {

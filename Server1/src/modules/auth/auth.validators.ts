@@ -26,8 +26,13 @@ export const refreshSchema = z.object({
   refresh_token: z.string().min(1),
 });
 
-export const tokenQuerySchema = z.object({
-  token: z.string().min(1),
+export const verifyEmailCodeSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, "Code must be 6 digits"),
+});
+
+export const verifyEmailCodeByEmailSchema = z.object({
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  code: z.string().trim().regex(/^\d{6}$/, "Code must be 6 digits"),
 });
 
 export const forgotPasswordSchema = z.object({
@@ -52,6 +57,8 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type GoogleInput = z.infer<typeof googleSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
+export type VerifyEmailCodeInput = z.infer<typeof verifyEmailCodeSchema>;
+export type VerifyEmailCodeByEmailInput = z.infer<typeof verifyEmailCodeByEmailSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

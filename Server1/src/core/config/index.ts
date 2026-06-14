@@ -20,11 +20,15 @@ const envSchema = z
     JWT_ACCESS_EXPIRY: z.string().default("15m"),
     JWT_REFRESH_EXPIRY: z.string().default("90d"),
     PASSWORD_RESET_URL: z.string().min(1).optional(),
-    SMTP_HOST: z.string().min(1),
-    SMTP_PORT: z.coerce.number().int().positive(),
-    SMTP_USER: z.string().min(1),
-    SMTP_PASS: z.string().min(1),
     FROM_EMAIL: z.string().email(),
+    // OCI Email Delivery (HTTPS data-plane API, not SMTP)
+    OCI_TENANCY_ID: z.string().min(1),
+    OCI_USER_ID: z.string().min(1),
+    OCI_FINGERPRINT: z.string().min(1),
+    OCI_PRIVATE_KEY: z.string().min(1),
+    OCI_PRIVATE_KEY_PASSPHRASE: z.string().min(1).optional(),
+    OCI_REGION: z.string().min(1),
+    OCI_EMAIL_COMPARTMENT_ID: z.string().min(1),
     ALLOWED_ORIGINS: z.string().min(1),
     GOOGLE_CLIENT_ID: z.string().min(1),
     SUPABASE_URL: z.string().url(),
@@ -49,6 +53,9 @@ const envSchema = z
     EMAIL_NOTIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
     EMAIL_POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(3),
     EMAIL_CLASSIFY_MAX_BODY_CHARS: z.coerce.number().int().positive().default(2000),
+    INTERNAL_REMINDER_SECRET: z.string().min(1),
+    REMINDER_FIRE_BATCH_SIZE: z.coerce.number().int().positive().default(100),
+    REMINDER_AGENT_EVENT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   })
   .superRefine((env, ctx) => {
     if (env.SERVER2_INTERNAL_URL && env.SERVER2_INTERNAL_URL.trim() !== "") {

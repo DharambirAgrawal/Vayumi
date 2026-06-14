@@ -1,7 +1,11 @@
 # Server 1 — Architecture Plan
-**Version:** 1.8
-**Status:** Phase 3 in progress
-**Last updated:** 2026-05-13
+**Version:** 1.9
+**Status:** Phase 3B in progress — Step 6 complete; Step 7 next (Gmail OAuth)
+**Last updated:** 2026-06-07
+**Companion files:** `doc/LIFE_TABS_FEATURE_PLAN.md` (Life screen custom tabs — planned), `doc/SERVER1_API_CATALOG.md` (full endpoint + agent tools map), `doc/step-07.md` (current), `doc/step-06.md` (reminders — complete), `doc/REMINDERS_AGENT_TOOL_SPEC.md` (Server 2 agent tools), `doc/MOBILE_REMINDERS_UI_SPEC.md` (mobile app UI + sync plan), `doc/MOBILE_APP_AUTH_SPEC.md`, `doc/step-01.md` … `doc/step-05.md` (complete), `doc/roadmap.md`, `doc/tracker.md`, `doc/history.md`, `agent-prompt.md`
+**Sister service:** `Server2/` (Python) — owns voice, agents, memory, tools. Reads Server 1 JWT + blocklist.
+
+> **How to use this document:** This plan is the frozen spec for identity, sessions, integrations, and push. Step files describe *what to build next*; do not re-architect. Find the current step in **Section 8** (first row with status ⬜).
 
 ---
 
@@ -9,6 +13,8 @@
 
 | Version | Change |
 |---|---|
+| 2.0 | **Phase M — Meetings module.** New `meetings` table + migration `0005_phase_m_meetings.sql` (generated `search_vector` tsvector + GIN full-text index; `source_meeting_id` FK added to `reminders`, `ON DELETE SET NULL`). `modules/meetings/*` (idempotent upsert on `client_meeting_id`, list/get/update/soft-delete + `?q=` search), mounted `/api/v1/meetings` (user JWT; designed so `authenticateUserOrService` can enable agent read later). Stores meeting **text only** — transcript/summary/analysis/metadata; **audio never leaves the device**. Global JSON body limit raised 1mb → 5mb for long transcripts. App ↔ Server 1 only (Server 2 not built yet). Companion: `vayumi-app/doc/MEETING_SERVER_SYNC_PLAN.md`. |
+| 1.9 | **Phase 3B — Reminders module.** New `reminders` table + migration `0004_phase3b_reminders.sql`. `modules/reminders/*` (CRUD, recurrence via `rrule`, `fireRemindersNow()`). Internal `POST /internal/reminders/fire` (HMAC `X-Internal-Secret`). Supabase pg_cron primary scheduler; node-cron `fireReminders` fallback. Server 2 generic agent event contract `POST /internal/agent/event`. Thin `fcm.provider.ts` + `notifications.service.sendPushToUser()`. Middleware: `authenticateUserOrService`, `verifyInternalReminderSecret`. Redis `reminderFireLock`. Env: `INTERNAL_REMINDER_SECRET`, `REMINDER_FIRE_BATCH_SIZE`, `REMINDER_AGENT_EVENT_TIMEOUT_MS`. Step renumber: reminders = Step 6; email OAuth shifts to Steps 7–11; push = Step 12; handshake = Step 13. |
 | 1.8 | **Phase 3 (partial implementation).** DB: `oauth_integrations` + `synced_emails` Drizzle schemas, migration `0003_phase3_oauth_and_synced_emails.sql` (incl. GIN on `keywords`). Redis: `emailSyncLock` key + TTL, `RedisClientAdapter.setIfNotExists` (NX+EX). Config: `core/config/integrations.ts`; env vars `SERVER2_INTERNAL_URL` (optional), `EMAIL_*`, `EMAIL_CLASSIFY_MAX_BODY_CHARS` in `env` + `.env.example`. Utils: `fetchRetry.ts`, `postgres.ts` (`isUniqueViolation`); `signInternalServiceJwt()` in `jwt.ts`. Integrations module: `shared/` (`email.types`, `email.constants`, `provider.interface`, `email.normalizer`, `email.masker`, `email.pipeline`, `server2.emailClient`, `emailSyncLock`, `tokenVault`, barrel `index.ts`); `integrations.service/controller/router`; Gmail/Outlook routers mount with **501 stub** on `GET …/connect` only. Routes: `/api/v1/integrations` mounted (emails router **not** yet). `storage.ts` optional `contentType` upload fix (`exactOptionalPropertyTypes`). |
 | 1.7 | Audit fixes: removed `SERVER2_SERVICE_TOKEN` env var (service JWT signed with existing `JWT_PRIVATE_KEY`). Removed contradictory `pipelineMaskingMap` Redis key (memory-only, never persisted). Fixed `cron.bootstrap.ts` and `routes/index.ts` status to ⚠️. Documented OAuth callback user-ID resolution via state→Redis. Added `updatedAt` to `synced_emails`. Added subject index + keywords GIN index to `synced_emails`. Replaced `@azure/identity` with `@azure/msal-node`. Removed `axios` (native fetch). Fixed design rule 21 (initial sync on first connect). Added retry cron re-fetch note. Added starred-email exemption to `cleanOldEmails`. Fixed sync lock TTL description. Documented `POST /sync` 202 when lock active. Documented `23505` catch for dedup. Documented provider failure handling on `PATCH /read` and `PATCH /star`. Added `EMAIL_POLL_INTERVAL_MINUTES` cron expression note. |
 | 1.6 | Full Phase 3 design. Added `synced_emails` + `oauth_integrations` schemas. Added email pipeline, masking layer, AI classify call, retry logic, Server 2 notify contract. Added smart search, on-demand body fetch, mark read/star. Added `emails` module. Added 4 new cron jobs. Added webhook stubs. |
@@ -110,6 +116,23 @@ Response: { handled: true } | { handled: false }
 
 Both calls use native `fetch` with `AbortController` for timeout. No extra HTTP library needed. **Implementation:** `core/utils/fetchRetry.ts` + `modules/integrations/shared/server2.emailClient.ts`.
 
+**Agent event call** — after a reminder fires (and for future event types):
+```
+POST {SERVER2_INTERNAL_URL}/internal/agent/event
+Authorization: Bearer {signed service JWT}
+Body: {
+  type: 'reminder.fired' | 'reminder.snoozed' | 'reminder.cancelled' | 'email.received'
+  userId: string
+  payload: object   (type-specific data)
+}
+Response: { handled: true } | { handled: false }
+```
+- Hard timeout: `REMINDER_AGENT_EVENT_TIMEOUT_MS` (default 2000ms)
+- Max 3 attempts, backoff: 1s then 2s
+- On all failures: log, mark `agent_delivered=false` on the reminder row. Push still fires regardless.
+- **Implementation:** `modules/reminders/server2.agentClient.ts`
+- Email pipeline continues using `POST /internal/emails/notify` for now. Reminders use the generic route. Email migration to generic route is a Server 2 concern.
+
 ---
 
 ## Email Pipeline
@@ -170,6 +193,7 @@ server1/
 │   │   │   │   ├── user-identities.ts          # ✅
 │   │   │   │   ├── sessions.ts                 # ✅
 │   │   │   │   ├── push-tokens.ts              # ✅
+│   │   │   │   ├── reminders.ts                # ✅ Phase 3B
 │   │   │   │   ├── email-verifications.ts      # ✅
 │   │   │   │   ├── password-reset-tokens.ts    # ✅
 │   │   │   │   ├── settings.ts                 # ✅
@@ -289,19 +313,30 @@ server1/
 │   │   │   ├── emails.validators.ts            # ⬜
 │   │   │   └── emails.types.ts                 # ⬜
 │   │   │
-│   │   ├── notifications/                      # ✅ Phase 1 partial · ⬜ Phase 4 full
+│   │   ├── reminders/                          # ✅ Phase 3B
+│   │   │   ├── reminders.router.ts             # ✅
+│   │   │   ├── reminders.controller.ts         # ✅
+│   │   │   ├── reminders.service.ts            # ✅ CRUD + fireRemindersNow()
+│   │   │   ├── reminders.validators.ts         # ✅
+│   │   │   ├── reminders.types.ts              # ✅
+│   │   │   ├── reminders.recurrence.ts         # ✅ rrule helpers
+│   │   │   ├── reminders.constants.ts          # ✅
+│   │   │   └── server2.agentClient.ts          # ✅ generic agent event client
+│   │   │
+│   │   ├── notifications/                      # ✅ Phase 1 partial · 🔄 Phase 4 expands
 │   │   │   ├── notifications.router.ts         # ✅
 │   │   │   ├── notifications.controller.ts     # ✅
-│   │   │   ├── notifications.service.ts        # ✅
+│   │   │   ├── notifications.service.ts        # ✅ (+ sendPushToUser)
 │   │   │   ├── notifications.validators.ts     # ✅
 │   │   │   ├── notifications.types.ts          # ✅
 │   │   │   ├── apns.provider.ts                # ⬜ Phase 4
-│   │   │   └── fcm.provider.ts                 # ⬜ Phase 4
+│   │   │   └── fcm.provider.ts                 # ✅ Phase 3B thin stub
 │   │   │
 │   │   └── cron/
-│   │       ├── cron.bootstrap.ts               # ⚠️ Phase 3 adds 4 new jobs
+│   │       ├── cron.bootstrap.ts               # ⚠️ Phase 3 adds 4 new email jobs + fireReminders ✅
 │   │       ├── jobs/
 │   │       │   ├── cleanExpiredTokens.ts       # ✅ Phase 1
+│   │       │   ├── fireReminders.ts            # ✅ Phase 3B — node-cron fallback
 │   │       │   ├── syncEmails.ts               # ⬜ Phase 3
 │   │       │   ├── refreshOAuthTokens.ts       # ⬜ Phase 3
 │   │       │   ├── retryFailedAiProcessing.ts  # ⬜ Phase 3
@@ -309,7 +344,7 @@ server1/
 │   │       └── cron.types.ts                   # ✅
 │   │
 │   ├── routes/
-│   │   └── index.ts                            # ⚠️ Phase 3 mounts **integrations**; **emails** router not yet
+│   │   └── index.ts                            # ⚠️ mounts integrations + reminders; emails not yet; internal router for /internal/reminders/fire
 │   │
 │   └── app.ts                                  # ✅
 │
@@ -363,6 +398,25 @@ server1/
 |---|---|---|---|
 | POST | `/push-token` | Yes | ✅ |
 | DELETE | `/push-token` | Yes | ✅ |
+
+### Phase 3B — Reminders · `/api/v1/reminders`
+
+| Method | Route | Protected | Notes | Status |
+|---|---|---|---|---|
+| POST | `/` | Yes (user JWT or service JWT) | Create reminder. Service JWT requires `user_id` in body; sets `source=agent` | ✅ |
+| GET | `/` | Yes | List with filters (`status`, `source`, `from`, `to`, `limit`, `cursor`) | ✅ |
+| GET | `/upcoming` | Yes | Pending reminders in next N days (`?days=2`) — client offline sync | ✅ |
+| GET | `/:id` | Yes | Single reminder | ✅ |
+| PATCH | `/:id` | Yes (user JWT or service JWT) | Update title/body/time/recurrence | ✅ |
+| DELETE | `/:id` | Yes (user JWT or service JWT) | Hard delete | ✅ |
+| POST | `/:id/snooze` | Yes | Snooze N minutes — updates `next_fire_at`, `status=snoozed` | ✅ |
+| POST | `/:id/cancel` | Yes (user JWT or service JWT) | Soft cancel | ✅ |
+
+### Internal — Reminders fire · `/internal/reminders`
+
+| Method | Route | Protected | Notes | Status |
+|---|---|---|---|---|
+| POST | `/fire` | HMAC (`X-Internal-Secret`) | Called by Supabase pg_cron or node-cron fallback. Queries due reminders, dispatches push + agent event | ✅ |
 
 ### Phase 2 — Users · `/api/v1/users`
 
@@ -448,6 +502,7 @@ users (1) ──< password_reset_tokens (many)
 users (1) ── user_settings (1)
 users (1) ──< oauth_integrations (many)   — Phase 3 — one row per connected provider
 users (1) ──< synced_emails (many)        — Phase 3 — AI-enriched, 90-day rolling window
+users (1) ──< reminders (many)            — Phase 3B — scheduled tasks, UTC storage
 ```
 
 ### Schema
@@ -624,6 +679,36 @@ export const syncedEmails = pgTable("synced_emails", {
   // GIN index for keywords jsonb array added in migration SQL:
   // CREATE INDEX se_keywords_gin_idx ON synced_emails USING GIN (keywords);
 }));
+
+// reminders — Phase 3B
+// All times stored in UTC. timezone field is for display/recurrence only.
+// pg_cron and node-cron query next_fire_at, never remind_at directly.
+export const reminders = pgTable("reminders", {
+  id:            uuid("id").primaryKey().defaultRandom(),
+  userId:        uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title:         varchar("title", { length: 255 }).notNull(),
+  body:          text("body"),
+  remindAt:      timestamp("remind_at", { withTimezone: true }).notNull(),
+  timezone:      varchar("timezone", { length: 60 }).notNull(),
+  recurrence:    varchar("recurrence", { length: 20 }),  // daily | weekly | monthly | custom
+  rrule:         text("rrule"),
+  nextFireAt:    timestamp("next_fire_at", { withTimezone: true }).notNull(),
+  status:        varchar("status", { length: 20 }).notNull().default("pending"), // pending | fired | snoozed | cancelled
+  source:        varchar("source", { length: 20 }).notNull().default("user"),    // user | agent
+  snoozeUntil:   timestamp("snooze_until", { withTimezone: true }),
+  firedAt:       timestamp("fired_at", { withTimezone: true }),
+  fireCount:     integer("fire_count").default(0).notNull(),
+  maxFireCount:  integer("max_fire_count"),
+  agentDelivered:  boolean("agent_delivered").default(false).notNull(),
+  pushDelivered:   boolean("push_delivered").default(false).notNull(),
+  createdAt:     timestamp("created_at").defaultNow().notNull(),
+  updatedAt:     timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  userIdIdx:      index("rem_user_id_idx").on(t.userId),
+  nextFireAtIdx:  index("rem_next_fire_at_idx").on(t.nextFireAt),
+  statusIdx:      index("rem_status_idx").on(t.status),
+  userStatusIdx:  index("rem_user_status_idx").on(t.userId, t.status),
+}));
 ```
 
 ---
@@ -650,6 +735,8 @@ export const RedisKeys = {
   // Phase 3
   emailSyncLock:         (userId: string, provider: string) => `sync:lock:${userId}:${provider}`,
   integrationOAuthState: (state: string)                    => `integration:state:${state}`,
+  // Phase 3B
+  reminderFireLock:        ()                               => `reminder:fire:lock`,
 };
 
 export const RedisTTL = {
@@ -665,6 +752,8 @@ export const RedisTTL = {
   // Phase 3
   emailSyncLock:     5 * 60,   // 5 min — just long enough to cover one sync run
   oauthState:        10 * 60,  // 10 min — state param for OAuth connect flow
+  // Phase 3B
+  reminderFireLock:  55,       // 55s — prevents pg_cron + node-cron overlap
 };
 ```
 
@@ -805,6 +894,11 @@ MICROSOFT_CLIENT_SECRET=
 MICROSOFT_REDIRECT_URI=
 MICROSOFT_TENANT_ID=
 
+# Reminders — Phase 3B
+INTERNAL_REMINDER_SECRET=        # HMAC secret for /internal/reminders/fire from pg_cron
+REMINDER_FIRE_BATCH_SIZE=100     # max reminders processed per cron tick
+REMINDER_AGENT_EVENT_TIMEOUT_MS=2000  # hard timeout per attempt for agent event call
+
 # Push providers — Phase 4
 APNS_KEY_ID=
 APNS_TEAM_ID=
@@ -857,6 +951,9 @@ npm i @microsoft/microsoft-graph-client   # Outlook / Graph API reads
 npm i @azure/msal-node              # Microsoft user OAuth 2.0 authorization code flow
 # ↑ Not yet in repo `package.json` as of plan v1.8 — install when implementing Gmail/Outlook OAuth + providers.
 
+# Reminders — Phase 3B
+npm i rrule                         # RFC 5545 RRULE parsing for recurrence
+
 # Dev
 npm i -D typescript tsx
 npm i -D @types/node @types/express @types/cors @types/jsonwebtoken
@@ -898,6 +995,13 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 28. **`PATCH /read` and `PATCH /star` provider failures: keep DB update, log error.** Next delta sync reconciles with provider state. Never roll back the DB update on provider failure.
 29. **Service JWT for Server 2 signed with existing `JWT_PRIVATE_KEY`.** Payload: `{ scope: 'internal', iss: 'server1' }`. No expiry. No extra env var.
 30. **OAuth connect state param is one-time use.** Delete from Redis immediately on successful callback before exchanging the code.
+31. **All reminder times stored in UTC.** `timezone` stored for display/recurrence computation only.
+32. **`nextFireAt` is the single field pg_cron/cron queries.** Never query `remindAt` directly for firing.
+33. **Internal fire endpoint uses Redis lock (`SET NX EX 55s`).** If lock exists, return 200 immediately — prevents overlap between pg_cron and node-cron fallback.
+34. **Recurring reminders: after firing, compute next `nextFireAt` from `rrule` or `recurrence` before returning.** Never leave a fired recurring reminder in `status=fired` for more than one DB transaction.
+35. **Service JWT creates reminders with `source='agent'`.** User JWT creates with `source='user'`. The `userId` in body is trusted only when request carries a service JWT.
+36. **`GET /reminders/upcoming` returns only `status='pending'` reminders.** Clients must not schedule local notifications for snoozed/cancelled reminders.
+37. **Agent event call: same retry pattern as email notify (2s timeout, 3 attempts, backoff 1s/2s).** On all failures: log, mark `agentDelivered=false`. Push still fires regardless.
 
 ---
 
@@ -915,6 +1019,73 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 - Push tokens owned by `user_id`, `session_id` informational only.
 - `GET /api/v1/health` implemented.
 - Verified: `npm run typecheck` and `npm run build` pass.
+
+---
+
+## 8. Phase plan (the order in which we build)
+
+Each phase is one or more `doc/step-NN.md` files. Status here is the source of truth.
+
+### Phase 1 — Auth foundation ✅
+
+| # | Step | File | Status |
+|---|---|---|---|
+| 1 | Project scaffold + core infra (config, db, redis, errors, middleware, health) | `doc/step-01.md` | ✅ |
+| 2 | Auth module (register, login, Google, verify email, password reset, JWT) | `doc/step-02.md` | ✅ |
+| 3 | Sessions + push tokens + `cleanExpiredTokens` cron | `doc/step-03.md` | ✅ |
+
+### Phase 2 — User profile & settings ✅
+
+| # | Step | File | Status |
+|---|---|---|---|
+| 4 | Users module + settings + Supabase avatar storage | `doc/step-04.md` | ✅ |
+
+### Phase 3 — External integrations
+
+| # | Step | File | Status |
+|---|---|---|---|
+| 5 | Email pipeline foundation (schemas, shared pipeline, Server 2 client, integrations list) | `doc/step-05.md` | ✅ |
+| 6 | Reminders module (CRUD, pg_cron fire, FCM stub, agent event client) | `doc/step-06.md` | ✅ |
+| 7 | Gmail OAuth connect/callback/disconnect + `IEmailProvider` + initial sync | `doc/step-07.md` | ⬜ |
+| 8 | Outlook OAuth connect/callback/disconnect + provider + initial sync | `doc/step-08.md` | ⬜ |
+| 9 | Emails module (smart search, detail, live body, sync, read/star) | `doc/step-09.md` | ⬜ |
+| 10 | Cron jobs (sync, OAuth refresh, AI retry, old-email cleanup) | `doc/step-10.md` | ⬜ |
+| 11 | Webhook stubs (Gmail Pub/Sub + Outlook Graph notifications) | `doc/step-11.md` | ⬜ |
+
+### Phase 4 — Push notification dispatch
+
+| # | Step | File | Status |
+|---|---|---|---|
+| 12 | APNS + FCM providers + dispatch when Server 2 returns `handled: false` | `doc/step-12.md` | ⬜ |
+
+### Phase 5 — Server 2 handshake
+
+| # | Step | File | Status |
+|---|---|---|---|
+| 13 | Cross-server JWT + Redis blocklist + service JWT verification | `doc/step-13.md` | ⬜ |
+
+---
+
+## 9. How to read the rest of `doc/`
+
+- Find the current step in **Section 8** (first row with status ⬜). Read `doc/step-NN.md` for that step.
+- Completed steps stay in `doc/step-NN.md` for reference; do not redo them (see `doc/history.md`).
+- Step files are created **one at a time** when the previous step completes — do not create future step files until then.
+- Each step file follows this skeleton:
+
+  ```
+  # Step NN — <one-line goal>
+
+  Status: ⬜ pending | 🔄 in progress | ✅ done
+  Depends on: step-(NN-1)
+
+  ## Goal
+  ## Files this step creates or changes
+  ## Detailed tasks
+  ## Acceptance test
+  ## Out of scope
+  ## Notes for the next step
+  ```
 
 ---
 
@@ -944,9 +1115,25 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 - [x] Registration creates `user_settings` row
 - [x] `core/utils/storage.ts` — Supabase Storage
 
-### Phase 3 — External integrations ← current
+### Phase 3 — External integrations ← current (Step 7 next)
 
-**Repo status (sync with code):** DB schemas + migration `0003`, Redis lock + `setIfNotExists`, integrations **shared** pipeline + Server 2 client, `GET /api/v1/integrations`, Gmail/Outlook **`GET …/connect` = 501 stubs**. Still outstanding: Gmail/Outlook OAuth + providers + webhooks, `emails` module, cron jobs + bootstrap, `package.json` Phase 3 deps (`googleapis`, Graph, MSAL).
+**Repo status (sync with code):** DB schemas + migrations `0003` + `0004`, Redis lock + `setIfNotExists`, integrations **shared** pipeline + Server 2 client, `GET /api/v1/integrations`, Gmail/Outlook **`GET …/connect` = 501 stubs**, **reminders module complete** (`/api/v1/reminders`, `/internal/reminders/fire`, `fireReminders` cron). Still outstanding: Gmail/Outlook OAuth + providers + webhooks, `emails` module, email cron jobs + bootstrap, `package.json` Phase 3 deps (`googleapis`, Graph, MSAL).
+
+### Phase 3B — Reminders ✅ complete
+
+- [x] `core/db/schema/reminders.ts` + migration `0004_phase3b_reminders.sql`
+- [x] `core/config/reminders.ts` — typed reminder config from env
+- [x] `core/middleware/authenticateUserOrService.ts` — user JWT or service JWT
+- [x] `core/middleware/verifyInternalReminderSecret.ts` — HMAC for internal fire endpoint
+- [x] `core/redis/keys.ts` — `reminderFireLock` + TTL
+- [x] `modules/reminders/*` — full CRUD, recurrence, fire pipeline
+- [x] `modules/reminders/server2.agentClient.ts` — generic agent event client
+- [x] `modules/notifications/fcm.provider.ts` — thin FCM send stub
+- [x] `modules/notifications/notifications.service.ts` — `sendPushToUser()`
+- [x] `cron/jobs/fireReminders.ts` + `cron.bootstrap.ts` registration
+- [x] Mount `/api/v1/reminders` + `/internal/reminders/fire` in routes
+- [x] `.env.example` — `INTERNAL_REMINDER_SECRET`, `REMINDER_*` vars
+- [x] `package.json` — `rrule` dependency
 
 - [x] `core/db/schema/oauth-integrations.ts` + migration (`0003_phase3_oauth_and_synced_emails.sql`)
 - [x] `core/db/schema/synced-emails.ts` + migration (GIN index on `keywords` in SQL)
@@ -1012,4 +1199,4 @@ No `axios` — all HTTP calls (Server 2 internal calls) use native `fetch` with 
 
 ---
 
-*When a phase completes: update status markers in folder structure, tick off items above, then start next phase. After **any** implementation batch, bump plan version + changelog and keep API tables / checklists in sync with the repo.*
+*When a phase completes: update status markers in folder structure, tick off items above, then start next phase. After **any** implementation batch, bump plan version + changelog, update Section 8 step status, and keep API tables / checklists in sync with the repo.*
