@@ -97,8 +97,8 @@ async def _run_one_delegate(
             result=ToolResult(
                 status="not_capable",
                 summary=(
-                    f"Capability {directive.capability} is not available yet "
-                    "(sub-agents ship in a later step)"
+                    f"Capability {directive.capability} cannot run as an inline "
+                    "delegate; spawn a background sub-agent instead."
                 ),
             ),
         )
@@ -325,9 +325,16 @@ def split_delegate_directives(
 
 
 def format_subagent_spawn_block(task_id: str, capability: str, goal: str) -> str:
-    return (
-        f"Background research started for: {goal}. Results will arrive when done."
-    )
+    cap = capability.lower()
+    if cap == "research":
+        label = "research"
+    elif cap == "productivity":
+        label = "productivity task"
+    elif cap == "comms":
+        label = "communications task"
+    else:
+        label = "background task"
+    return f"Background {label} started for: {goal}. Results will arrive when done."
 
 
 async def run_subagent_tool_delegate(

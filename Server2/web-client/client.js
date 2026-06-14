@@ -40,6 +40,8 @@
   let micRecording = false;
   let micUserMuted = false;
   let pendingStartCapture = false;
+  let meetingChunkTimer = null;
+  const MEETING_CHUNK_MS = 30000;
 
   const clientState = {
     playback: "idle",
@@ -257,11 +259,48 @@
     appendChatBubble("user", text);
   }
 
-  function sendMode(mode) {
+  function stopMeetingChunkTimer() {
+    if (meetingChunkTimer) {
+      clearInterval(meetingChunkTimer);
+      meetingChunkTimer = null;
+    }
+  }
+
+  function startMeetingChunkTimer() {
+    stopMeetingChunkTimer();
+    if (sessionMode !== "meeting") return;
+    meetingChunkTimer = setInterval(function () {
+      if (sessionMode !== "meeting" || micUserMuted || !micRecording) return;
+      stopMic({ sendAudioEnd: true, meetingRestart: true });
+    }, MEETING_CHUNK_MS);
+  }
+
+  function applyMeetingModeUi(mode) {
     sessionMode = mode;
-    sendJson("mode", { mode: mode });
     modeBadge.textContent = mode;
     modeBadge.className = "badge" + (mode === "meeting" ? " mode-meeting" : "");
+    if (mode === "meeting") {
+      captionBuffer = "";
+      captionText.textContent = "Meeting recording…";
+      captionText.classList.remove("empty");
+      if (!micUserMuted && !micRecording) {
+        startMic();
+      }
+      startMeetingChunkTimer();
+      return;
+    }
+    stopMeetingChunkTimer();
+    if (micRecording && !micUserMuted) {
+      stopMic({ sendAudioEnd: true });
+    }
+    captionBuffer = "";
+    captionText.textContent = "Waiting for assistant…";
+    captionText.classList.add("empty");
+  }
+
+  function sendMode(mode) {
+    applyMeetingModeUi(mode);
+    sendJson("mode", { mode: mode });
   }
 
   function handleServerJson(raw) {
@@ -324,6 +363,14 @@
         if (msg.payload.kind === "session_superseded") {
           debugLine("Session superseded — another device connected", "error");
           setConnStatus("closed");
+        } else if (msg.payload.kind === "meeting_started") {
+          applyMeetingModeUi("meeting");
+          modeSelect.value = "meeting";
+          debugLine("Meeting started", "info");
+        } else if (msg.payload.kind === "meeting_ended") {
+          applyMeetingModeUi("conversation");
+          modeSelect.value = "conversation";
+          debugLine("Meeting ended — summary processing in background", "info");
         }
         renderEvent(msg.payload);
         break;
@@ -373,6 +420,18 @@
 
   function renderCaption(text, partial) {
     const chunk = (text || "").trim();
+    if (
+      sessionMode === "meeting" &&
+      !partial &&
+      chunk &&
+      /^SPEAKER_\d+:/i.test(chunk)
+    ) {
+      const prev = captionBuffer.trim();
+      captionBuffer = prev ? prev + "\n" + chunk : chunk;
+      captionText.textContent = captionBuffer;
+      captionText.classList.remove("empty");
+      return;
+    }
     if (partial) {
       if (/…$|\.\.\.$/.test(chunk) || chunk.indexOf("Searching") === 0) {
         captionBuffer = chunk;
@@ -609,11 +668,11 @@
         break;
       case "start_capture":
         if (micRecording || micUserMuted) break;
-        if (reason === "interrupted") {
+        if (reason === "interrupted" && sessionMode !== "meeting") {
           debugLine("start_capture skipped (interrupt)", "info");
           break;
         }
-        if (clientState.playback === "playing") {
+        if (clientState.playback === "playing" && sessionMode !== "meeting") {
           debugLine("start_capture deferred (playback active)", "info");
           pendingStartCapture = true;
           break;
@@ -696,7 +755,7 @@
 
     sendJson("audio_start", { sample_rate: 16000, format: "pcm_s16le" });
     micRecording = true;
-    btnMic.textContent = "Stop mic";
+    btnMic.textContent = sessionMode === "meeting" ? "Mute" : "Stop mic";
     btnMic.classList.add("mic-active");
     setCapture("recording");
     URL.revokeObjectURL(workletUrl);
@@ -728,9 +787,24 @@
       sendJson("audio_end", { discard: true });
     }
     micRecording = false;
-    btnMic.textContent = "Mic";
+    btnMic.textContent = sessionMode === "meeting" ? "Mute" : "Mic";
     btnMic.classList.remove("mic-active");
     setCapture("idle");
+
+    const meetingRestart =
+      sessionMode === "meeting" &&
+      !micUserMuted &&
+      opts &&
+      opts.meetingRestart;
+    const meetingAuto =
+      sessionMode === "meeting" && !micUserMuted && sendAudioEnd;
+    if (meetingRestart || meetingAuto) {
+      setTimeout(function () {
+        if (sessionMode === "meeting" && !micUserMuted && !micRecording) {
+          startMic();
+        }
+      }, 300);
+    }
   }
 
   function toggleMic() {

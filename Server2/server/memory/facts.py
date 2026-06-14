@@ -11,7 +11,7 @@ import asyncpg
 from server.db.lancedb import upsert_fact_embedding
 from server.db.postgres import get_pool
 from server.logger import get_logger
-from server.memory.embeddings import embed_text
+from server.memory.embeddings import embed_text_async
 from server.memory.warm import affects_warm_profile, mark_dirty
 
 log = get_logger("memory.facts")
@@ -105,7 +105,7 @@ async def set_fact(
     assert row is not None
     record = _row_to_record(row)
     value_text = _value_to_text(value)
-    embedding = embed_text(f"{key}: {value_text}")
+    embedding = await embed_text_async(f"{key}: {value_text}")
     upsert_fact_embedding(
         fact_id=record.id,
         user_id=user_id,

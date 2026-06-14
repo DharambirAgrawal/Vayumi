@@ -12,6 +12,7 @@ log = get_logger("db.lancedb")
 
 _db: LanceDBConnection | None = None
 FACTS_INDEX_TABLE = "facts_index"
+MEETING_CHUNKS_TABLE = "meeting_chunks"
 
 
 async def init_lancedb(lancedb_dir: str) -> LanceDBConnection:
@@ -38,6 +39,25 @@ async def init_lancedb(lancedb_dir: str) -> LanceDBConnection:
         table = db.open_table(FACTS_INDEX_TABLE)
         table.delete('fact_id = "__bootstrap__"')
         log.info("lancedb.table_created", table=FACTS_INDEX_TABLE)
+    if MEETING_CHUNKS_TABLE not in table_names:
+        db.create_table(
+            MEETING_CHUNKS_TABLE,
+            [
+                {
+                    "chunk_id": "__bootstrap__",
+                    "meeting_id": "",
+                    "user_id": "",
+                    "speaker": "",
+                    "ts_start": 0.0,
+                    "ts_end": 0.0,
+                    "text": "",
+                    "embedding": [0.0] * embedding_dim(),
+                }
+            ],
+        )
+        table = db.open_table(MEETING_CHUNKS_TABLE)
+        table.delete('chunk_id = "__bootstrap__"')
+        log.info("lancedb.table_created", table=MEETING_CHUNKS_TABLE)
     log.info("lancedb.ok")
     _db = db
     return db
@@ -55,6 +75,10 @@ def get_lancedb() -> LanceDBConnection:
     return _db
 
 
+def escape_lancedb_str(value: str) -> str:
+    return value.replace('"', '\\"').replace("'", "\\'")
+
+
 def upsert_fact_embedding(
     *,
     fact_id: str,
@@ -65,7 +89,7 @@ def upsert_fact_embedding(
 ) -> None:
     db = get_lancedb()
     table = db.open_table(FACTS_INDEX_TABLE)
-    safe_id = fact_id.replace('"', '\\"')
+    safe_id = escape_lancedb_str(fact_id)
     table.delete(f'fact_id = "{safe_id}"')
     table.add(
         [
@@ -74,6 +98,37 @@ def upsert_fact_embedding(
                 "user_id": user_id,
                 "key": key,
                 "value_text": value_text,
+                "embedding": embedding,
+            }
+        ]
+    )
+
+
+def upsert_meeting_chunk(
+    *,
+    chunk_id: str,
+    meeting_id: str,
+    user_id: str,
+    speaker: str,
+    ts_start: float,
+    ts_end: float,
+    text: str,
+    embedding: list[float],
+) -> None:
+    db = get_lancedb()
+    table = db.open_table(MEETING_CHUNKS_TABLE)
+    safe_id = escape_lancedb_str(chunk_id)
+    table.delete(f'chunk_id = "{safe_id}"')
+    table.add(
+        [
+            {
+                "chunk_id": chunk_id,
+                "meeting_id": meeting_id,
+                "user_id": user_id,
+                "speaker": speaker,
+                "ts_start": ts_start,
+                "ts_end": ts_end,
+                "text": text,
                 "embedding": embedding,
             }
         ]

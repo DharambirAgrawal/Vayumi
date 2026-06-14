@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator
 
 from starlette.websockets import WebSocket
 
@@ -13,8 +12,7 @@ from server.transport.turn_coordinator import run_supervisor_text_turn
 from server.voice.delivery import deliver_user_message
 from server.voice.respond_via import compute_respond_via
 from server.voice.stt.base import STTBackend
-from server.voice.transcript import is_meaningful_transcript, voice_pcm_is_viable
-from server.voice.types import TranscriptEvent
+from server.voice.stt_pipeline import transcribe_pcm_chunks
 
 log = get_logger("voice.turn")
 
@@ -34,31 +32,13 @@ async def run_voice_turn(
         log.debug("voice_turn.dropped", user_id=user_session.user_id)
         return
 
-    if not voice_pcm_is_viable(pcm_chunks):
+    turn_id = str(uuid.uuid4())
+    transcript = await transcribe_pcm_chunks(stt, pcm_chunks)
+    if transcript is None:
         log.debug(
-            "voice_turn.audio_too_short",
+            "voice_turn.no_transcript",
             user_id=user_session.user_id,
             bytes=sum(len(c) for c in pcm_chunks),
-        )
-        return
-
-    turn_id = str(uuid.uuid4())
-
-    async def chunk_iter() -> AsyncIterator[bytes]:
-        for chunk in pcm_chunks:
-            yield chunk
-
-    transcript = ""
-    async for event in stt.transcribe_stream(chunk_iter()):
-        if isinstance(event, TranscriptEvent):
-            transcript = event.text
-
-    transcript = transcript.strip()
-    if not is_meaningful_transcript(transcript):
-        log.debug(
-            "voice_turn.junk_transcript",
-            user_id=user_session.user_id,
-            text=transcript,
         )
         return
 
@@ -68,6 +48,21 @@ async def run_voice_turn(
         turn_id=turn_id,
         text=transcript,
     )
+
+    from server.orchestrator.meeting import (
+        enter_meeting_mode,
+        is_addressed_transcript,
+        parse_mode_command,
+    )
+
+    addressed, body = is_addressed_transcript(transcript)
+    if (
+        addressed
+        and user_session.client_control.mode == "conversation"
+        and parse_mode_command(body) == "start"
+    ):
+        await enter_meeting_mode(user_session, websocket)
+        return
 
     await deliver_user_message(
         websocket, turn_id=turn_id, text=transcript, source="voice"

@@ -8,6 +8,7 @@ from starlette.websockets import WebSocket, WebSocketState
 from server.logger import get_logger
 from server.orchestrator.supervisor import Supervisor
 from server.transport.queue_types import PendingChatDelivery, QueuedChat
+from server.orchestrator.meeting import MeetingState
 from server.transport.client_control import ClientControlSession
 from server.transport.protocol import EventMessage, EventPayload, serialize_server_message
 from server.voice.interrupt import InterruptController
@@ -41,6 +42,7 @@ class UserSession:
     last_proactive_at: float | None = None
     last_turn_completed_at: float | None = None
     notifier_inflight: bool = False
+    meeting_state: MeetingState | None = None
 
     def attach_transport(self, websocket: WebSocket) -> None:
         self.websocket = websocket

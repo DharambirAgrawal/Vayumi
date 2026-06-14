@@ -406,13 +406,15 @@ Goal: meeting mode, offline fallback, file/image handling, MCP extensibility.
 
 ---
 
-### Step 13 — Meeting mode ⬜
+### Step 13 — Meeting mode ✅
 
 **Features delivered:**
 - Meeting mode toggle (Main is dormant, transcript accumulates)
 - Diarization-friendly chunked storage in LanceDB
-- Post-meeting summary generation
-- Meeting summary stored as a fact
+- Addressed "Hey Vayumi" turns in meeting mode
+- Post-meeting background summary generation
+- Meeting summary stored as a versioned fact
+- `[RECALL meeting:id]` directive support
 
 ---
 

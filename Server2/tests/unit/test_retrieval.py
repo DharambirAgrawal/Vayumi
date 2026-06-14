@@ -62,7 +62,10 @@ def seeded_facts_index(monkeypatch: pytest.MonkeyPatch) -> Generator[str, None, 
             return _unit_vector(2)
         return _unit_vector(0)
 
-    monkeypatch.setattr("server.memory.retrieval.embed_text", fake_embed)
+    async def fake_embed_async(text: str) -> list[float]:
+        return fake_embed(text)
+
+    monkeypatch.setattr("server.memory.retrieval.embed_text_async", fake_embed_async)
     yield tmpdir
     monkeypatch.setattr(lancedb_mod, "_db", None)
 

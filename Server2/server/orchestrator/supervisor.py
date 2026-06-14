@@ -247,6 +247,11 @@ class Supervisor:
                 input_kind=input_kind,
                 proactive=input_kind == "proactive",
             )
+            schedule_session_summarization(
+                session_id=self.session_id,
+                user_id=self.user_id,
+                engine_pool=engine_pool,
+            )
             return TurnOutput(
                 assistant_text=visible,
                 raw_text=raw_text,

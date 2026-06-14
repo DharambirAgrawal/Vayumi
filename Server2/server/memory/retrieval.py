@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from server.db.lancedb import FACTS_INDEX_TABLE, get_lancedb
+import json
+
+from server.db.lancedb import FACTS_INDEX_TABLE, escape_lancedb_str, get_lancedb
 from server.logger import get_logger
-from server.memory.embeddings import embed_text
+from server.memory import facts
+from server.memory.embeddings import embed_text_async
+from server.memory.meeting_storage import search_meeting_chunks
 
 log = get_logger("memory.retrieval")
 
@@ -27,16 +31,12 @@ class Snippet:
     citation: str
 
 
-def _escape_lancedb_str(value: str) -> str:
-    return value.replace('"', '\\"').replace("'", "\\'")
-
-
 def _build_where_clause(filters: RetrievalFilters) -> str:
-    clauses = [f'user_id = "{_escape_lancedb_str(filters.user_id)}"']
+    clauses = [f'user_id = "{escape_lancedb_str(filters.user_id)}"']
     if filters.doc_id:
-        clauses.append(f'fact_id = "{_escape_lancedb_str(filters.doc_id)}"')
+        clauses.append(f'fact_id = "{escape_lancedb_str(filters.doc_id)}"')
     if filters.key_prefix:
-        prefix = _escape_lancedb_str(filters.key_prefix)
+        prefix = escape_lancedb_str(filters.key_prefix)
         clauses.append(f'key LIKE "{prefix}%"')
     return " AND ".join(clauses)
 
@@ -78,7 +78,7 @@ async def retrieve(
     if k < 1:
         return []
 
-    embedding = embed_text(query)
+    embedding = await embed_text_async(query)
     table = get_lancedb().open_table(FACTS_INDEX_TABLE)
     where = _build_where_clause(filters)
     limit = k if not filters.key_prefix else max(k * 4, k)
@@ -114,3 +114,35 @@ async def get_snippet_by_doc_id(user_id: str, doc_id: str) -> Snippet | None:
     snippet = _row_to_snippet(rows[0], score=1.0)
     log.info("memory.retrieve_doc_hit", user_id=user_id, doc_id=doc_id, key=snippet.key)
     return snippet
+
+
+async def get_meeting_recall(user_id: str, meeting_id: str) -> str:
+    """Return meeting summary fact or top chunk snippets for recall."""
+    meeting_id = meeting_id.strip()
+    if not meeting_id:
+        return "(empty meeting id)"
+
+    key = f"meeting:{meeting_id}:summary"
+    record = await facts.get_fact(user_id, key)
+    if record is not None:
+        value = record.value
+        if isinstance(value, dict):
+            summary = str(value.get("summary", ""))
+            items = value.get("action_items") or []
+            if items:
+                actions = "; ".join(str(i) for i in items)
+                return f"{summary} Action items: {actions}"
+            return summary
+        return json.dumps(value)
+
+    chunks = await search_meeting_chunks(
+        meeting_id,
+        user_id,
+        "meeting summary",
+        k=3,
+    )
+    if not chunks:
+        return f"(no meeting data for meeting_id={meeting_id})"
+
+    parts = [chunk.text for chunk in chunks]
+    return " | ".join(parts)

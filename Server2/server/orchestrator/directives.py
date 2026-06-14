@@ -45,8 +45,12 @@ RECALL_CHAIN_RE = re.compile(
     r'\[RECALL\s+chain\s+key=(?P<key>[^\s\]]+)\s*\]',
     re.IGNORECASE,
 )
+RECALL_MEETING_RE = re.compile(
+    r"\[RECALL\s+meeting:(?P<meeting_id>[^\s\]]+)\s*\]",
+    re.IGNORECASE,
+)
 RECALL_RE = re.compile(
-    r'\[RECALL\s+(?!chain\s|doc:)key=(?P<key>[^\s\]]+)\s*\]',
+    r'\[RECALL\s+(?!chain\s|doc:|meeting:)key=(?P<key>[^\s\]]+)\s*\]',
     re.IGNORECASE,
 )
 DELEGATE_HEAD_RE = re.compile(
@@ -83,6 +87,11 @@ class RecallDirective:
 @dataclass(frozen=True)
 class RecallDocDirective:
     doc_id: str
+
+
+@dataclass(frozen=True)
+class RecallMeetingDirective:
+    meeting_id: str
 
 
 @dataclass(frozen=True)
@@ -181,13 +190,17 @@ def parse_delegate_directives(text: str) -> list[DelegateDirective]:
     return found
 
 
-ProfileDirective = RememberDirective | RecallDirective | RecallDocDirective
+ProfileDirective = (
+    RememberDirective | RecallDirective | RecallDocDirective | RecallMeetingDirective
+)
 
 
 def parse_directives(text: str) -> list[ProfileDirective]:
     found: list[ProfileDirective] = []
     for match in RECALL_DOC_RE.finditer(text):
         found.append(RecallDocDirective(doc_id=match.group("doc_id")))
+    for match in RECALL_MEETING_RE.finditer(text):
+        found.append(RecallMeetingDirective(meeting_id=match.group("meeting_id")))
     for match in RECALL_CHAIN_RE.finditer(text):
         found.append(RecallDirective(key=match.group("key"), chain=True))
     for match in RECALL_RE.finditer(text):
@@ -228,7 +241,7 @@ def filter_profile_directives(
     """Drop REMEMBER/RECALL for keys outside the profile namespace."""
     kept: list[ProfileDirective] = []
     for directive in directives:
-        if isinstance(directive, RecallDocDirective):
+        if isinstance(directive, (RecallDocDirective, RecallMeetingDirective)):
             kept.append(directive)
             continue
         if not affects_warm_profile(directive.key):
@@ -295,6 +308,7 @@ def plan_acknowledgment(text: str) -> str:
         DELEGATE_HEAD_RE,
         REMEMBER_RE,
         RECALL_DOC_RE,
+        RECALL_MEETING_RE,
         RECALL_CHAIN_RE,
         RECALL_RE,
         ANSWER_TO_RE,
@@ -366,6 +380,27 @@ async def execute_directives(
                 directive.key,
                 directive.value,
                 directive.source,
+            )
+            continue
+
+        if isinstance(directive, RecallMeetingDirective):
+            from server.memory.retrieval import get_meeting_recall
+
+            payload = await get_meeting_recall(
+                user_id,
+                directive.meeting_id,
+            )
+            results.append(
+                RecallResult(
+                    key=f"meeting:{directive.meeting_id}:summary",
+                    chain=False,
+                    payload=payload,
+                )
+            )
+            log.info(
+                "directives.recall_meeting",
+                user_id=user_id,
+                meeting_id=directive.meeting_id,
             )
             continue
 

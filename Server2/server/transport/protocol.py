@@ -234,8 +234,10 @@ class EventPayload(BaseModel):
         "task_error",
         "file_processing",
         "session_superseded",
+        "meeting_started",
+        "meeting_ended",
     ]
-    task_id: str
+    task_id: str = ""
     summary: str
 
 
