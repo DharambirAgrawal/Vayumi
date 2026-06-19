@@ -5,6 +5,7 @@ import { rateLimiter } from "../../core/middleware/rateLimiter.js";
 import { validate } from "../../core/middleware/validate.js";
 import { authController } from "./auth.controller.js";
 import {
+  appleSchema,
   changePasswordSchema,
   forgotPasswordSchema,
   googleSchema,
@@ -24,6 +25,7 @@ const authLimit = rateLimiter({ ...appConfig.rateLimit.auth, keyPrefix: "auth" }
 authRouter.post("/register", validate.body(registerSchema), authController.register);
 authRouter.post("/login", authLimit, validate.body(loginSchema), authController.login);
 authRouter.post("/google", authLimit, validate.body(googleSchema), authController.google);
+authRouter.post("/apple", authLimit, validate.body(appleSchema), authController.apple);
 authRouter.post("/verify-email/confirm", authenticate, validate.body(verifyEmailCodeSchema), authController.verifyEmailCode);
 authRouter.post("/verify-email/confirm/request", authLimit, validate.body(verifyEmailCodeByEmailSchema), authController.verifyEmailCodeByEmail);
 authRouter.post("/verify-email/resend", authenticate, authController.resendVerification);

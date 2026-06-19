@@ -1,4 +1,5 @@
 import { OAuth2Client, type LoginTicket } from "google-auth-library";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import mailchecker from "mailchecker";
 import * as common from "oci-common";
@@ -29,6 +30,7 @@ import {
   parseRefreshToken,
 } from "./auth.helpers.js";
 import type {
+  AppleInput,
   ChangePasswordInput,
   ForgotPasswordInput,
   GoogleInput,
@@ -44,6 +46,9 @@ const googleAudiences = env.GOOGLE_CLIENT_ID
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
+
+const appleJwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
+const appleAudience = env.APPLE_BUNDLE_ID || env.APNS_BUNDLE_ID;
 
 const ociAuthProvider = new common.SimpleAuthenticationDetailsProvider(
   env.OCI_TENANCY_ID,
@@ -148,7 +153,10 @@ const sendPasswordResetEmail = async (user: User) => {
   });
 };
 
-const createSessionAndTokens = async (userId: string, input: RegisterInput | LoginInput | GoogleInput) => {
+const createSessionAndTokens = async (
+  userId: string,
+  input: RegisterInput | LoginInput | GoogleInput | AppleInput,
+) => {
   const payload = await createSessionPayload({
     userId,
     device: {
@@ -356,6 +364,100 @@ export const authService = {
 
     if (!user) {
       throw new AuthError("Unable to authenticate Google account");
+    }
+
+    const tokens = await createSessionAndTokens(user.id, input);
+    await cache.invalidate(RedisKeys.userProfile(user.id), RedisKeys.userSessions(user.id));
+    return { user: publicUser(user), tokens };
+  },
+
+  async apple(input: AppleInput) {
+    let payload: Record<string, unknown>;
+
+    try {
+      const { payload: verified } = await jwtVerify(input.id_token, appleJwks, {
+        issuer: "https://appleid.apple.com",
+        audience: appleAudience,
+      });
+      payload = verified;
+    } catch (error) {
+      logger.warn({ err: error, audience: appleAudience }, "Apple token verification failed");
+      throw new AppError(401, "INVALID_APPLE_TOKEN", "Apple sign-in failed. The Apple token is invalid or issued for a different client app.");
+    }
+
+    const sub = typeof payload.sub === "string" ? payload.sub : undefined;
+    const emailClaim = typeof payload.email === "string" ? payload.email : undefined;
+    const emailVerified = payload.email_verified === true || payload.email_verified === "true";
+
+    if (!sub || !emailClaim || !emailVerified) {
+      throw new AuthError("Apple account email is not verified");
+    }
+
+    const email = emailClaim.toLowerCase();
+    const [existingIdentity] = await db
+      .select()
+      .from(userIdentities)
+      .where(and(eq(userIdentities.provider, "apple"), eq(userIdentities.providerAccountId, sub)))
+      .limit(1);
+
+    let user: User | undefined;
+
+    if (existingIdentity) {
+      [user] = await db
+        .select()
+        .from(users)
+        .where(and(eq(users.id, existingIdentity.userId), isNull(users.deletedAt)))
+        .limit(1);
+    } else {
+      [user] = await db.select().from(users).where(and(eq(users.email, email), isNull(users.deletedAt))).limit(1);
+
+      if (user) {
+        await db.insert(userIdentities).values({
+          userId: user.id,
+          provider: "apple",
+          providerAccountId: sub,
+        });
+        const [updated] = await db
+          .update(users)
+          .set({
+            isVerified: true,
+            name: user.name ?? input.full_name,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, user.id))
+          .returning();
+        user = updated;
+      } else {
+        const [created] = await db.transaction(async (tx) => {
+          const [createdUser] = await tx
+            .insert(users)
+            .values({
+              email,
+              name: input.full_name,
+              isVerified: true,
+            })
+            .returning();
+
+          if (!createdUser) {
+            throw new AppError(500, "USER_CREATE_FAILED", "Unable to create user");
+          }
+
+          await tx.insert(userIdentities).values({
+            userId: createdUser.id,
+            provider: "apple",
+            providerAccountId: sub,
+          });
+
+          await tx.insert(userSettings).values({ userId: createdUser.id });
+
+          return [createdUser];
+        });
+        user = created;
+      }
+    }
+
+    if (!user) {
+      throw new AuthError("Unable to authenticate Apple account");
     }
 
     const tokens = await createSessionAndTokens(user.id, input);
