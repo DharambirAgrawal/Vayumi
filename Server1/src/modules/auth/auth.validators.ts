@@ -22,6 +22,11 @@ export const googleSchema = deviceSchema.extend({
   id_token: z.string().min(1),
 });
 
+export const appleSchema = deviceSchema.extend({
+  id_token: z.string().min(1),
+  full_name: z.string().trim().min(1).max(100).optional(),
+});
+
 export const refreshSchema = z.object({
   refresh_token: z.string().min(1),
 });
@@ -56,6 +61,7 @@ export const changePasswordSchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type GoogleInput = z.infer<typeof googleSchema>;
+export type AppleInput = z.infer<typeof appleSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
 export type VerifyEmailCodeInput = z.infer<typeof verifyEmailCodeSchema>;
 export type VerifyEmailCodeByEmailInput = z.infer<typeof verifyEmailCodeByEmailSchema>;

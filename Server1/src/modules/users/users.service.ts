@@ -121,14 +121,12 @@ export const usersService = {
   },
 
   async deleteAccount(userId: string, token: AccessTokenPayload) {
-    const now = new Date();
-
+    // Hard delete: store/policy compliance requires that deleting an account
+    // actually removes the user's data, not just flags it. The `users` row
+    // is the cascade root — ON DELETE CASCADE on reminders/meetings/settings/
+    // identities/push-tokens/synced-emails/etc. clears everything else.
     const sessionIds = await db.transaction(async (tx) => {
-      const [user] = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
-        .limit(1);
+      const [user] = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1);
 
       if (!user) {
         throw new NotFoundError("User");
@@ -136,12 +134,7 @@ export const usersService = {
 
       const rows = await tx.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, userId));
 
-      await tx
-        .update(sessions)
-        .set({ isActive: false, revokedAt: now, updatedAt: now })
-        .where(eq(sessions.userId, userId));
-
-      await tx.update(users).set({ deletedAt: now, updatedAt: now }).where(eq(users.id, userId));
+      await tx.delete(users).where(eq(users.id, userId));
 
       return rows.map((row) => row.id);
     });

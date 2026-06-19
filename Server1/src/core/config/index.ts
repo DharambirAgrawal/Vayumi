@@ -31,6 +31,9 @@ const envSchema = z
     OCI_EMAIL_COMPARTMENT_ID: z.string().min(1),
     ALLOWED_ORIGINS: z.string().min(1),
     GOOGLE_CLIENT_ID: z.string().min(1),
+    // Audience for Sign in with Apple identity tokens — defaults to APNS_BUNDLE_ID
+    // below if unset, since for the native flow they're the same bundle id.
+    APPLE_BUNDLE_ID: z.string().min(1).optional(),
     SUPABASE_URL: z.string().url(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
     SUPABASE_STORAGE_BUCKET: z.string().min(1),

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { AuthError } from "../../core/errors/index.js";
 import { authService } from "./auth.service.js";
 import type {
+  AppleInput,
   ChangePasswordInput,
   ForgotPasswordInput,
   GoogleInput,
@@ -38,6 +39,10 @@ export const authController = {
 
   google: asyncHandler(async (req, res) => {
     res.json(await authService.google(req.body as GoogleInput));
+  }),
+
+  apple: asyncHandler(async (req, res) => {
+    res.json(await authService.apple(req.body as AppleInput));
   }),
 
   verifyEmailCode: asyncHandler(async (req, res) => {

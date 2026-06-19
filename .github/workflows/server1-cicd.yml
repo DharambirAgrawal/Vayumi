@@ -1,0 +1,55 @@
+name: Server1 CI/CD
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "Server1/**"
+      - ".github/workflows/server1-cicd.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "Server1/**"
+      - ".github/workflows/server1-cicd.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "22.12.0"
+          cache: "npm"
+          cache-dependency-path: Server1/package-lock.json
+
+      - name: Install dependencies
+        working-directory: Server1
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: Server1
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: Server1
+        run: npm run build
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy Server1 to Heroku
+        uses: akhileshns/heroku-deploy@v3.13.15
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: ${{ secrets.HEROKU_APP_NAME }}
+          heroku_email: ${{ secrets.HEROKU_EMAIL }}
+          appdir: "Server1"
