@@ -3,8 +3,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { sessions, users } from "../db/schema/index.js";
 import { AuthError } from "../errors/index.js";
-import { redis } from "../redis/index.js";
-import { RedisKeys } from "../redis/keys.js";
 import { verifyAccessToken } from "../utils/jwt.js";
 
 export const authenticate = async (req: Request, _res: Response, next: NextFunction) => {
@@ -17,10 +15,6 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     }
 
     const payload = verifyAccessToken(token);
-    const isBlocked = await redis.exists(RedisKeys.tokenBlocklist(payload.jti));
-    if (isBlocked) {
-      throw new AuthError("Token has been revoked");
-    }
 
     const [session] = await db
       .select()

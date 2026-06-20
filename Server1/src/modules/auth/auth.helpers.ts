@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sessions } from "../../core/db/schema/index.js";
-import { redis } from "../../core/redis/index.js";
-import { RedisKeys, RedisTTL } from "../../core/redis/keys.js";
+import { TokenLifetimes } from "../../core/auth/tokenLifetimes.js";
 import type { DeviceType } from "../../core/types/index.js";
 import { addSeconds } from "../../core/utils/date.js";
 import { hashPassword, randomToken } from "../../core/utils/crypto.js";
@@ -25,7 +24,7 @@ export const createSessionPayload = async (input: {
   const sessionId = randomUUID();
   const refreshToken = createRefreshToken(sessionId);
   const refreshTokenHash = await hashPassword(refreshToken);
-  const expiresAt = addSeconds(new Date(), RedisTTL.refreshToken);
+  const expiresAt = addSeconds(new Date(), TokenLifetimes.refreshTokenSeconds);
 
   return {
     session: {
@@ -54,13 +53,6 @@ export const issueTokenPair = async (input: {
     deviceType: input.deviceType,
     scopes: input.scopes ?? ["user"],
   });
-
-  await redis.set(
-    RedisKeys.refreshToken(input.sessionId),
-    JSON.stringify({ userId: input.userId, issuedAt: Date.now() }),
-    "EX",
-    RedisTTL.refreshToken,
-  );
 
   return {
     access_token: access.token,

@@ -1,6 +1,6 @@
 import { and, eq, lt } from "drizzle-orm";
 import { db } from "../../../core/db/index.js";
-import { emailVerifications, passwordResetTokens, sessions } from "../../../core/db/schema/index.js";
+import { emailVerifications, passwordResetTokens, rateLimits, sessions } from "../../../core/db/schema/index.js";
 import { logger } from "../../../core/utils/logger.js";
 import type { CronJobDefinition } from "../cron.types.js";
 
@@ -26,11 +26,17 @@ export const cleanExpiredTokensJob: CronJobDefinition = {
       .where(lt(passwordResetTokens.expiresAt, now))
       .returning({ id: passwordResetTokens.id });
 
+    const expiredRateLimits = await db
+      .delete(rateLimits)
+      .where(lt(rateLimits.expiresAt, now))
+      .returning({ key: rateLimits.key });
+
     logger.info(
       {
         expiredSessions: expiredSessions.length,
         expiredEmailTokens: expiredEmailTokens.length,
         expiredResetTokens: expiredResetTokens.length,
+        expiredRateLimits: expiredRateLimits.length,
       },
       "Expired auth tokens cleaned",
     );

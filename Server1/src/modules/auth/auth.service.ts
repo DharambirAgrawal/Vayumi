@@ -4,7 +4,6 @@ import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import mailchecker from "mailchecker";
 import * as common from "oci-common";
 import * as emaildataplane from "oci-emaildataplane";
-import { appConfig } from "../../core/config/app.js";
 import { env } from "../../core/config/index.js";
 import { db } from "../../core/db/index.js";
 import {
@@ -16,12 +15,10 @@ import {
   users,
 } from "../../core/db/schema/index.js";
 import { AppError, AuthError, NotFoundError } from "../../core/errors/index.js";
-import { cache } from "../../core/redis/helpers.js";
-import { redis } from "../../core/redis/index.js";
-import { RedisKeys, RedisTTL } from "../../core/redis/keys.js";
+import { TokenLifetimes } from "../../core/auth/tokenLifetimes.js";
 import { addSeconds } from "../../core/utils/date.js";
-import { compareHash, generateNumericCode, hashPassword, randomToken, sha256 } from "../../core/utils/crypto.js";
-import type { AccessTokenPayload, User } from "../../core/types/index.js";
+import { compareHash, generateNumericCode, hashPassword, sha256 } from "../../core/utils/crypto.js";
+import type { User } from "../../core/types/index.js";
 import { logger } from "../../core/utils/logger.js";
 import {
   createRefreshToken,
@@ -97,16 +94,26 @@ const trySendVerificationEmail = async (user: User) => {
   }
 };
 
-const isVerificationOnCooldown = (userId: string) =>
-  cache.get<string>(RedisKeys.emailVerificationCooldown(userId));
+// Cooldown is derived from the most recent verification row's createdAt rather
+// than a separate store — sending always inserts a row, so its timestamp is the
+// last-sent marker.
+const isVerificationOnCooldown = async (userId: string): Promise<boolean> => {
+  const [latest] = await db
+    .select({ createdAt: emailVerifications.createdAt })
+    .from(emailVerifications)
+    .where(eq(emailVerifications.userId, userId))
+    .orderBy(desc(emailVerifications.createdAt))
+    .limit(1);
 
-const sendVerificationCodeWithCooldown = async (user: User) => {
-  const sent = await trySendVerificationEmail(user);
-  if (sent) {
-    await cache.set(RedisKeys.emailVerificationCooldown(user.id), "1", RedisTTL.emailVerificationCooldown);
+  if (!latest) {
+    return false;
   }
-  return sent;
+
+  const cooldownMs = TokenLifetimes.emailVerificationCooldownSeconds * 1000;
+  return latest.createdAt.getTime() > Date.now() - cooldownMs;
 };
+
+const sendVerificationCodeWithCooldown = (user: User) => trySendVerificationEmail(user);
 
 const trySendPasswordResetEmail = async (user: User) => {
   try {
@@ -119,7 +126,7 @@ const trySendPasswordResetEmail = async (user: User) => {
 const sendVerificationEmail = async (user: User) => {
   const code = generateNumericCode();
   const tokenHash = sha256(code);
-  const expiresAt = addSeconds(new Date(), RedisTTL.emailVerificationCode);
+  const expiresAt = addSeconds(new Date(), TokenLifetimes.emailVerificationCodeSeconds);
 
   await db.insert(emailVerifications).values({ userId: user.id, tokenHash, expiresAt });
 
@@ -130,26 +137,19 @@ const sendVerificationEmail = async (user: User) => {
   });
 };
 
-const appendToken = (baseUrl: string, token: string) => {
-  const separator = baseUrl.includes("?") ? "&" : "?";
-  return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
-};
+const MAX_RESET_ATTEMPTS = 5;
 
 const sendPasswordResetEmail = async (user: User) => {
-  const token = randomToken();
-  const tokenHash = sha256(token);
-  const expiresAt = addSeconds(new Date(), RedisTTL.passwordReset);
+  const code = generateNumericCode();
+  const tokenHash = sha256(code);
+  const expiresAt = addSeconds(new Date(), TokenLifetimes.passwordResetSeconds);
 
   await db.insert(passwordResetTokens).values({ userId: user.id, tokenHash, expiresAt });
-  await cache.set(RedisKeys.passwordReset(tokenHash), { userId: user.id }, RedisTTL.passwordReset);
 
-  const link = appConfig.passwordResetUrl
-    ? appendToken(appConfig.passwordResetUrl, token)
-    : `${appConfig.appUrl}/password/reset?token=${encodeURIComponent(token)}`;
   await sendEmail({
     to: user.email,
     subject: "Reset your password",
-    text: `Reset your password by opening this link: ${link}`,
+    text: `Your Vayumi password reset code is ${code}. It expires in 15 minutes. If you didn't request this, you can safely ignore this email.`,
   });
 };
 
@@ -176,31 +176,11 @@ const createSessionAndTokens = async (
   });
 };
 
-const revokeSessionIds = async (sessionIds: string[]) => {
-  await Promise.all(sessionIds.map((sessionId) => redis.del(RedisKeys.refreshToken(sessionId))));
-};
-
 const revokeAllUserSessions = async (userId: string) => {
-  const activeSessions = await db
-    .select({ id: sessions.id })
-    .from(sessions)
-    .where(and(eq(sessions.userId, userId), eq(sessions.isActive, true)));
-
   await db
     .update(sessions)
     .set({ isActive: false, revokedAt: new Date(), updatedAt: new Date() })
     .where(eq(sessions.userId, userId));
-
-  await revokeSessionIds(activeSessions.map((session) => session.id));
-  await cache.invalidate(RedisKeys.userSessions(userId));
-};
-
-const blockCurrentAccessToken = async (token: AccessTokenPayload) => {
-  if (!token.exp) {
-    return;
-  }
-  const ttl = Math.max(token.exp - Math.floor(Date.now() / 1000), 1);
-  await redis.set(RedisKeys.tokenBlocklist(token.jti), "1", "EX", ttl);
 };
 
 export const authService = {
@@ -239,7 +219,6 @@ export const authService = {
 
     const tokens = await createSessionAndTokens(user.id, input);
     const verificationSent = await sendVerificationCodeWithCooldown(user);
-    await cache.invalidate(RedisKeys.userProfile(user.id));
 
     return {
       user: publicUser(user),
@@ -274,7 +253,6 @@ export const authService = {
     }
 
     const tokens = await createSessionAndTokens(user.id, input);
-    await cache.invalidate(RedisKeys.userSessions(user.id));
     return { user: publicUser(user), tokens };
   },
 
@@ -367,12 +345,15 @@ export const authService = {
     }
 
     const tokens = await createSessionAndTokens(user.id, input);
-    await cache.invalidate(RedisKeys.userProfile(user.id), RedisKeys.userSessions(user.id));
     return { user: publicUser(user), tokens };
   },
 
   async apple(input: AppleInput) {
     let payload: Record<string, unknown>;
+
+    if (!appleAudience) {
+      throw new AppError(500, "APPLE_NOT_CONFIGURED", "Apple sign-in is not configured (set APPLE_BUNDLE_ID)");
+    }
 
     try {
       const { payload: verified } = await jwtVerify(input.id_token, appleJwks, {
@@ -461,7 +442,6 @@ export const authService = {
     }
 
     const tokens = await createSessionAndTokens(user.id, input);
-    await cache.invalidate(RedisKeys.userProfile(user.id), RedisKeys.userSessions(user.id));
     return { user: publicUser(user), tokens };
   },
 
@@ -522,7 +502,6 @@ export const authService = {
       .returning();
 
     await db.update(emailVerifications).set({ usedAt: new Date() }).where(eq(emailVerifications.id, verification.id));
-    await cache.invalidate(RedisKeys.userProfile(user.id));
 
     return { user: updatedUser ? publicUser(updatedUser) : null };
   },
@@ -605,28 +584,20 @@ export const authService = {
       refreshToken: nextRefreshToken,
     });
 
-    await cache.invalidate(RedisKeys.userSessions(session.userId));
     return { tokens };
   },
 
-  async logout(userId: string, sessionId: string, token: AccessTokenPayload) {
+  async logout(userId: string, sessionId: string) {
     await db
       .update(sessions)
       .set({ isActive: false, revokedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)));
 
-    await Promise.all([
-      redis.del(RedisKeys.refreshToken(sessionId)),
-      blockCurrentAccessToken(token),
-      cache.invalidate(RedisKeys.userSessions(userId)),
-    ]);
-
     return { success: true };
   },
 
-  async logoutAll(userId: string, token: AccessTokenPayload) {
+  async logoutAll(userId: string) {
     await revokeAllUserSessions(userId);
-    await blockCurrentAccessToken(token);
     return { success: true };
   },
 
@@ -640,21 +611,43 @@ export const authService = {
   },
 
   async resetPassword(input: ResetPasswordInput) {
-    const tokenHash = sha256(input.token);
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.email, input.email), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!user) {
+      throw new AuthError("Invalid or expired password reset code");
+    }
+
     const [resetToken] = await db
       .select()
       .from(passwordResetTokens)
       .where(
         and(
-          eq(passwordResetTokens.tokenHash, tokenHash),
+          eq(passwordResetTokens.userId, user.id),
           isNull(passwordResetTokens.usedAt),
           gt(passwordResetTokens.expiresAt, new Date()),
         ),
       )
+      .orderBy(desc(passwordResetTokens.createdAt))
       .limit(1);
 
     if (!resetToken) {
-      throw new AuthError("Invalid or expired password reset token");
+      throw new AuthError("Invalid or expired password reset code");
+    }
+
+    if (resetToken.attempts >= MAX_RESET_ATTEMPTS) {
+      throw new AppError(429, "TOO_MANY_ATTEMPTS", "Too many incorrect attempts. Please request a new code");
+    }
+
+    if (sha256(input.code) !== resetToken.tokenHash) {
+      await db
+        .update(passwordResetTokens)
+        .set({ attempts: resetToken.attempts + 1 })
+        .where(eq(passwordResetTokens.id, resetToken.id));
+      throw new AuthError("Incorrect password reset code");
     }
 
     const [identity] = await db
@@ -674,7 +667,6 @@ export const authService = {
 
     await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, resetToken.id));
     await revokeAllUserSessions(resetToken.userId);
-    await cache.invalidate(RedisKeys.passwordReset(tokenHash), RedisKeys.userProfile(resetToken.userId));
 
     return { success: true };
   },
@@ -696,7 +688,6 @@ export const authService = {
       .where(eq(userIdentities.id, identity.id));
 
     await revokeAllUserSessions(user.id);
-    await cache.invalidate(RedisKeys.userProfile(user.id));
 
     return { success: true };
   },

@@ -70,13 +70,13 @@ export const authController = {
   }),
 
   logout: asyncHandler(async (req, res) => {
-    const { user, session, token } = requireAuth(req);
-    res.json(await authService.logout(user.id, session.id, token));
+    const { user, session } = requireAuth(req);
+    res.json(await authService.logout(user.id, session.id));
   }),
 
   logoutAll: asyncHandler(async (req, res) => {
-    const { user, token } = requireAuth(req);
-    res.json(await authService.logoutAll(user.id, token));
+    const { user } = requireAuth(req);
+    res.json(await authService.logoutAll(user.id));
   }),
 
   forgotPassword: asyncHandler(async (req, res) => {

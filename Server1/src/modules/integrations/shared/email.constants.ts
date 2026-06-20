@@ -8,3 +8,7 @@ export const SERVER2_NOTIFY_FETCH = {
   attempts: 3,
   backoffMs: [1000, 2000] as const,
 } as const;
+
+export const EMAIL_CLASSIFY_MAX_BODY_CHARS = 2000;
+export const EMAIL_AI_CLASSIFY_TIMEOUT_MS = 3000;
+export const EMAIL_NOTIFY_TIMEOUT_MS = 2000;

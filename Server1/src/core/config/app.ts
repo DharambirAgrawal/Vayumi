@@ -4,7 +4,6 @@ export const appConfig = {
   nodeEnv: env.NODE_ENV,
   port: env.PORT,
   appUrl: env.APP_URL.replace(/\/$/, ""),
-  passwordResetUrl: env.PASSWORD_RESET_URL?.replace(/\/$/, ""),
   cors: {
     origins: env.ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean),
   },

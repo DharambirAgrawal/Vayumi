@@ -1,10 +1,8 @@
 import { and, asc, eq, gt, inArray, lte } from "drizzle-orm";
 import { remindersConfig } from "../../core/config/reminders.js";
-import { db } from "../../core/db/index.js";
+import { db, tryAdvisoryLock } from "../../core/db/index.js";
 import { reminders, type Reminder, type ReminderRecurrence } from "../../core/db/schema/reminders.js";
 import { NotFoundError, ValidationError } from "../../core/errors/index.js";
-import { redis } from "../../core/redis/index.js";
-import { RedisKeys, RedisTTL } from "../../core/redis/keys.js";
 import { logger } from "../../core/utils/logger.js";
 import { notificationsService } from "../notifications/notifications.service.js";
 import {
@@ -21,6 +19,9 @@ import type {
   UpcomingRemindersQuery,
   UpdateReminderInput,
 } from "./reminders.validators.js";
+
+/** Advisory lock id guarding concurrent reminder-fire runs (cron + internal endpoint). */
+const REMINDER_FIRE_LOCK_ID = 90241018;
 
 const resolveRecurrence = (
   recurrence: ReminderRecurrence | null | undefined,
@@ -343,13 +344,9 @@ export const remindersService = {
   },
 
   async fireRemindersNow() {
-    const acquired = await redis.setIfNotExists(
-      RedisKeys.reminderFireLock(),
-      "1",
-      RedisTTL.reminderFireLock,
-    );
+    const lock = await tryAdvisoryLock(REMINDER_FIRE_LOCK_ID);
 
-    if (!acquired) {
+    if (!lock) {
       return { processed: 0, skipped: true };
     }
 
@@ -380,7 +377,7 @@ export const remindersService = {
         skipped: false,
       };
     } finally {
-      await redis.del(RedisKeys.reminderFireLock());
+      await lock.release();
     }
   },
 };

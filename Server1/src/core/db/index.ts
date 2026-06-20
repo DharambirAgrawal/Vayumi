@@ -22,6 +22,38 @@ const client = postgres(env.DATABASE_URL, {
 export const db = drizzle(client, { schema });
 export { client as sql };
 
+/**
+ * Best-effort Postgres advisory lock. Reserves a dedicated connection so the
+ * lock and its release happen on the same backend (required by Postgres).
+ * Returns `null` if the lock is already held elsewhere; otherwise a handle
+ * whose `release()` unlocks and returns the connection to the pool.
+ */
+export const tryAdvisoryLock = async (
+  lockId: number,
+): Promise<{ release: () => Promise<void> } | null> => {
+  const reserved = await client.reserve();
+  try {
+    const [row] = await reserved<{ locked: boolean }[]>`select pg_try_advisory_lock(${lockId}) as locked`;
+    if (!row?.locked) {
+      reserved.release();
+      return null;
+    }
+  } catch (error) {
+    reserved.release();
+    throw error;
+  }
+
+  return {
+    release: async () => {
+      try {
+        await reserved`select pg_advisory_unlock(${lockId})`;
+      } finally {
+        reserved.release();
+      }
+    },
+  };
+};
+
 const migrationCandidates = [
   join(process.cwd(), "src/core/db/migrations"),
   join(process.cwd(), "dist/core/db/migrations"),
