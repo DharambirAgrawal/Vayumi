@@ -12,14 +12,14 @@ type ServiceAccount = {
 let cachedAuth: GoogleAuth | null = null;
 let cachedProjectId: string | null = null;
 
-const loadServiceAccount = async (): Promise<ServiceAccount> => {
-  const raw = await readFile(env.FCM_SERVICE_ACCOUNT_PATH, "utf8");
+const loadServiceAccount = async (path: string): Promise<ServiceAccount> => {
+  const raw = await readFile(path, "utf8");
   return JSON.parse(raw) as ServiceAccount;
 };
 
-const getAuth = async () => {
+const getAuth = async (path: string) => {
   if (!cachedAuth) {
-    const credentials = await loadServiceAccount();
+    const credentials = await loadServiceAccount(path);
     cachedProjectId = credentials.project_id;
     cachedAuth = new GoogleAuth({
       credentials,
@@ -32,8 +32,12 @@ const getAuth = async () => {
 
 export const fcmProvider = {
   async sendPush(input: { token: string; title: string; body: string; data?: Record<string, string> }) {
+    if (!env.FCM_SERVICE_ACCOUNT_PATH) {
+      return { success: false as const, error: "FCM not configured" };
+    }
+
     try {
-      const auth = await getAuth();
+      const auth = await getAuth(env.FCM_SERVICE_ACCOUNT_PATH);
       const client = await auth.getClient();
       const accessToken = await client.getAccessToken();
 

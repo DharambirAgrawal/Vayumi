@@ -23,7 +23,6 @@
     "dotenv": "latest",
     "drizzle-orm": "latest",
     "express": "latest",
-    "express-rate-limit": "latest",
     "google-auth-library": "latest",
     "helmet": "latest",
     "jose": "^6.2.3",
@@ -36,8 +35,6 @@
     "pino": "latest",
     "pino-http": "latest",
     "postgres": "latest",
-    "rate-limit-redis": "latest",
-    "redis": "^5.12.1",
     "rrule": "^2.8.1",
     "zod": "latest"
   },

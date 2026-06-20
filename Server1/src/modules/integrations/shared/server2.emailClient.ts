@@ -1,7 +1,12 @@
 import { integrationsConfig } from "../../../core/config/integrations.js";
 import { fetchWithRetries } from "../../../core/utils/fetchRetry.js";
 import { signInternalServiceJwt } from "../../../core/utils/jwt.js";
-import { SERVER2_CLASSIFY_FETCH, SERVER2_NOTIFY_FETCH } from "./email.constants.js";
+import {
+  EMAIL_AI_CLASSIFY_TIMEOUT_MS,
+  EMAIL_NOTIFY_TIMEOUT_MS,
+  SERVER2_CLASSIFY_FETCH,
+  SERVER2_NOTIFY_FETCH,
+} from "./email.constants.js";
 import type { EmailCategory, EmailClassifyResult } from "./email.types.js";
 
 export type ClassifyEmailRequest = {
@@ -65,7 +70,7 @@ export const server2EmailClient = {
           body: JSON.stringify(input),
         },
         {
-          timeoutMs: integrationsConfig.emailAiClassifyTimeoutMs,
+          timeoutMs: EMAIL_AI_CLASSIFY_TIMEOUT_MS,
           attempts: SERVER2_CLASSIFY_FETCH.attempts,
           backoffMs: SERVER2_CLASSIFY_FETCH.backoffMs,
         },
@@ -105,7 +110,7 @@ export const server2EmailClient = {
           body: JSON.stringify(input),
         },
         {
-          timeoutMs: integrationsConfig.emailNotifyTimeoutMs,
+          timeoutMs: EMAIL_NOTIFY_TIMEOUT_MS,
           attempts: SERVER2_NOTIFY_FETCH.attempts,
           backoffMs: SERVER2_NOTIFY_FETCH.backoffMs,
         },

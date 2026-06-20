@@ -1,6 +1,13 @@
 import "dotenv/config";
 import { z } from "zod";
 
+// Treat a present-but-empty env var (e.g. `FOO=`) the same as unset, so optional
+// integrations can be left blank in .env without failing validation.
+const optionalString = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -9,17 +16,10 @@ const envSchema = z
     DATABASE_URL: z.string().min(1),
     DATABASE_SSL_ENABLED: z.enum(["true", "false"]).optional(),
     DATABASE_AUTO_MIGRATE: z.enum(["true", "false"]).optional(),
-    REDIS_URL: z.string().min(1).optional(),
-    REDIS_HOST: z.string().min(1).optional(),
-    REDIS_PORT: z.coerce.number().int().positive().optional(),
-    REDIS_USERNAME: z.string().min(1).optional(),
-    REDIS_PASSWORD: z.string().min(1).optional(),
-    REDIS_TLS_ENABLED: z.enum(["true", "false"]).optional(),
     JWT_PRIVATE_KEY: z.string().min(1),
     JWT_PUBLIC_KEY: z.string().min(1),
     JWT_ACCESS_EXPIRY: z.string().default("15m"),
     JWT_REFRESH_EXPIRY: z.string().default("90d"),
-    PASSWORD_RESET_URL: z.string().min(1).optional(),
     FROM_EMAIL: z.string().email(),
     // OCI Email Delivery (HTTPS data-plane API, not SMTP)
     OCI_TENANCY_ID: z.string().min(1),
@@ -39,23 +39,12 @@ const envSchema = z
     SUPABASE_STORAGE_BUCKET: z.string().min(1),
     SUPABASE_STORAGE_PUBLIC_URL: z.string().url().optional(),
     ENCRYPTION_KEY: z.string().min(1),
-    APNS_KEY_ID: z.string().min(1),
-    APNS_TEAM_ID: z.string().min(1),
-    APNS_KEY_PATH: z.string().min(1),
-    APNS_BUNDLE_ID: z.string().min(1),
-    FCM_SERVICE_ACCOUNT_PATH: z.string().min(1),
-    GOOGLE_CLIENT_SECRET: z.string().min(1),
-    GOOGLE_REDIRECT_URI: z.string().min(1),
-    MICROSOFT_CLIENT_ID: z.string().min(1),
-    MICROSOFT_CLIENT_SECRET: z.string().min(1),
-    MICROSOFT_REDIRECT_URI: z.string().min(1),
-    MICROSOFT_TENANT_ID: z.string().min(1),
+    // Push notifications are optional until the Apple/Firebase developer setup
+    // is done — the server boots and runs (auth, email, reminders) without them,
+    // and push sending no-ops when unset.
+    APNS_BUNDLE_ID: optionalString,
+    FCM_SERVICE_ACCOUNT_PATH: optionalString,
     SERVER2_INTERNAL_URL: z.string().optional().default(""),
-    EMAIL_SYNC_WINDOW_DAYS: z.coerce.number().int().positive().default(90),
-    EMAIL_AI_CLASSIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(3000),
-    EMAIL_NOTIFY_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
-    EMAIL_POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(3),
-    EMAIL_CLASSIFY_MAX_BODY_CHARS: z.coerce.number().int().positive().default(2000),
     INTERNAL_REMINDER_SECRET: z.string().min(1),
     REMINDER_FIRE_BATCH_SIZE: z.coerce.number().int().positive().default(100),
     REMINDER_AGENT_EVENT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
@@ -70,17 +59,6 @@ const envSchema = z
           message: "Must be a valid URL when set",
         });
       }
-    }
-
-    const hasRedisUrl = Boolean(env.REDIS_URL);
-    const hasRedisObjectConfig = Boolean(env.REDIS_HOST && env.REDIS_PORT && env.REDIS_PASSWORD);
-
-    if (!hasRedisUrl && !hasRedisObjectConfig) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["REDIS_URL"],
-        message: "Provide REDIS_URL or REDIS_HOST/REDIS_PORT/REDIS_PASSWORD",
-      });
     }
   });
 

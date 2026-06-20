@@ -33,7 +33,7 @@ export const usersController = {
   }),
 
   deleteAccount: asyncHandler(async (req, res) => {
-    const { user, token } = requireAuth(req);
-    res.json(await usersService.deleteAccount(user.id, token));
+    const { user } = requireAuth(req);
+    res.json(await usersService.deleteAccount(user.id));
   }),
 };

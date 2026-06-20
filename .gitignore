@@ -7,6 +7,9 @@ server/.env.local
 client/browser/.env.local
 *.env.local
 
+.env.prod
+
+
 # Server-local: SQLite, ChromaDB, downloaded ML weights (SpeechBrain, etc.)
 server/data/
 server/models/

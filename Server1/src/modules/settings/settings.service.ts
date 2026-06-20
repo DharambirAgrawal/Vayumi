@@ -2,8 +2,6 @@ import { eq } from "drizzle-orm";
 import { db } from "../../core/db/index.js";
 import { userSettings } from "../../core/db/schema/index.js";
 import { AppError } from "../../core/errors/index.js";
-import { cache } from "../../core/redis/helpers.js";
-import { RedisKeys, RedisTTL } from "../../core/redis/keys.js";
 import type { SettingsPatchInput } from "./settings.validators.js";
 import type { UserSettingsView } from "./settings.types.js";
 
@@ -30,12 +28,7 @@ const ensureSettings = async (userId: string) => {
 
 export const settingsService = {
   async getSettings(userId: string) {
-    const settings = await cache.remember(
-      RedisKeys.userSettings(userId),
-      RedisTTL.userSettings,
-      () => ensureSettings(userId),
-    );
-
+    const settings = await ensureSettings(userId);
     return { settings: toView(settings) };
   },
 
@@ -53,7 +46,6 @@ export const settingsService = {
       throw new AppError(500, "SETTINGS_UPDATE_FAILED", "Unable to update settings");
     }
 
-    await cache.invalidate(RedisKeys.userSettings(userId));
     return { settings: toView(updated) };
   },
 
@@ -71,7 +63,6 @@ export const settingsService = {
       throw new AppError(500, "SETTINGS_UPDATE_FAILED", "Unable to update settings");
     }
 
-    await cache.invalidate(RedisKeys.userSettings(userId));
     return { settings: toView(updated) };
   },
 
@@ -89,7 +80,6 @@ export const settingsService = {
       throw new AppError(500, "SETTINGS_UPDATE_FAILED", "Unable to update settings");
     }
 
-    await cache.invalidate(RedisKeys.userSettings(userId));
     return { settings: toView(updated) };
   },
 };

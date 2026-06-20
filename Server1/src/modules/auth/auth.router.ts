@@ -34,6 +34,6 @@ authRouter.post("/token/refresh", authLimit, validate.body(refreshSchema), authC
 authRouter.post("/logout", authenticate, authController.logout);
 authRouter.post("/logout/all", authenticate, authController.logoutAll);
 authRouter.post("/password/forgot", authLimit, validate.body(forgotPasswordSchema), authController.forgotPassword);
-authRouter.post("/password/reset", validate.body(resetPasswordSchema), authController.resetPassword);
+authRouter.post("/password/reset", authLimit, validate.body(resetPasswordSchema), authController.resetPassword);
 authRouter.post("/password/change", authenticate, validate.body(changePasswordSchema), authController.changePassword);
 authRouter.get("/me", authenticate, authController.me);

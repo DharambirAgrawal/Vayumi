@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../errors/index.js";
-import { redis } from "../redis/index.js";
-import { RedisKeys } from "../redis/keys.js";
+import { sql } from "../db/index.js";
 import { logger } from "../utils/logger.js";
 
 type RateLimitOptions = {
@@ -11,19 +10,35 @@ type RateLimitOptions = {
   keyBy?: (req: Request) => string;
 };
 
+/**
+ * Fixed-window rate limiter backed by Postgres. The upsert is atomic: a single
+ * row per key tracks the current count and window expiry, resetting once the
+ * window lapses. Fails open — if the database is unreachable the request is
+ * allowed rather than blocked.
+ */
 export const rateLimiter =
   ({ windowSeconds, max, keyPrefix = "ip", keyBy }: RateLimitOptions) =>
   async (req: Request, _res: Response, next: NextFunction) => {
     try {
       const identity = keyBy?.(req) ?? req.ip ?? "unknown";
-      const key = keyPrefix === "user" ? RedisKeys.rateLimitUser(identity) : RedisKeys.rateLimitIP(`${keyPrefix}:${identity}`);
-      const count = await redis.incr(key);
+      const key = `${keyPrefix}:${identity}`;
 
-      if (count === 1) {
-        await redis.expire(key, windowSeconds);
-      }
+      const [row] = await sql<{ count: number }[]>`
+        insert into rate_limits ("key", "count", "expires_at")
+        values (${key}, 1, now() + make_interval(secs => ${windowSeconds}))
+        on conflict ("key") do update set
+          "count" = case
+            when rate_limits.expires_at < now() then 1
+            else rate_limits.count + 1
+          end,
+          "expires_at" = case
+            when rate_limits.expires_at < now() then now() + make_interval(secs => ${windowSeconds})
+            else rate_limits.expires_at
+          end
+        returning "count"
+      `;
 
-      if (count > max) {
+      if (row && row.count > max) {
         next(new AppError(429, "RATE_LIMITED", "Too many requests"));
         return;
       }

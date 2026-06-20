@@ -49,7 +49,8 @@ export const resendVerificationSchema = z.object({
 });
 
 export const resetPasswordSchema = z.object({
-  token: z.string().min(1),
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  code: z.string().trim().regex(/^\d{6}$/, "Code must be 6 digits"),
   new_password: z.string().min(8).max(128),
 });
 

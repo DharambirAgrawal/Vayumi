@@ -3,7 +3,7 @@ import { db } from "../../../core/db/index.js";
 import { syncedEmails } from "../../../core/db/schema/synced-emails.js";
 import { logger } from "../../../core/utils/logger.js";
 import { isUniqueViolation } from "../../../core/utils/postgres.js";
-import { integrationsConfig } from "../../../core/config/integrations.js";
+import { EMAIL_CLASSIFY_MAX_BODY_CHARS } from "./email.constants.js";
 import { MaskingSession } from "./email.masker.js";
 import { server2EmailClient } from "./server2.emailClient.js";
 import type { EmailCategory, EmailClassifyResult, EmailMessage, ProcessIncomingEmailOutcome } from "./email.types.js";
@@ -25,7 +25,7 @@ const sliceBodyForClassify = (body: string | null): string | null => {
   if (!body) {
     return null;
   }
-  const max = integrationsConfig.emailClassifyMaxBodyChars;
+  const max = EMAIL_CLASSIFY_MAX_BODY_CHARS;
   return body.length <= max ? body : body.slice(0, max);
 };
 

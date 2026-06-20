@@ -11,6 +11,15 @@ const publicBaseUrl = (env.SUPABASE_STORAGE_PUBLIC_URL ||
   "",
 );
 
+/**
+ * Object keys within the single storage bucket. Each method owns one category's
+ * prefix, so new file types are added here (e.g. `cover`) rather than by adding
+ * new buckets or scattering prefix strings across services.
+ */
+export const StorageKeys = {
+  avatar: (userId: string, filename: string) => `avatars/${userId}/${filename}`,
+} as const;
+
 export const uploadPublicFile = async (input: {
   key: string;
   body: Buffer;

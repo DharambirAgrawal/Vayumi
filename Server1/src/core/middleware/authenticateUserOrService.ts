@@ -6,8 +6,6 @@ import { jwtConfig } from "../config/jwt.js";
 import { db } from "../db/index.js";
 import { sessions, users } from "../db/schema/index.js";
 import { AuthError } from "../errors/index.js";
-import { redis } from "../redis/index.js";
-import { RedisKeys } from "../redis/keys.js";
 import type { AccessTokenPayload } from "../types/index.js";
 
 const isInternalServiceToken = (payload: JwtPayload): boolean =>
@@ -40,11 +38,6 @@ export const authenticateUserOrService = async (req: Request, _res: Response, ne
     const accessPayload = payload as AccessTokenPayload;
     if (!accessPayload.sub || !accessPayload.sid || !accessPayload.jti) {
       throw new AuthError("Invalid token");
-    }
-
-    const isBlocked = await redis.exists(RedisKeys.tokenBlocklist(accessPayload.jti));
-    if (isBlocked) {
-      throw new AuthError("Token has been revoked");
     }
 
     const [session] = await db

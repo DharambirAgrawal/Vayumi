@@ -2,9 +2,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../../core/db/index.js";
 import { sessions } from "../../core/db/schema/index.js";
 import { AuthError, NotFoundError } from "../../core/errors/index.js";
-import { cache } from "../../core/redis/helpers.js";
-import { redis } from "../../core/redis/index.js";
-import { RedisKeys, RedisTTL } from "../../core/redis/keys.js";
 import type { SessionView } from "./sessions.types.js";
 
 const toView = (session: typeof sessions.$inferSelect, currentSessionId: string): SessionView => ({
@@ -20,15 +17,10 @@ const toView = (session: typeof sessions.$inferSelect, currentSessionId: string)
 
 export const sessionsService = {
   async list(userId: string, currentSessionId: string) {
-    const rows = await cache.remember(
-      RedisKeys.userSessions(userId),
-      RedisTTL.userSessions,
-      () =>
-        db
-          .select()
-          .from(sessions)
-          .where(and(eq(sessions.userId, userId), eq(sessions.isActive, true), isNull(sessions.revokedAt))),
-    );
+    const rows = await db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.userId, userId), eq(sessions.isActive, true), isNull(sessions.revokedAt)));
 
     return { sessions: rows.map((session) => toView(session, currentSessionId)) };
   },
@@ -52,11 +44,6 @@ export const sessionsService = {
       .update(sessions)
       .set({ isActive: false, revokedAt: new Date(), updatedAt: new Date() })
       .where(eq(sessions.id, session.id));
-
-    await Promise.all([
-      redis.del(RedisKeys.refreshToken(session.id)),
-      cache.invalidate(RedisKeys.userSessions(userId)),
-    ]);
 
     return { success: true };
   },
