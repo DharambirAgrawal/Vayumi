@@ -15,10 +15,12 @@ from server.orchestrator.supervisor import Supervisor
 from server.tools import build_tool_registry, build_tool_runner
 
 
-class _NativeToolThenAnswerClient:
+class _SearchThenAnswerClient:
+    """Pass 1 emits a [SEARCH] text directive (how Gemma drives web lookups);
+    pass 2 streams the grounded answer over the role:tool messages."""
+
     def __init__(self) -> None:
         self.prompts: list[object] = []
-        self._pass = 0
 
     def stream_completion(
         self,
@@ -48,20 +50,11 @@ class _NativeToolThenAnswerClient:
     ) -> ChatCompletionResult:
         del base_url, slot_id
         self.prompts.append(request.prompt)
-        if self._pass == 0:
-            self._pass += 1
-            return ChatCompletionResult(
-                content="Searching now.",
-                tool_calls=[
-                    ParsedToolCall(
-                        id="call_1",
-                        name="web_search",
-                        arguments='{"query":"AI","max_results":2}',
-                    )
-                ],
-                finish_reason="tool_calls",
-            )
-        return ChatCompletionResult(content="", tool_calls=[])
+        return ChatCompletionResult(
+            content='[SEARCH query="latest AI news"]',
+            tool_calls=[],
+            finish_reason="stop",
+        )
 
 
 @pytest.mark.asyncio
@@ -147,7 +140,7 @@ async def test_supervisor_main_tool_follow_up(monkeypatch: pytest.MonkeyPatch) -
     entry.fn = fake_web_search  # type: ignore[method-assign]
     runner = build_tool_runner(registry)
 
-    client = _NativeToolThenAnswerClient()
+    client = _SearchThenAnswerClient()
     pool = EnginePool(
         base_url="http://127.0.0.1:8081",
         parallel_slots=4,
@@ -171,11 +164,19 @@ async def test_supervisor_main_tool_follow_up(monkeypatch: pytest.MonkeyPatch) -
     finally:
         await pool.close()
 
-    assert "seeing" in output.assistant_text.lower() or "s1" in output.assistant_text.lower()
+    # The model synthesizes the grounded answer (no snippet bypass).
+    assert "headlines" in output.assistant_text.lower()
     assert len(events) == 2
     assert events[0][0] == "tool_started"
     assert events[1][0] == "tool_done"
-    assert len(client.prompts) == 1
+    # Pass 1 decides (emits the tool_call); pass 2 streams the grounded answer.
+    assert len(client.prompts) == 2
     first_pass = client.prompts[0]
     assert isinstance(first_pass, list)
     assert any(m.get("role") == "system" for m in first_pass)
+    # Gemma rejects role:tool, so the second pass injects the search results as
+    # TEXT into a normal alternating chat (inside a user message).
+    grounded = client.prompts[1]
+    assert isinstance(grounded, list)
+    blob = " ".join(str(m.get("content", "")) for m in grounded)
+    assert "s1" in blob or "TOOL_RESULT" in blob

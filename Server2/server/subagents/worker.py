@@ -99,6 +99,7 @@ class SubAgentWorker:
             if await self._run_seed_payload():
                 return
 
+            empty_retries = 0
             for step in range(max_steps):
                 if self._cancelled:
                     await self.signal_bus.publish(
@@ -117,10 +118,25 @@ class SubAgentWorker:
 
                 raw = await self._model_step()
                 if not raw.strip():
+                    # Gemma occasionally returns an empty step — nudge and retry a
+                    # couple of times before giving up (mirrors the main loop).
+                    empty_retries += 1
+                    if empty_retries <= 2:
+                        log.warning(
+                            "subagent.empty_retry",
+                            task_id=self.task_id,
+                            attempt=empty_retries,
+                        )
+                        self._transcript.append(
+                            "system: (Your last reply was empty. Continue the task — "
+                            "call a tool or report STEP/DONE/NEEDS_INFO/ERROR.)"
+                        )
+                        continue
                     await self.signal_bus.publish(
                         report(self.task_id, "ERROR", "empty model output")
                     )
                     return
+                empty_retries = 0
 
                 self._transcript.append(f"assistant: {raw.strip()}")
 

@@ -65,8 +65,13 @@ STOP_TASK_RE = re.compile(
     r"\[STOP_TASK\s+task_id=(?P<task_id>[^\s]+)\s*\]",
     re.IGNORECASE,
 )
+SEARCH_RE = re.compile(
+    r'\[SEARCH\s+query=(?P<q>"[^"]+"|\'[^\']+\')\s*\]',
+    re.IGNORECASE,
+)
+
 DIRECTIVE_BLOCK_RE = re.compile(
-    r'\[(?:REMEMBER|RECALL|RESPOND_VIA|DELEGATE|ANSWER_TO|STOP_TASK)(?:\s+chain)?\s+[^\]]+\]',
+    r'\[(?:REMEMBER|RECALL|RESPOND_VIA|DELEGATE|ANSWER_TO|STOP_TASK|SEARCH)(?:\s+chain)?\s+[^\]]+\]',
     re.IGNORECASE,
 )
 
@@ -100,6 +105,11 @@ class RecallResult:
     chain: bool
     payload: str
     doc_id: str | None = None
+
+
+@dataclass(frozen=True)
+class SearchDirective:
+    query: str
 
 
 @dataclass(frozen=True)
@@ -165,6 +175,21 @@ def parse_stop_task_directives(text: str) -> list[StopTaskDirective]:
         StopTaskDirective(task_id=match.group("task_id"))
         for match in STOP_TASK_RE.finditer(text)
     ]
+
+
+def parse_search_directives(text: str) -> list[SearchDirective]:
+    """Parse [SEARCH query="..."] — the main agent's quick-lookup directive.
+
+    Gemma reliably emits this text directive (it does not emit native OpenAI
+    tool_calls), so web search is driven this way rather than via function calls.
+    """
+    found: list[SearchDirective] = []
+    for match in SEARCH_RE.finditer(text):
+        raw = match.group("q").strip()
+        query = raw[1:-1].strip() if len(raw) >= 2 else raw
+        if query:
+            found.append(SearchDirective(query=query))
+    return found
 
 
 def parse_delegate_directives(text: str) -> list[DelegateDirective]:
@@ -305,6 +330,7 @@ def plan_acknowledgment(text: str) -> str:
         return ""
     earliest = len(text)
     for pattern in (
+        SEARCH_RE,
         DELEGATE_HEAD_RE,
         REMEMBER_RE,
         RECALL_DOC_RE,
@@ -358,7 +384,7 @@ def strip_directives(text: str) -> str:
 
 
 _DIRECTIVE_LEAK_RE = re.compile(
-    r"\[DELEGATE\b|(?:^|\s)capability=\w+.*goal=|payload=\{",
+    r"\[DELEGATE\b|\[SEARCH\b|(?:^|\s)capability=\w+.*goal=|payload=\{",
     re.IGNORECASE,
 )
 

@@ -434,7 +434,6 @@ async def _handle_chat_inner(
                 payload=CaptionPayload(
                     text="Got it — working on that now while I finish speaking.",
                     partial=False,
-                    turn_id=None,
                 ),
             ),
         )

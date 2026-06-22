@@ -121,7 +121,7 @@ async def test_supervisor_does_not_auto_web_search_without_delegate(
 
 
 @pytest.mark.asyncio
-async def test_supervisor_fallback_runs_web_search_for_stock_question(
+async def test_ack_only_does_not_force_web_search(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from server.engine.pool import ChatCompletionResult
@@ -243,7 +243,9 @@ async def test_supervisor_fallback_runs_web_search_for_stock_question(
     finally:
         await pool.close()
 
-    assert "tool_started" in events
-    assert "tool_done" in events
-    assert "120.50" in out.assistant_text
+    # The model acknowledged but emitted no tool_call. We trust it — the old
+    # regex that force-ran a web_search behind the model's back is gone.
+    assert "tool_started" not in events
+    assert "tool_done" not in events
+    assert out.assistant_text.strip() != ""
     assert "[web_search" not in out.assistant_text
