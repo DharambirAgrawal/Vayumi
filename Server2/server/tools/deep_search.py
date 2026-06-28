@@ -23,7 +23,7 @@ async def _discover_urls(
 
     if tavily_api_key:
         try:
-            rows = await _search_tavily(
+            rows, _answer = await _search_tavily(
                 tavily_api_key, query, max_urls, search_depth
             )
             backend = "tavily"

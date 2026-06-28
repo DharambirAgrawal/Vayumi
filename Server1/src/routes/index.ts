@@ -7,6 +7,8 @@ import { usersRouter } from "../modules/users/users.router.js";
 import { integrationsRouter } from "../modules/integrations/integrations.router.js";
 import { meetingsRouter } from "../modules/meetings/meetings.router.js";
 import { lifeRouter } from "../modules/life/life.router.js";
+import { memoryRouter } from "../modules/memory/memory.router.js";
+import { aiRouter } from "../modules/ai/ai.router.js";
 import {
   internalRemindersRouter,
   remindersRouter,
@@ -28,5 +30,7 @@ apiRouter.use("/integrations", integrationsRouter);
 apiRouter.use("/reminders", remindersRouter);
 apiRouter.use("/meetings", meetingsRouter);
 apiRouter.use("/life", lifeRouter);
+apiRouter.use("/memory", memoryRouter);
+apiRouter.use("/ai", aiRouter);
 
 internalRouter.use(internalRemindersRouter);

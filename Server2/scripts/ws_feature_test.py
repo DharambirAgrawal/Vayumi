@@ -173,10 +173,10 @@ async def main() -> int:
         await step("9. Task status", "What's the status of that research you're doing?")
         # 10. Multiple things in one turn — direct + delegate.
         await step(
-            "10. Multiple tasks",
-            "Tell me a short one-line joke, and also kick off deep research on the best electric cars of 2026.",
+            "10. Multi-intent (joke + research + quick fact)",
+            "Tell me a short joke, research the best laptops of 2026 in depth, and also what's the current price of Bitcoin?",
             turn_timeout=150,
-            drain_after=30,
+            drain_after=45,
         )
 
         print("\n" + "=" * 72 + "\nLATENCY SUMMARY (seconds)\n" + "=" * 72, flush=True)

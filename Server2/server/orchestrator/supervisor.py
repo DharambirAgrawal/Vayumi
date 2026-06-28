@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import json
 import uuid
 from collections.abc import Awaitable, Callable
@@ -51,7 +52,6 @@ from server.orchestrator.prose import (
 from server.orchestrator.signal_bus import SignalBus, TaskEventEmitter
 from server.orchestrator.task_board import TaskBoard
 from server.orchestrator.tool_dispatch import (
-    build_follow_up_context,
     format_subagent_spawn_block,
     run_main_tool_calls,
     split_delegate_directives,
@@ -265,175 +265,171 @@ class Supervisor:
         # [DELEGATE] / [REMEMBER] / [RECALL] directive, or a plain answer) before
         # acting. We do NOT pass native function tools: Gemma 3n does not emit
         # OpenAI tool_calls, so the main agent drives tools via text directives.
-        if tool_runner is not None:
-            first = await engine_pool.complete_chat(
-                CompletionRequest(
-                    prompt=messages,
-                    max_tokens=_max_tokens_for_mode("answer"),
-                    cache_prompt=True,
-                    stream=False,
-                    temperature=0.7,
-                    stop=("[TOOL_RESULT", "[SUBAGENT_SPAWN"),
-                ),
-            )
-            raw_text = first.content or ""
-        else:
-            raw_text = await self._complete(
-                user_text=user_text,
-                warm_profile=warm,
-                history=history,
-                compressed_summary=summary,
-                injected_context=injected_context,
-                task_board_block=task_board_block,
-                engine_pool=engine_pool,
-                on_token=on_token,
-                completion_mode="answer",
-            )
+        first = await engine_pool.complete_chat(
+            CompletionRequest(
+                prompt=messages,
+                max_tokens=_max_tokens_for_mode("answer"),
+                cache_prompt=True,
+                stream=False,
+                temperature=0.7,
+                stop=("[TOOL_RESULT", "[SUBAGENT_SPAWN"),
+            ),
+        )
+        raw_text = first.content or ""
 
         spawn_blocks: list[str] = []
         remembers: list[RememberDirective] = []
         profile_directives: list = []
-        follow_up_text = ""
         search_directives = parse_search_directives(raw_text)
-        # The no-tool-runner branch already streamed via _complete(on_token=...).
-        streamed_to_token = tool_runner is None
+        streamed_to_token = False
+        visible = ""
 
-        if search_directives and tool_runner is not None:
-            # [SEARCH query="..."] — Gemma's reliable web-lookup directive. Run the
-            # search, feed results back as role:tool messages, then STREAM the
-            # grounded answer to TTS. No snippet bypass, no regex, no re-voicing.
-            ack = plan_acknowledgment(raw_text)
-            if on_status_caption is not None:
-                await on_status_caption(
-                    sanitize_spoken_prose(ack) if ack else "One sec."
-                )
+        # ── Unified per-intent handling ──────────────────────────────────────
+        # One utterance may carry several intents: a chat reply (joke), one or more
+        # quick [SEARCH] lookups, and/or background [DELEGATE] research. We run them
+        # all, ground EACH search against its OWN results (no cross-contamination),
+        # spawn every delegate (never dropped), and assemble the spoken reply in
+        # order — the conversational opener first so it plays while the searches
+        # run. Search and spawn need a tool_runner; memory and recall do not.
+        await self._apply_task_directives(
+            raw_text, engine_pool=engine_pool, tool_runner=tool_runner
+        )
 
-            search_calls = [
-                ParsedToolCall(
-                    id=f"call_search_{i}",
-                    name="web_search",
-                    arguments=json.dumps(
-                        {"query": d.query, "max_results": 8}, ensure_ascii=False
-                    ),
-                )
-                for i, d in enumerate(search_directives[:2])
-            ]
-            runs = await run_main_tool_calls(
-                user_id=self.user_id,
-                turn_id=tid,
-                tool_calls=search_calls,
-                runner=tool_runner,
-                on_event=on_tool_event,
-                # Always announce intent (Rule 9), even when the model emitted
-                # only the [SEARCH] directive with no spoken opening line.
-                event_label_start=ack or "Searching the web",
-            )
-            # Ground the answer by injecting the results as TEXT into a normal
-            # alternating chat. Gemma's chat template rejects role:tool / assistant
-            # tool_calls (it requires strict user/assistant alternation), so we
-            # must not feed an OpenAI tool round-trip here.
-            results_block = "\n\n".join(
-                render_tool_result_for_prompt(run.call.name, run.result)
-                for run in runs
-            )
-            follow_up_text = await self._answer_from_search(
-                user_text=user_text,
-                results_block=results_block,
-                engine_pool=engine_pool,
-                on_token=on_token,
-            )
-            streamed_to_token = bool(follow_up_text.strip())
-            raw_text = follow_up_text or raw_text
-        else:
-            # No native tool call — handle directives: task control, memory,
-            # recall, and background sub-agent delegation.
-            await self._apply_task_directives(
-                raw_text,
+        profile_directives = filter_profile_directives(parse_directives(raw_text))
+        recall_results = await execute_directives(self.user_id, profile_directives)
+        recalls = [
+            d
+            for d in profile_directives
+            if isinstance(d, (RecallDirective, RecallDocDirective))
+        ]
+        remembers = [d for d in profile_directives if isinstance(d, RememberDirective)]
+        recall_block = (
+            format_recall_results(recall_results) if recalls and recall_results else ""
+        )
+
+        async def _spawn_one(directive: DelegateDirective) -> str | None:
+            cap = directive.capability.lower()
+            if cap not in SUB_CAPABILITIES:
+                return None
+            existing = self.task_board.find_running(cap, directive.goal)
+            if existing is not None:
+                return format_subagent_spawn_block(existing.task_id, cap, existing.goal)
+            task_id = await self.spawn_subagent(
+                cap,
+                directive.goal,
+                directive.payload,
                 engine_pool=engine_pool,
                 tool_runner=tool_runner,
+                on_tool_event=on_tool_event,
             )
+            return format_subagent_spawn_block(task_id, cap, directive.goal)
 
-            profile_directives = filter_profile_directives(parse_directives(raw_text))
-            recall_results = await execute_directives(self.user_id, profile_directives)
+        _, sub_directives = split_delegate_directives(
+            parse_delegate_directives(raw_text)
+        )
+        if sub_directives and tool_runner is not None:
+            for result in await asyncio.gather(
+                *[asyncio.create_task(_spawn_one(d)) for d in sub_directives]
+            ):
+                if isinstance(result, str):
+                    spawn_blocks.append(result)
 
-            _, sub_directives = split_delegate_directives(
-                parse_delegate_directives(raw_text)
+        do_search = bool(search_directives) and tool_runner is not None
+        has_tool_work = bool(do_search or spawn_blocks or recall_block)
+        # Opener: with tool work to follow, just the clean lead-in; otherwise the
+        # whole prose IS the answer (e.g. a story — must not be truncated).
+        if has_tool_work:
+            opener = sanitize_spoken_prose(plan_acknowledgment(raw_text))
+        else:
+            opener = sanitize_spoken_prose(
+                finalize_assistant_prose(strip_directives(raw_text))
             )
+        if contains_directive_leak(opener):
+            opener = ""
 
-            async def _spawn_one(directive: DelegateDirective) -> str | None:
-                cap = directive.capability.lower()
-                if cap not in SUB_CAPABILITIES:
-                    return None
-                existing = self.task_board.find_running(cap, directive.goal)
-                if existing is not None:
-                    return format_subagent_spawn_block(
-                        existing.task_id, cap, existing.goal
-                    )
-                task_id = await self.spawn_subagent(
-                    cap,
-                    directive.goal,
-                    directive.payload,
-                    engine_pool=engine_pool,
-                    tool_runner=tool_runner,
-                    on_tool_event=on_tool_event,
-                )
-                return format_subagent_spawn_block(task_id, cap, directive.goal)
+        parts: list[str] = []
 
-            if sub_directives and tool_runner is not None:
-                spawn_tasks = [
-                    asyncio.create_task(_spawn_one(d), name=f"spawn-{tid[:8]}")
-                    for d in sub_directives
-                ]
-                for result in await asyncio.gather(*spawn_tasks):
-                    if isinstance(result, str):
-                        spawn_blocks.append(result)
+        async def _emit(text: str) -> None:
+            nonlocal streamed_to_token
+            text = text.strip()
+            if not text:
+                return
+            parts.append(text)
+            if on_token is not None:
+                await on_token((" " if streamed_to_token else "") + text)
+                streamed_to_token = True
 
-            recalls = [
-                d
-                for d in profile_directives
-                if isinstance(d, (RecallDirective, RecallDocDirective))
-            ]
-            remembers = [
-                d for d in profile_directives if isinstance(d, RememberDirective)
-            ]
-            recall_block = (
-                format_recall_results(recall_results)
-                if recalls and recall_results
-                else ""
-            )
+        # 1) Speak the opener first so it plays WHILE the searches run.
+        if has_tool_work and opener.strip():
+            await _emit(opener)
+        elif has_tool_work and on_status_caption is not None:
+            await on_status_caption("One sec.")
 
-            # When work was delegated or a fact recalled, the pass-1 output is an
-            # internal plan — never speak it. Surface the model's clean opening
-            # line as a status, then stream a clean answer grounded in the recall
-            # value and spawn notes.
-            if spawn_blocks or recall_block:
-                ack = plan_acknowledgment(raw_text)
-                if ack and on_status_caption is not None:
-                    await on_status_caption(sanitize_spoken_prose(ack))
-                follow_up_text = await self._complete(
-                    user_text=user_text,
-                    warm_profile=warm,
-                    history=await recent_turns(self.session_id, limit=8),
-                    compressed_summary=summary,
-                    injected_context=build_follow_up_context(
-                        recall_block=recall_block,
-                        spawn_blocks=spawn_blocks,
+        # 2) Run each search in parallel; ground EACH on its own results only.
+        if do_search:
+
+            async def _run_one_search(idx: int, directive) -> str:
+                call = ParsedToolCall(
+                    id=f"call_search_{idx}",
+                    name="web_search",
+                    arguments=json.dumps(
+                        {"query": directive.query, "max_results": 8},
+                        ensure_ascii=False,
                     ),
-                    task_board_block=self.task_board.render_for_main(),
-                    engine_pool=engine_pool,
-                    on_token=on_token,
-                    allow_delegates=False,
-                    completion_mode="answer",
                 )
-                streamed_to_token = bool(follow_up_text.strip())
-                # Discard the leaky pass-1 plan; the clean second pass is the reply.
-                raw_text = follow_up_text
+                runs = await run_main_tool_calls(
+                    user_id=self.user_id,
+                    turn_id=tid,
+                    tool_calls=[call],
+                    runner=tool_runner,
+                    on_event=on_tool_event,
+                    event_label_start="Searching the web",
+                )
+                block = "\n\n".join(
+                    render_tool_result_for_prompt(r.call.name, r.result) for r in runs
+                )
+                return await self._answer_from_search(
+                    user_text=directive.query,
+                    results_block=block,
+                    engine_pool=engine_pool,
+                    on_token=None,  # grounded silently; streamed in order below
+                )
 
-        answer_raw = follow_up_text or raw_text
-        visible = finalize_assistant_prose(strip_directives(answer_raw))
-        if contains_directive_leak(visible):
-            visible = ""
-        visible = sanitize_spoken_prose(visible)
+            answers = await asyncio.gather(
+                *[_run_one_search(i, d) for i, d in enumerate(search_directives[:3])]
+            )
+            for answer in answers:
+                await _emit(sanitize_spoken_prose(answer))
+
+        # 3) Recall-grounded answer (only when no search already covered it).
+        elif recall_block:
+            grounded = await self._complete(
+                user_text=user_text,
+                warm_profile=warm,
+                history=await recent_turns(self.session_id, limit=8),
+                compressed_summary=summary,
+                injected_context=recall_block,
+                task_board_block=self.task_board.render_for_main(),
+                engine_pool=engine_pool,
+                on_token=None,
+                allow_delegates=False,
+                completion_mode="answer",
+            )
+            await _emit(sanitize_spoken_prose(strip_directives(grounded)))
+
+        # 4) Background-research note last — the full results arrive later via the
+        #    notifier when the sub-agent finishes.
+        if spawn_blocks:
+            await _emit(
+                "I've started digging into that in the background — I'll have the "
+                "full results for you shortly."
+            )
+
+        if parts:
+            visible = sanitize_spoken_prose(" ".join(parts))
+        elif opener.strip():
+            visible = opener
+        raw_text = visible or raw_text
 
         if not visible.strip():
             if spawn_blocks:
@@ -447,7 +443,7 @@ class Supervisor:
             await on_token(visible)
             streamed_to_token = True
 
-        override = parse_respond_via_override(answer_raw)
+        override = parse_respond_via_override(raw_text)
         respond_via = apply_respond_via_override(override, computed_respond_via)
 
         visible = self._ensure_visible_reply(visible)
@@ -711,13 +707,24 @@ class Supervisor:
         main.txt tells the model it "MUST [SEARCH]" for live data, which makes it
         re-emit a [SEARCH] directive instead of answering from the results.
         """
+        today = _dt.date.today()
         system = (
             "You are Vayumi, speaking aloud to a friend. Fresh web search results "
-            "are given below. Answer the user's question in one or two short spoken "
-            "sentences using ONLY these results — state the real number or fact. "
-            "Plain spoken prose: no markdown, no URLs, no lists. The search is "
-            "already done — do NOT ask to search again and do NOT emit any "
-            "directive or bracketed tag."
+            "are given below. Give ONE consolidated spoken answer using these "
+            "results — do NOT list the results one by one or cite 'result 1/2/3'; "
+            "pick the most current, consistent value. Prefer the 'Search answer' "
+            "line and the newest-dated results. For a single fact that is one short "
+            "sentence (e.g. the price or the temperature). If the user asked for "
+            "several items or a 'top N', name that many, each in a short sentence "
+            "with a one-line reason — never reply with just one when more were "
+            "asked, and never tell the user to look it up themselves. "
+            f"Today is {today.isoformat()} ({today.strftime('%A')}) — do NOT present "
+            "an older dated figure as today's value; if the results are stale, "
+            "contradictory, or don't actually answer the question (for example the "
+            "thing has no such data), say that plainly rather than inventing a "
+            "number. Plain spoken prose: no markdown, no bullets, no URLs, no "
+            "'(result N)' notes. The search is done — do NOT search again or emit "
+            "any directive or tag."
         )
         messages = [
             {"role": "system", "content": system},
@@ -743,6 +750,13 @@ class Supervisor:
             full_text += token
             if on_token is not None:
                 await on_token(token)
+        # The model sometimes parrots the rendered label — strip it from speech.
+        full_text = full_text.strip()
+        low = full_text.lower()
+        for label in ("search answer:", "current summary:", "answer:"):
+            if low.startswith(label):
+                full_text = full_text[len(label):].strip()
+                break
         return full_text
 
     async def _complete(

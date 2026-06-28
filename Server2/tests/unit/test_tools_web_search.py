@@ -28,7 +28,7 @@ async def test_web_search_tavily_path(monkeypatch: pytest.MonkeyPatch) -> None:
         query: str,
         max_results: int,
         search_depth: str = "basic",
-    ) -> list[dict[str, str]]:
+    ) -> tuple[list[dict[str, str]], str]:
         del api_key, max_results, search_depth
         return [
             _normalize_row(
@@ -37,7 +37,7 @@ async def test_web_search_tavily_path(monkeypatch: pytest.MonkeyPatch) -> None:
                 snippet="Breaking",
                 source="tavily",
             )
-        ]
+        ], "AI is advancing fast."
 
     monkeypatch.setattr(web_search_module, "_search_tavily", fake_tavily)
 

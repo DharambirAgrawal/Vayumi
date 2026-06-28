@@ -45,6 +45,28 @@ export const appConfig = {
       syncTabsMax: 200,
       syncEntriesMax: 2_000,
     },
+    memory: {
+      keyMax: 120,
+      valueMax: 500,
+      /** Max facts accepted in one bulk sync push (device caps at ~50). */
+      syncFactsMax: 200,
+    },
+    ai: {
+      /** Per-user cloud LLM request caps (one tool-loop round = one request). */
+      dailyLimit: env.AI_CLOUD_DAILY_LIMIT,
+      minuteLimit: env.AI_CLOUD_MINUTE_LIMIT,
+      requestTimeoutMs: env.AI_CLOUD_TIMEOUT_MS,
+      /** Request-shape caps to keep payloads sane. */
+      maxMessages: 80,
+      maxTools: 60,
+      maxBodyChars: 60_000,
+      maxOutputTokens: 2048,
+      /** When non-empty, ONLY these emails may use the cloud AI (lock to yourself). */
+      allowedEmails: (env.AI_CLOUD_ALLOWED_EMAILS ?? "")
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    },
     settings: {
       maxKeys: 100,
       maxSerializedBytes: 64 * 1024,

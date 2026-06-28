@@ -10,4 +10,5 @@ export * from "./synced-emails.js";
 export * from "./reminders.js";
 export * from "./meetings.js";
 export * from "./life.js";
+export * from "./memory.js";
 export * from "./rate-limits.js";

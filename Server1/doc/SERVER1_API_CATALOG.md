@@ -466,6 +466,79 @@ Deletes are soft (`deleted_at`) so other devices reconcile.
 
 ---
 
+### 4.12 Memory — `/api/v1/memory` ✅ (NEW)
+
+Curated long-term facts the assistant remembers about the user (preferences, routines,
+details). Tiny + capped on-device (~50). Synced idempotently on **`(user_id, key)`** — the
+key is the semantic identity, so the same fact merges across devices. Soft delete propagates
+a "forget."
+
+| Method | Path | Auth | Status | Purpose |
+|---|---|---|---|---|
+| GET | `/sync?since=` | User | ✅ | Pull all (or changed-since) facts; returns `server_time` |
+| POST | `/sync` | User | ✅ | Push a batch: `{ facts, deleted_keys }` |
+
+**Push body:**
+```json
+{
+  "facts": [
+    { "key": "coffee_order", "value": "oat flat white", "category": "preference", "pinned": false }
+  ],
+  "deleted_keys": ["old_fact"]
+}
+```
+
+**Mobile:** Life "memory" (what the AI remembers) — app `memoryStore` + `services/memory/memorySync.ts`.
+
+---
+
+### 4.13 AI cloud proxy — `/api/v1/ai` ✅ (NEW)
+
+Secure server-side proxy for the app's "Server" (cloud) mode. Provider API keys
+(Groq / Cerebras / Gemini) live **only on the server**; the app sends OpenAI-shaped
+chat requests and the service forwards to the first working **(provider, model)
+endpoint**. Because rate limits are **per model**, the fallback chain walks
+model-by-model (each its own quota) then provider-by-provider — failover on 429 /
+`tool_use_failed` / 5xx / network — which multiplies free throughput. ~8 endpoints
+today (5 Groq + 2 Cerebras + 1 Gemini), all function-calling-verified. **Authorized
+users only**, with **per-user quotas** (daily + per-minute). Request shape is capped
+(message/tool counts + total bytes). Provider keys are never returned; the
+`X-AI-Provider` response header names the `provider:model` that served the request.
+
+| Method | Path | Auth | Status | Purpose |
+|---|---|---|---|---|
+| GET | `/status` | User | ✅ | Configured providers + the per-user limits |
+| POST | `/chat` | User | ✅ | OpenAI-compatible chat completion (with tools); fails over across providers |
+
+**Request (`POST /chat`):**
+```json
+{
+  "messages": [{ "role": "user", "content": "Log $20 at Walmart" }],
+  "tools": [ /* OpenAI function-tool schemas */ ],
+  "tool_choice": "auto",
+  "temperature": 0.4,
+  "max_tokens": 1024,
+  "provider": "groq"          // optional preference; falls over to others
+}
+```
+**Response:** the upstream OpenAI chat-completion JSON unchanged (so the app's tool
+loop reads `choices[0].message`), plus an `X-AI-Provider` header naming who served it.
+
+**Env (server-side only):** `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GEMINI_API_KEY`,
+`AI_CLOUD_DAILY_LIMIT` (default 300), `AI_CLOUD_MINUTE_LIMIT` (default 30),
+`AI_CLOUD_TIMEOUT_MS` (default 30000), `AI_CLOUD_ALLOWED_EMAILS` (comma-separated;
+when set, ONLY those accounts may use it → others get `403 AI_FORBIDDEN`; empty = any
+signed-in user). Unset provider key = that provider is skipped; all unset →
+`503 AI_UNAVAILABLE`.
+
+**Access control:** no token → `401`; signed-in but not allowlisted → `403`; allowlisted →
+served, bounded by the per-user daily/minute quotas.
+
+**App (later):** point the app's `resolveRemoteTransport` at `${API}/ai/chat` with the
+user's JWT — no other app changes needed. Not wired yet (server-only for now).
+
+---
+
 ### 4.10 Internal (not for app) — `/internal`
 
 | Method | Path | Auth | Status | Purpose |
@@ -747,6 +820,12 @@ DELETE /api/v1/life/tabs/:clientTabId
 GET    /api/v1/life/entries
 POST   /api/v1/life/entries
 DELETE /api/v1/life/entries/:clientEntryId
+
+GET    /api/v1/memory/sync
+POST   /api/v1/memory/sync
+
+GET    /api/v1/ai/status
+POST   /api/v1/ai/chat                            🔒 per-user quota
 
 POST   /internal/reminders/fire                  🔧 pg_cron only
 ```

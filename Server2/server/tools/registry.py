@@ -187,12 +187,18 @@ def render_tool_result_for_prompt(name: str, result: ToolResult) -> str:
             body = f"{title}\n{url}\n\n{text}"
         elif "results" in data_preview and isinstance(data_preview["results"], list):
             lines = []
+            answer = data_preview.get("answer")
+            if isinstance(answer, str) and answer.strip():
+                # Tavily's synthesized, up-to-date answer — the most reliable line.
+                lines.append(f"Search answer: {answer.strip()}")
             for idx, row in enumerate(data_preview["results"][:8], start=1):
                 if not isinstance(row, dict):
                     continue
                 title = row.get("title", "")
                 snippet = row.get("snippet", "")
-                lines.append(f"{idx}. {title} — {snippet}")
+                published = row.get("published_date")
+                date_tag = f" [{published}]" if published else ""
+                lines.append(f"{idx}. {title}{date_tag} — {snippet}")
             body = "\n".join(lines) if lines else str(data_preview)
         else:
             body = str(data_preview)
