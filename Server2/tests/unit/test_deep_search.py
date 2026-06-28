@@ -41,7 +41,7 @@ async def test_deep_search_reads_multiple_articles() -> None:
             char_count=400,
         )
 
-    with patch("server.tools.deep_search._search_tavily", return_value=SAMPLE_ROWS):
+    with patch("server.tools.deep_search._search_tavily", return_value=(SAMPLE_ROWS, "")):
         with patch("server.tools.deep_search.fetch_page", side_effect=_fake_page):
             result = await deep_search(
                 user_id="u1",
@@ -69,7 +69,7 @@ async def test_deep_search_partial_uses_snippet_on_fetch_fail() -> None:
             fetch_mode="static",
         )
 
-    with patch("server.tools.deep_search._search_tavily", return_value=SAMPLE_ROWS[:1]):
+    with patch("server.tools.deep_search._search_tavily", return_value=(SAMPLE_ROWS[:1], "")):
         with patch("server.tools.deep_search.fetch_page", side_effect=_fail_page):
             result = await deep_search(
                 user_id="u1",
@@ -86,7 +86,7 @@ async def test_deep_search_partial_uses_snippet_on_fetch_fail() -> None:
 
 @pytest.mark.asyncio
 async def test_deep_search_no_urls() -> None:
-    with patch("server.tools.deep_search._search_tavily", return_value=[]):
+    with patch("server.tools.deep_search._search_tavily", return_value=([], "")):
         with patch("server.tools.deep_search._search_ddg", return_value=[]):
             result = await deep_search(
                 user_id="u1",

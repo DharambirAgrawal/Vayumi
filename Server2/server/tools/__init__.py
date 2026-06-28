@@ -97,8 +97,10 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
             name="web_search",
             capability="main",
             description=(
-                "Quick web search: short snippets and headlines (seconds). "
-                "Use for stocks, news, weather — not for reading full articles."
+                "Call this whenever the answer depends on current or recent "
+                "information — stock/crypto prices, weather, news, sports scores, "
+                "releases, or anything after your training cutoff. Returns short "
+                "snippets and headlines in seconds. Not for reading full articles."
             ),
             args_schema={
                 "type": "object",
@@ -122,7 +124,10 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
         ToolEntry(
             name="memory_save",
             capability="main",
-            description="Persist a versioned fact for this user.",
+            description=(
+                "Call this when the user asks you to remember a durable fact about "
+                "them (name, preference, key detail). Persists a versioned fact."
+            ),
             args_schema={
                 "type": "object",
                 "required": ["key", "value"],
@@ -144,7 +149,9 @@ def build_tool_registry(settings: Settings) -> ToolRegistry:
             name="memory_recall",
             capability="main",
             description=(
-                "Read a stored fact by key, a supersession chain, or semantic search by query."
+                "Call this to look up something the user told you earlier (their "
+                "name, where they live, preferences) before answering from guesswork. "
+                "Read a stored fact by key, a supersession chain, or by semantic query."
             ),
             args_schema={
                 "type": "object",

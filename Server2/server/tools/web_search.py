@@ -51,10 +51,16 @@ def _tavily_search_sync(
     from tavily import TavilyClient
 
     client = TavilyClient(api_key=api_key)
+    # auto_parameters lets Tavily pick topic (news/finance/general), recency, and
+    # depth from the query itself — the single biggest freshness win. include_answer
+    # adds Tavily's own synthesized, up-to-date answer. We keep advanced depth as a
+    # floor so results aren't shallow.
     return client.search(
         query=query,
         max_results=max_results,
-        search_depth=search_depth,
+        search_depth="advanced" if search_depth == "advanced" else "basic",
+        auto_parameters=True,
+        include_answer="advanced",
     )
 
 
@@ -63,23 +69,26 @@ async def _search_tavily(
     query: str,
     max_results: int,
     search_depth: SearchDepth,
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], str]:
     response = await asyncio.to_thread(
         _tavily_search_sync, api_key, query, max_results, search_depth
     )
+    answer = str(response.get("answer") or "").strip()
     rows: list[dict[str, str]] = []
     for item in response.get("results", []):
         if not isinstance(item, dict):
             continue
-        rows.append(
-            _normalize_row(
-                title=str(item.get("title", "")),
-                url=str(item.get("url", "")),
-                snippet=str(item.get("content", item.get("snippet", ""))),
-                source="tavily",
-            )
+        row = _normalize_row(
+            title=str(item.get("title", "")),
+            url=str(item.get("url", "")),
+            snippet=str(item.get("content", item.get("snippet", ""))),
+            source="tavily",
         )
-    return rows
+        published = item.get("published_date")
+        if published:
+            row["published_date"] = str(published)[:32]
+        rows.append(row)
+    return rows, answer
 
 
 async def _search_ddg(query: str, max_results: int) -> list[dict[str, str]]:
@@ -114,7 +123,7 @@ async def web_search(
     user_id: str,
     query: str,
     max_results: int = 5,
-    search_depth: SearchDepth = "basic",
+    search_depth: SearchDepth = "advanced",
     tavily_api_key: str | None = None,
 ) -> ToolResult:
     del user_id
@@ -124,13 +133,14 @@ async def web_search(
 
     max_results = max(1, min(max_results, 10))
     if search_depth not in ("basic", "advanced"):
-        search_depth = "basic"
+        search_depth = "advanced"
     rows: list[dict[str, str]] = []
+    answer = ""
     backend = "none"
 
     if tavily_api_key:
         try:
-            rows = await _search_tavily(
+            rows, answer = await _search_tavily(
                 tavily_api_key, query, max_results, search_depth
             )
             backend = "tavily"
@@ -149,7 +159,7 @@ async def web_search(
                 retryable=True,
             )
 
-    if not rows:
+    if not rows and not answer:
         return ToolResult(
             status="ok",
             summary=f"No results for {query!r}",
@@ -161,6 +171,7 @@ async def web_search(
         summary=f"{len(rows)} result(s) from {backend}",
         data={
             "results": rows,
+            "answer": answer,
             "backend": backend,
             "query": query,
             "max_results": max_results,

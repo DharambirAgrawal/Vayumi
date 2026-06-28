@@ -21,19 +21,26 @@ import {
 export const authRouter = Router();
 
 const authLimit = rateLimiter({ ...appConfig.rateLimit.auth, keyPrefix: "auth" });
+const registerLimit = rateLimiter({ ...appConfig.rateLimit.register, keyPrefix: "register" });
+// Keyed by EMAIL (not just IP) so an attacker can't inbox-bomb a victim across IPs.
+const emailDispatchLimit = rateLimiter({
+  ...appConfig.rateLimit.emailDispatch,
+  keyPrefix: "email",
+  keyBy: (req) => String(req.body?.email ?? "").trim().toLowerCase() || req.ip || "unknown",
+});
 
-authRouter.post("/register", validate.body(registerSchema), authController.register);
+authRouter.post("/register", registerLimit, validate.body(registerSchema), authController.register);
 authRouter.post("/login", authLimit, validate.body(loginSchema), authController.login);
 authRouter.post("/google", authLimit, validate.body(googleSchema), authController.google);
 authRouter.post("/apple", authLimit, validate.body(appleSchema), authController.apple);
 authRouter.post("/verify-email/confirm", authenticate, validate.body(verifyEmailCodeSchema), authController.verifyEmailCode);
 authRouter.post("/verify-email/confirm/request", authLimit, validate.body(verifyEmailCodeByEmailSchema), authController.verifyEmailCodeByEmail);
 authRouter.post("/verify-email/resend", authenticate, authController.resendVerification);
-authRouter.post("/verify-email/resend/request", authLimit, validate.body(resendVerificationSchema), authController.resendVerificationByEmail);
+authRouter.post("/verify-email/resend/request", authLimit, emailDispatchLimit, validate.body(resendVerificationSchema), authController.resendVerificationByEmail);
 authRouter.post("/token/refresh", authLimit, validate.body(refreshSchema), authController.refresh);
 authRouter.post("/logout", authenticate, authController.logout);
 authRouter.post("/logout/all", authenticate, authController.logoutAll);
-authRouter.post("/password/forgot", authLimit, validate.body(forgotPasswordSchema), authController.forgotPassword);
+authRouter.post("/password/forgot", authLimit, emailDispatchLimit, validate.body(forgotPasswordSchema), authController.forgotPassword);
 authRouter.post("/password/reset", authLimit, validate.body(resetPasswordSchema), authController.resetPassword);
 authRouter.post("/password/change", authenticate, validate.body(changePasswordSchema), authController.changePassword);
 authRouter.get("/me", authenticate, authController.me);

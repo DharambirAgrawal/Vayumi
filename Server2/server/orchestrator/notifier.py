@@ -96,8 +96,8 @@ def format_synthetic_user_text(signal: ReportSignal, row: TaskRow | None) -> str
         )
 
     return (
-        "Background task finished while the user was silent. "
-        "Tell the user briefly what is ready."
+        "Background research you started has finished. Tell the user the actual "
+        "findings now, in your own voice — not that it is 'ready' or 'complete'."
     )
 
 
@@ -144,9 +144,12 @@ def format_proactive_injection(signal: ReportSignal, row: TaskRow | None) -> str
         lines.append(f"question: {signal.payload['question'].strip()}")
     if signal.kind == "DONE":
         lines.append(
-            "The background research finished. Give the user a complete spoken summary now "
-            "(latest flight number, date, and outcome when present). Do not say you are still "
-            "researching or will follow up later. Use the summary above — no URLs in speech."
+            "The background research is DONE and its findings are in the summary "
+            "above. Tell the user the key findings NOW, in two to four short spoken "
+            "sentences — name the actual items and reasons from the summary (e.g. the "
+            "specific laptops, cars, prices, or facts). This message IS the follow-up: "
+            "do NOT say it is 'complete', 'ready', or that you will report back later. "
+            "Plain speech only — no URLs, no lists, no bracketed tags."
         )
     else:
         lines.append(

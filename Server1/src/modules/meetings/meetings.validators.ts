@@ -1,52 +1,61 @@
 import { z } from "zod";
+import { appConfig } from "../../core/config/app.js";
 import { meetingStatuses } from "../../core/db/schema/meetings.js";
 
 const isoDate = z.string().datetime({ offset: true });
+const { meeting: meetingLimits } = appConfig.limits;
+
+const listEntry = z.string().max(meetingLimits.listItemMax);
+const summaryField = z.string().max(meetingLimits.summaryMax);
+const keyPointsField = z.array(listEntry).max(meetingLimits.listCountMax);
+const actionItemsField = z.array(listEntry).max(meetingLimits.listCountMax);
 
 // Transcript / suggested reminders are device-shaped blobs stored as-is; validate the
-// fields we rely on and pass the rest through untouched.
+// fields we rely on (with size caps) and pass the rest through untouched.
 const transcriptLineSchema = z
   .object({
     id: z.string().optional(),
     atMs: z.number().int().nonnegative().optional(),
-    text: z.string(),
+    text: z.string().max(meetingLimits.transcriptSegmentTextMax),
     speaker: z.string().optional(),
   })
   .passthrough();
 
 const suggestedReminderSchema = z
   .object({
-    title: z.string().max(255),
+    title: z.string().max(meetingLimits.titleMax),
     dueLabel: z.string().nullable().optional(),
     confirmed: z.boolean().optional(),
     reminderId: z.string().uuid().nullable().optional(),
   })
   .passthrough();
 
+const suggestedRemindersField = z.array(suggestedReminderSchema).max(meetingLimits.listCountMax);
+
 export const upsertMeetingSchema = z.object({
   client_meeting_id: z.string().min(1).max(120),
-  title: z.string().min(1).max(255),
+  title: z.string().min(1).max(meetingLimits.titleMax),
   status: z.enum(meetingStatuses).default("ready"),
   started_at: isoDate,
   ended_at: isoDate.nullable().optional(),
   duration_ms: z.number().int().nonnegative().default(0),
-  summary: z.string().nullable().optional(),
-  key_points: z.array(z.string()).default([]),
-  action_items: z.array(z.string()).default([]),
-  transcript: z.array(transcriptLineSchema).default([]),
-  suggested_reminders: z.array(suggestedReminderSchema).default([]),
-  analysis_error: z.string().nullable().optional(),
+  summary: summaryField.nullable().optional(),
+  key_points: keyPointsField.default([]),
+  action_items: actionItemsField.default([]),
+  transcript: z.array(transcriptLineSchema).max(meetingLimits.transcriptSegmentsMax).default([]),
+  suggested_reminders: suggestedRemindersField.default([]),
+  analysis_error: z.string().max(meetingLimits.summaryMax).nullable().optional(),
   recorded_on_device: z.string().max(120).nullable().optional(),
   recorded_session_id: z.string().uuid().nullable().optional(),
 });
 
 export const updateMeetingSchema = z
   .object({
-    title: z.string().min(1).max(255).optional(),
-    summary: z.string().nullable().optional(),
-    key_points: z.array(z.string()).optional(),
-    action_items: z.array(z.string()).optional(),
-    suggested_reminders: z.array(suggestedReminderSchema).optional(),
+    title: z.string().min(1).max(meetingLimits.titleMax).optional(),
+    summary: summaryField.nullable().optional(),
+    key_points: keyPointsField.optional(),
+    action_items: actionItemsField.optional(),
+    suggested_reminders: suggestedRemindersField.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "Provide at least one field to update",

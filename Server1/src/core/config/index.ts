@@ -48,6 +48,18 @@ const envSchema = z
     INTERNAL_REMINDER_SECRET: z.string().min(1),
     REMINDER_FIRE_BATCH_SIZE: z.coerce.number().int().positive().default(100),
     REMINDER_AGENT_EVENT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
+    // Cloud LLM proxy ("Server" mode for the app). Keys stay server-side; each is
+    // optional — only configured providers are used (fallback chain). Per-user
+    // quotas guard cost. Unset keys = that provider is skipped; all unset = 503.
+    CEREBRAS_API_KEY: optionalString,
+    GROQ_API_KEY: optionalString,
+    GEMINI_API_KEY: optionalString,
+    AI_CLOUD_DAILY_LIMIT: z.coerce.number().int().positive().default(300),
+    AI_CLOUD_MINUTE_LIMIT: z.coerce.number().int().positive().default(30),
+    AI_CLOUD_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+    // Optional allowlist: comma-separated emails. When set, ONLY these accounts can
+    // use the cloud AI (e.g. lock to yourself while testing). Empty = any signed-in user.
+    AI_CLOUD_ALLOWED_EMAILS: optionalString,
   })
   .superRefine((env, ctx) => {
     if (env.SERVER2_INTERNAL_URL && env.SERVER2_INTERNAL_URL.trim() !== "") {

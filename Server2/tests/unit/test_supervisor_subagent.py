@@ -381,11 +381,14 @@ async def test_plan_pass_tokens_are_not_delivered(patched_memory: None) -> None:
             on_status_caption=on_status,
         )
         delivered = "".join(tokens)
+        # The leaky plan-pass text must never reach the user.
         assert "Tesla" not in delivered
         assert "User:" not in delivered
-        assert "Background research is running" in delivered
-        assert output.assistant_text == "Background research is running."
-        assert status == ["I'm on it."]
+        # The clean opener is spoken, followed by the background-research note.
+        assert "I'm on it" in delivered
+        assert "digging into that" in delivered
+        assert "I'm on it" in output.assistant_text
+        assert "digging into that" in output.assistant_text
     finally:
         for task in list(supervisor._worker_tasks.values()):
             if not task.done():

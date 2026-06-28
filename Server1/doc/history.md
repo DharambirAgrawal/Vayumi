@@ -35,6 +35,80 @@ This log tracks updates pushed to GitHub for Server 1. Each entry should be smal
 
 ---
 
+## 2026-06-28 - AI cloud proxy module (Server-side, secured)
+
+**Scope:** ai | docs
+
+**Why:** Let the app's "Server" (cloud) mode call powerful LLMs without shipping provider keys in the app binary; bound per-user cost.
+
+**Key changes:**
+- `/api/v1/ai` module: `POST /chat` (OpenAI-compatible, with tools) + `GET /status`
+- Provider keys server-side only (`GROQ/CEREBRAS/GEMINI_API_KEY`); **per-model** fallback chain (rate limits are per model, so it walks model-by-model then provider-by-provider — ~8 tool-verified endpoints) on 429 / tool_use_failed / 5xx / network (`ai.providers.ts`, `ai.service.ts`). Optional `AI_CLOUD_ALLOWED_EMAILS` allowlist (empty = open to all signed-in users).
+- **Authorized users only** (`authenticate`) + **per-user quotas** (daily + per-minute) via the Postgres `rateLimiter` keyed by user id; request-shape caps (msg/tool counts, total bytes)
+- Returns upstream completion JSON unchanged + `X-AI-Provider` header; keys never leaked
+- Env added to config + `.env.example`; keys copied into server `.env`
+
+**Files/areas:**
+- `src/modules/ai/*`, `src/routes/index.ts`, `src/core/config/{index,app}.ts`
+
+**Tests/verification:**
+- `npm run typecheck` ✅ · boots ✅
+- `/ai/chat` + `/ai/status` 401 without auth ✅ · authorized `/ai/chat` returns a correct `add_life_entry` tool call served by groq (`X-AI-Provider: groq`) ✅
+
+**Follow-ups:**
+- App wiring (point `resolveRemoteTransport` at `/ai/chat` + JWT) — intentionally not done yet.
+
+---
+
+## 2026-06-28 - Memory module (curated facts sync)
+
+**Scope:** memory | docs
+
+**Why:** Close the last device-only Life gap — sync the assistant's curated long-term facts across devices.
+
+**Key changes:**
+- Added `memory_facts` table + migration `0010_memory.sql` (unique on `(user_id, key)`, soft delete)
+- `/api/v1/memory` module: bulk `GET/POST /sync` (push `{facts, deleted_keys}`, pull-since)
+- Idempotent on `(user_id, key)` so the same fact merges across devices
+- API catalog §4.12 + quick reference
+
+**Files/areas:**
+- `src/modules/memory/*`, `src/core/db/schema/memory.ts`, `src/core/db/migrations/0010_memory.sql`
+- `src/routes/index.ts`, `src/core/config/app.ts`
+
+**Tests/verification:**
+- `npm run typecheck` ✅ · boots + applies `0010_memory.sql` ✅
+
+**Follow-ups:**
+- None — memory + Life now both sync.
+
+---
+
+## 2026-06-27 - Life module (trackers + entries sync)
+
+**Scope:** life | docs
+
+**Why:** Back the flagship "your AI knows your life" feature with cross-device sync. The app keeps the user's structured trackers + entries on-device; this gives them an offline-first sync target, mirroring the meetings upsert pattern.
+
+**Key changes:**
+- Added `life_tabs` + `life_entries` tables + migration `0009_life.sql` (client-id keyed, soft delete, jsonb schema/data)
+- Full `/api/v1/life` module: bulk `GET/POST /sync`, granular `/tabs` + `/entries` upsert/list/delete
+- Idempotent on `(user_id, client_id)`; tab delete cascades to its entries; media never synced (device-only)
+- Centralized size limits in `config/app.ts`; `include_deleted` query parses booleans correctly (no `z.coerce.boolean` "false"→true trap)
+- API catalog updated (§4.11 + quick reference)
+
+**Files/areas:**
+- `src/modules/life/*`, `src/core/db/schema/life.ts`, `src/core/db/migrations/0009_life.sql`
+- `src/routes/index.ts`, `src/core/config/app.ts`
+
+**Tests/verification:**
+- `npm run typecheck` ✅
+
+**Follow-ups:**
+- Wire the app-side Life sync client (push on change + pull-since on login), mirroring reminder/meeting sync.
+
+---
+
 ## 2026-06-07 - Phase 3B reminders module (Step 6)
 
 **Scope:** reminders | notifications | cron | docs

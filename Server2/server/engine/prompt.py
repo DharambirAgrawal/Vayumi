@@ -216,6 +216,12 @@ def build_subagent_chat_messages(
     if not context.transcript_lines:
         messages.append({"role": "user", "content": "Begin task."})
 
+    # Gemma's chat template requires the conversation to start with a user turn
+    # after the system message. When the transcript window happens to begin with
+    # an assistant line, prepend a user turn so the template does not 500.
+    if len(messages) >= 2 and messages[1]["role"] == "assistant":
+        messages.insert(1, {"role": "user", "content": "(continue the task)"})
+
     return messages
 
 

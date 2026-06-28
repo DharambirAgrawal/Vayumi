@@ -257,20 +257,7 @@ async def run_supervisor_text_turn(
         session.turn_llm_persisted = True
         delay = suppression_delay_ms(session, settings)
         delivery_pipeline = pipeline
-        if output.revoice_final and pipeline is not None:
-            from server.transport.client_control import send_client_control
-
-            await pipeline.cancel()
-            await send_client_control(
-                websocket, "clear_queue", "answer_corrected", turn_id=tid
-            )
-            delivery_pipeline = None
-            log.info(
-                "turn.revoice_final",
-                user_id=session.user_id,
-                turn_id=tid,
-            )
-        elif pipeline is not None:
+        if pipeline is not None:
             await pipeline.flush()
             await pipeline.finish(delay)
         await deliver_turn_output(
