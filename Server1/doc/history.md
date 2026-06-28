@@ -35,6 +35,31 @@ This log tracks updates pushed to GitHub for Server 1. Each entry should be smal
 
 ---
 
+## 2026-06-27 - Life module (trackers + entries sync)
+
+**Scope:** life | docs
+
+**Why:** Back the flagship "your AI knows your life" feature with cross-device sync. The app keeps the user's structured trackers + entries on-device; this gives them an offline-first sync target, mirroring the meetings upsert pattern.
+
+**Key changes:**
+- Added `life_tabs` + `life_entries` tables + migration `0009_life.sql` (client-id keyed, soft delete, jsonb schema/data)
+- Full `/api/v1/life` module: bulk `GET/POST /sync`, granular `/tabs` + `/entries` upsert/list/delete
+- Idempotent on `(user_id, client_id)`; tab delete cascades to its entries; media never synced (device-only)
+- Centralized size limits in `config/app.ts`; `include_deleted` query parses booleans correctly (no `z.coerce.boolean` "false"→true trap)
+- API catalog updated (§4.11 + quick reference)
+
+**Files/areas:**
+- `src/modules/life/*`, `src/core/db/schema/life.ts`, `src/core/db/migrations/0009_life.sql`
+- `src/routes/index.ts`, `src/core/config/app.ts`
+
+**Tests/verification:**
+- `npm run typecheck` ✅
+
+**Follow-ups:**
+- Wire the app-side Life sync client (push on change + pull-since on login), mirroring reminder/meeting sync.
+
+---
+
 ## 2026-06-07 - Phase 3B reminders module (Step 6)
 
 **Scope:** reminders | notifications | cron | docs

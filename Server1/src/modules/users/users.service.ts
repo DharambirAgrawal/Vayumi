@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
+import { appConfig } from "../../core/config/app.js";
 import { db } from "../../core/db/index.js";
 import { users } from "../../core/db/schema/index.js";
 import { NotFoundError, ValidationError } from "../../core/errors/index.js";
@@ -7,7 +8,7 @@ import { StorageKeys, uploadPublicFile } from "../../core/utils/storage.js";
 import type { UpdateProfileInput } from "./users.validators.js";
 import type { UserProfile } from "./users.types.js";
 
-const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const MAX_AVATAR_BYTES = appConfig.limits.upload.avatarMaxBytes;
 const avatarMimeTypes = new Map([
   ["image/jpeg", "jpg"],
   ["image/png", "png"],

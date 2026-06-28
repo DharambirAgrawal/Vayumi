@@ -405,6 +405,67 @@ PATCH bodies are flexible key-value merges (any JSON keys you define in the app)
 
 ---
 
+### 4.11 Life — `/api/v1/life` ✅ (NEW)
+
+The user's structured personal memory (trackers + entries) — the flagship "your AI
+knows your life" feature. **Offline-first:** the device owns the data and syncs it
+idempotently on `(user_id, client_id)`, exactly like meetings. Scanned photos and
+other media **never** leave the device — only the validated entry `data` is synced.
+Deletes are soft (`deleted_at`) so other devices reconcile.
+
+| Method | Path | Auth | Status | Purpose |
+|---|---|---|---|---|
+| GET | `/sync?since=` | User | ✅ | Pull all (or changed-since) tabs + entries; returns `server_time` watermark |
+| POST | `/sync` | User | ✅ | Push a batch: `{ tabs, entries, deleted_tab_ids, deleted_entry_ids }` |
+| GET | `/tabs` | User | ✅ | List trackers (`status`, `since`, `include_deleted`) |
+| POST | `/tabs` | User | ✅ | Upsert one tracker (idempotent on `client_tab_id`) |
+| DELETE | `/tabs/:clientTabId` | User | ✅ | Soft-delete tracker (cascades to its entries) |
+| GET | `/entries` | User | ✅ | List entries (`tab_id`, `from`, `to`, `since`, `limit`, `cursor`) |
+| POST | `/entries` | User | ✅ | Upsert one entry (idempotent on `client_entry_id`) |
+| DELETE | `/entries/:clientEntryId` | User | ✅ | Soft-delete entry |
+
+**Upsert tab body:**
+```json
+{
+  "client_tab_id": "life_tab_1782_x9",
+  "display_name": "Spending",
+  "tab_type": "spending",
+  "layout": "chart",
+  "icon": "card-outline",
+  "color": "#4FB191",
+  "schema": { "fields": [ { "key": "total", "label": "Total", "type": "number", "required": true } ], "displayField": "store" },
+  "position": 0,
+  "status": "active",
+  "source": "ai"
+}
+```
+
+**Upsert entry body:**
+```json
+{
+  "client_entry_id": "life_entry_1782_ab",
+  "client_tab_id": "life_tab_1782_x9",
+  "data": { "store": "Walmart", "total": 91.57, "category": "groceries" },
+  "occurred_at": "2026-06-27T18:00:00.000Z",
+  "source": "scan"
+}
+```
+
+**Push body (bulk):**
+```json
+{
+  "tabs": [ /* upsert tab bodies */ ],
+  "entries": [ /* upsert entry bodies */ ],
+  "deleted_tab_ids": ["life_tab_old"],
+  "deleted_entry_ids": ["life_entry_old"]
+}
+```
+
+**Mobile:** Life screen — see app `doc/LIFE_SCREEN_PLAN.md`.
+**Agent:** Can read/write a user's trackers via the granular `/tabs` + `/entries` routes.
+
+---
+
 ### 4.10 Internal (not for app) — `/internal`
 
 | Method | Path | Auth | Status | Purpose |
@@ -677,6 +738,15 @@ PATCH  /api/v1/reminders/:id
 DELETE /api/v1/reminders/:id
 POST   /api/v1/reminders/:id/snooze
 POST   /api/v1/reminders/:id/cancel
+
+GET    /api/v1/life/sync
+POST   /api/v1/life/sync
+GET    /api/v1/life/tabs
+POST   /api/v1/life/tabs
+DELETE /api/v1/life/tabs/:clientTabId
+GET    /api/v1/life/entries
+POST   /api/v1/life/entries
+DELETE /api/v1/life/entries/:clientEntryId
 
 POST   /internal/reminders/fire                  🔧 pg_cron only
 ```
